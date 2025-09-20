@@ -174,10 +174,39 @@ const ActivityFeed: React.FC = () => {
     return colors[index]
   }
 
-  // Merge system messages and user activities
+  // Merge system messages (including derived persistent messages) and user activities
   const safeActivities = Array.isArray(activities) ? activities : []
+
+  // Derive persistent system messages from currentDraw so important state
+  // (like betting closed) remains visible after a page refresh.
+  const derivedSystemMessages: Array<{id: string, message: string, timestamp: Date}> = []
+  if (currentDraw) {
+    try {
+      const endTime = new Date((currentDraw as any).end_time)
+      // If the draw is no longer in betting state, show a persistent closed message
+      if ((currentDraw as any).status !== 'betting') {
+        derivedSystemMessages.push({
+          id: 'persistent-betting-closed',
+          message: '🔒 Betting closed, awaiting draw...',
+          timestamp: isNaN(endTime.getTime()) ? new Date() : endTime
+        })
+      }
+    } catch (e) {
+      // ignore parsing errors
+    }
+  }
+
+  // Combine derived messages with ephemeral systemMessages and deduplicate by message text
+  const combinedSystem = [...derivedSystemMessages, ...systemMessages]
+  const seen = new Set<string>()
+  const uniqueSystem = combinedSystem.filter(s => {
+    if (seen.has(s.message)) return false
+    seen.add(s.message)
+    return true
+  })
+
   const allMessages = [
-    ...systemMessages.map(msg => ({
+    ...uniqueSystem.map(msg => ({
       id: msg.id,
       type: 'system',
       message: msg.message,

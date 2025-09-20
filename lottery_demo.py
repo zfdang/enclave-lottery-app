@@ -13,7 +13,10 @@ from datetime import datetime
 from decimal import Decimal
 import random
 
-sys.path.append('/home/ec2-user/lottery-app/enclave/src')
+# Compute project root dynamically so the demo can run from any checkout location.
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+ENCLAVE_SRC = os.path.join(PROJECT_ROOT, 'enclave', 'src')
+sys.path.append(ENCLAVE_SRC)
 
 from lottery.engine import LotteryEngine, DrawStatus
 
@@ -300,11 +303,11 @@ class LotteryDemo:
         print("🌐 Checking for web interface...")
         
         # Check if comprehensive demo script exists
-        demo_script = "/home/ec2-user/lottery-app/scripts/comprehensive_demo.sh"
+        demo_script = os.path.join(PROJECT_ROOT, 'scripts', 'comprehensive_demo.sh')
         if os.path.exists(demo_script):
             print("📡 Starting comprehensive demo with web interface...")
             try:
-                subprocess.run(["bash", demo_script], cwd="/home/ec2-user/lottery-app")
+                subprocess.run(["bash", demo_script], cwd=PROJECT_ROOT)
             except KeyboardInterrupt:
                 print("\n🛑 Web demo stopped by user")
         else:

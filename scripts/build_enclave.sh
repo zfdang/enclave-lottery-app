@@ -40,11 +40,12 @@ check_nitro_support() {
         exit 1
     fi
     
-    if ! lsmod | grep -q nitro_enclaves; then
-        print_error "Nitro Enclaves kernel module not loaded."
-        print_warning "Run: sudo modprobe nitro_enclaves"
-        exit 1
-    fi
+    # skip this change, since this code does not work in amazon linux 2023
+    # if ! lsmod | grep -q nitro_enclaves; then
+    #     print_error "Nitro Enclaves kernel module not loaded."
+    #     print_warning "Run: sudo modprobe nitro_enclaves"
+    #     exit 1
+    # fi
     
     print_status "Nitro Enclave support verified."
 }
@@ -52,11 +53,16 @@ check_nitro_support() {
 # Build Docker image
 build_docker_image() {
     print_status "Building Docker image..."
-    
-    cd enclave
-    
-    # Build the Docker image
-    docker build -t ${DOCKER_IMAGE_NAME}:latest .
+    # Build the Docker image.
+    # Compute repository root (directory above this script) so we can
+    # reliably pass it as the build context regardless of the current PWD.
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+
+    # Because the Dockerfile references paths like `enclave/...` relative to the
+    # repository root, pass the repo root as the build context and explicitly
+    # point to the Dockerfile inside the enclave directory.
+    docker build -t ${DOCKER_IMAGE_NAME}:latest -f "$REPO_ROOT/enclave/Dockerfile" "$REPO_ROOT"
     
     if [ $? -eq 0 ]; then
         print_status "Docker image built successfully: ${DOCKER_IMAGE_NAME}:latest"
@@ -64,8 +70,6 @@ build_docker_image() {
         print_error "Failed to build Docker image"
         exit 1
     fi
-    
-    cd ..
 }
 
 # Build Enclave Image File (EIF)
@@ -91,16 +95,25 @@ build_eif() {
 # Allocate resources for enclave
 allocate_resources() {
     print_status "Allocating enclave resources..."
-    
-    # Allocate CPUs and memory for enclave
-    sudo nitro-cli allocate-enclave \
-        --cpu-count ${CPU_COUNT} \
-        --memory ${MEMORY_SIZE}
-    
-    if [ $? -eq 0 ]; then
-        print_status "Resources allocated: ${CPU_COUNT} CPUs, ${MEMORY_SIZE}MB memory"
+    # Allocate CPUs and memory for enclave if the installed nitro-cli supports it.
+    if ! command -v nitro-cli >/dev/null 2>&1; then
+        print_warning "nitro-cli not found; skipping resource allocation."
+        return
+    fi
+
+    # Some nitro-cli versions do not have an 'allocate-enclave' subcommand.
+    if nitro-cli help 2>&1 | grep -q "allocate-enclave"; then
+        print_status "Attempting to allocate resources with nitro-cli..."
+        if sudo nitro-cli allocate-enclave \
+            --cpu-count ${CPU_COUNT} \
+            --memory ${MEMORY_SIZE}; then
+            print_status "Resources allocated: ${CPU_COUNT} CPUs, ${MEMORY_SIZE}MB memory"
+        else
+            print_warning "Failed to allocate resources (may already be allocated or insufficient privileges)"
+        fi
     else
-        print_warning "Failed to allocate resources (may already be allocated)"
+        print_warning "Installed nitro-cli does not support 'allocate-enclave'. Skipping allocation."
+        print_warning "You can start enclaves directly with 'nitro-cli run-enclave' when needed."
     fi
 }
 

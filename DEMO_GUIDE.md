@@ -8,7 +8,8 @@ This lottery system provides a **unified demo suite** that consolidates all demo
 
 ### Unified Demo System (Recommended)
 ```bash
-cd /home/ec2-user/lottery-app
+# From the project root (where this README is located):
+cd "$(dirname "$0")/.." || cd .
 ./demo.sh
 ```
 
@@ -20,7 +21,8 @@ This will launch the comprehensive demo suite with these options:
 
 ### Direct Python Access
 ```bash
-cd /home/ec2-user/lottery-app
+# From the project root (where this README is located):
+cd "$(dirname "$0")/.." || cd .
 python3 lottery_demo.py
 ```
 
