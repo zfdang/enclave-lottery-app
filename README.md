@@ -1,79 +1,155 @@
-# Lottery Enclave
+# Enclave Lottery App
 
-A secure, decentralized lottery application running entirely within AWS Nitro Enclave, featuring hourly draws, ETH betting, and blockchain transparency.
+A secure, decentralized lottery application designed for AWS Nitro Enclaves, featuring real-time draws, ETH betting, blockchain transparency, and comprehensive demonstration modes.
 
 ## 🎯 Overview
 
-The Lottery Enclave is a trustless lottery system that combines the security of AWS Nitro Enclaves with blockchain transparency. Users can place bets using ETH through MetaMask, participate in hourly draws, and verify all results on the blockchain.
+The Enclave Lottery App is a trustless lottery system that combines the security of AWS Nitro Enclaves with blockchain transparency. This application showcases both traditional development workflows and enclave-based secure execution, with multiple demonstration modes for different use cases.
 
 ### Key Features
 
-- 🔒 **Secure Execution**: Runs entirely in AWS Nitro Enclave for maximum security
-- ⏰ **Hourly Draws**: Automated lottery draws every hour
-- 💰 **ETH Betting**: Place bets using Ethereum through MetaMask
+- 🔒 **Secure Execution**: Designed for AWS Nitro Enclave deployment with complete isolation
+- 🐳 **Docker Container Support**: Real container-based demonstration environment
+- ⏰ **Configurable Draws**: Automated lottery draws with customizable intervals  
+- 💰 **ETH Betting**: Place bets using Ethereum through MetaMask integration
 - 🏆 **Winner Takes All**: Single winner receives the entire pot
-- 🔍 **Transparent**: All results recorded on blockchain
-- 📱 **Real-time UI**: Live countdown, betting status, and activity feed
+- 🔍 **Blockchain Transparency**: All results recorded on Ethereum for verification
+- 📱 **Real-time Web UI**: Live countdown, betting status, and activity feed
 - 🛡️ **Cryptographically Secure**: Provably fair random number generation
+- 🎮 **Comprehensive Demos**: Multiple demo modes including Docker container simulation
+
+## 🚀 Quick Start Guide
+
+### One-Command Setup
+
+```bash
+# Automatically install all prerequisites (except blockchain)
+./scripts/setup_environment.sh
+```
+
+### Unified Demo System (Recommended)
+
+```bash
+# Launch the comprehensive demo suite
+python3 demo.py
+```
+
+**Available Demo Modes:**
+- **1) Quick Demo (5 min)** - Core functionality showcase with blockchain
+- **2) Interactive Demo** - Step-by-step guided experience  
+- **3) Technical Demo** - Detailed system analysis including enclave features
+- **4) Web Demo** - Launch full web interface with real-time blockchain interaction
+- **5) Docker Demo** - Real enclave container environment with blockchain integration
+- **6) Exit** - Exit the demo system
+
+### Prerequisites
+
+- Local blockchain running (Anvil, Hardhat, or Ganache) on `http://localhost:8545`
+- Python 3.11+ with required dependencies
+- Docker 20.10+ (for container demos and enclave builds)
+- Node.js 18+ (for frontend builds)
+- AWS Nitro CLI (for production enclave deployment)
 
 ## 🏗️ Architecture
 
 ```
 ┌─────────────────┐    ┌──────────────────────┐    ┌─────────────────┐
-│   User Browser  │◄──►│   AWS Nitro Enclave  │◄──►│ Ethereum Network│
-│                 │    │                      │    │                 │
+│   User Browser  │◄──►│ Enclave/Container    │◄──►│ Ethereum Network│
+│                 │    │ Environment          │    │                 │
 │ - React Frontend│    │ - Lottery Engine     │    │ - Smart Contract│
-│ - MetaMask      │    │ - Web Server         │    │ - Result Storage│
+│ - MetaMask      │    │ - FastAPI Server     │    │ - Result Storage│
 │ - WebSocket     │    │ - Blockchain Client  │    │ - Transparency  │
+│ - Demo Interface│    │ - Docker Runtime     │    │ - Verification  │
 └─────────────────┘    └──────────────────────┘    └─────────────────┘
 ```
 
-## 🚀 Quick Start
+### Demo Architecture
 
-### Prerequisites
+The application provides multiple demonstration environments:
 
-- AWS account with Nitro Enclave support
-- Docker 20.10+
-- Node.js 18+
-- Python 3.11+
-- MetaMask wallet
+- **Development Mode**: Direct Python execution for development
+- **Docker Mode**: Container-based execution simulating enclave isolation
+- **Enclave Mode**: Full AWS Nitro Enclave deployment for production
 
-### Installation
+## 📋 Installation & Usage
+
+### Manual Installation
 
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd lottery-app
+   cd enclave-lottery-app
    ```
 
-2. **Build the application**
+2. **Install prerequisites**
    ```bash
-   chmod +x scripts/*.sh
-   ./scripts/build.sh
+   ./scripts/setup_environment.sh
    ```
 
-3. **Deploy smart contracts**
+3. **Start local blockchain**
    ```bash
-   # Configure your Ethereum RPC URL and private key in .env
-   ./scripts/deploy_contracts.sh
+   # Install and start Anvil (recommended)
+   curl -L https://foundry.paradigm.xyz | bash
+   foundryup
+   anvil
    ```
 
-4. **Run the unified demo**
+4. **Build the application**
    ```bash
-   ./demo.sh
-   ```
-
-   Or launch the web-centric comprehensive demo:
    ```bash
-   bash scripts/comprehensive_demo.sh
+   # Build Docker images and compile contracts
+   ./scripts/build_docker.sh
    ```
 
-5. **Access the application**
-   Open your browser to `https://localhost:8080`
+5. **Build enclave (for production)**
+   ```bash
+   # Build EIF file for AWS Nitro Enclave deployment
+   ./scripts/build_enclave.sh
+   ```
+
+6. **Run demonstrations**
+   ```bash
+   # Launch unified demo system
+   python3 demo.py
+   
+   # Or run specific components
+   ./scripts/comprehensive_demo.sh    # Web-based comprehensive demo
+   ```
+
+### Quick Demo Examples
+
+#### Docker Demo Experience
+```bash
+# Select option 5 in demo.py for Docker Demo
+python3 demo.py
+# ➜ 5) 🐳 Docker Demo - Real enclave container environment
+
+# Features:
+# - Automatic Docker image building and container lifecycle
+# - Network isolation with blockchain connectivity to host
+# - Interactive web interface on http://localhost:8081
+# - API endpoint testing and container log viewing
+# - One-click cleanup functionality
+```
+
+#### Development Mode
+```bash
+# For development and testing
+python3 demo.py
+# Interactive lottery simulation with blockchain integration
+```
 
 ## 📋 Usage
 
-### For Players
+### For Developers & Evaluators
+
+1. **Start with Demos**: Use `python3 demo.py` to explore different demonstration modes
+2. **Docker Demo**: Experience enclave-like isolation with container technology
+3. **Web Interface**: Access live web UI during demos for real-time interaction
+4. **API Testing**: Use built-in API demonstration features to test endpoints
+5. **Blockchain Integration**: Observe live blockchain transactions during demos
+
+### For Players (in demo environments)
 
 1. **Connect Wallet**: Click "Connect Wallet" and approve MetaMask connection
 2. **Place Bets**: Enter your bet amount (minimum 0.01 ETH) and click "Place Bet"
@@ -81,73 +157,112 @@ The Lottery Enclave is a trustless lottery system that combines the security of 
 4. **View Results**: Check the winner announcement and your betting history
 5. **Verify on Blockchain**: All results are recorded on Ethereum for transparency
 
-### For Operators
+### For Production Deployment
 
 1. **Deploy Infrastructure**: Follow the deployment guide in `docs/deployment.md`
-2. **Monitor System**: Use the provided monitoring dashboards
-3. **Verify Attestation**: Regularly check enclave attestation documents
-4. **Maintain Security**: Follow security best practices in `docs/security.md`
+2. **Build Enclave**: Use `./scripts/build_enclave.sh` to create EIF file
+3. **Deploy to AWS**: Upload EIF to AWS and start Nitro Enclave
+4. **Monitor System**: Use the provided monitoring dashboards
+5. **Verify Attestation**: Regularly check enclave attestation documents
 
 ## 📁 Project Structure
 
 ```
-lottery-app/
-├── enclave/                    # Main enclave application
+enclave-lottery-app/
+├── demo.py                     # Unified demo system with multiple modes
+├── DEMO_GUIDE.md              # Comprehensive demo documentation
+├── enclave/                   # Main enclave application
 │   ├── src/
-│   │   ├── main.py            # Enclave entry point
-│   │   ├── web_server.py      # FastAPI web server
-│   │   ├── lottery/           # Lottery game logic
-│   │   ├── blockchain/        # Ethereum integration
-│   │   └── frontend/          # React application
-│   ├── requirements.txt       # Python dependencies
-│   └── Dockerfile            # Enclave container image
-├── contracts/                 # Smart contracts (sources/artifacts)
-├── scripts/                  # Build, deploy, and demo scripts
-│   ├── build.sh              # Build application
-│   ├── build_enclave.sh      # Build EIF file
-│   ├── comprehensive_demo.sh # Web-based demo and API walkthrough
-│   └── deploy_contracts.sh   # Deploy contracts
-├── demo.sh                    # Unified demo launcher (CLI)
-├── lottery_demo.py            # Unified demo suite (core)
-├── configs/                  # Configuration files
-├── docs/                     # Documentation
-│   ├── architecture.md       # System architecture
-│   ├── deployment.md         # Deployment guide
-│   └── security.md           # Security documentation
-└── README.md                 # This file
-
-See also: `docs/DEVELOPMENT.md` for local dev workflows.
+│   │   ├── main.py           # Enclave entry point
+│   │   ├── web_server.py     # FastAPI web server
+│   │   ├── lottery/          # Lottery game logic
+│   │   │   ├── engine.py     # Core lottery engine
+│   │   │   ├── bet_manager.py# Betting management
+│   │   │   └── scheduler.py  # Draw scheduling
+│   │   ├── blockchain/       # Ethereum integration
+│   │   │   ├── client.py     # Blockchain client
+│   │   │   ├── contracts.py  # Smart contract interface
+│   │   │   └── contracts/    # Solidity contracts
+│   │   │       └── Lottery.sol
+│   │   ├── frontend/         # React application
+│   │   │   ├── src/
+│   │   │   │   ├── App.tsx   # Main React component
+│   │   │   │   └── components/ # UI components
+│   │   │   └── public/       # Static assets
+│   │   └── utils/            # Utility modules
+│   ├── config/
+│   │   └── enclave.conf      # Enclave configuration
+│   ├── requirements.txt      # Python dependencies
+│   └── Dockerfile           # Container image definition
+├── scripts/                 # Build, deploy, and demo scripts
+│   ├── setup_environment.sh # One-command setup
+│   ├── build_docker.sh      # Build Docker images
+│   ├── build_enclave.sh     # Build EIF file for AWS Nitro
+│   └── comprehensive_demo.sh# Web-based demo
+├── host-proxy/              # Host communication proxy
+├── docs/                    # Documentation
+│   ├── architecture.md      # System architecture
+│   ├── deployment.md        # Deployment guide
+│   ├── DEVELOPMENT.md       # Development workflows
+│   └── security.md          # Security documentation
+├── .env                     # Environment configuration
+└── README.md               # This file
 ```
 
 ## 🔧 Configuration
 
 ### Environment Variables
 
-Create a `.env` file in the root directory:
+The application uses a `.env` file for configuration (automatically created by setup script):
 
 ```bash
-# Ethereum Configuration
-ETHEREUM_RPC_URL=https://your-ethereum-node.com
-PRIVATE_KEY=your-private-key-here
-CONTRACT_ADDRESS=deployed-contract-address
+# Ethereum Configuration  
+ETHEREUM_RPC_URL=http://localhost:8545       # Local blockchain URL
+PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+CONTRACT_ADDRESS=0x5FbDB2315678afecb367f032d93F642f64180aa3
+
+# Container Configuration (for Docker Demo)
+CONTAINER_ETHEREUM_RPC_URL=http://host.docker.internal:8545
+CONTAINER_CONTRACT_ADDRESS=0x5FbDB2315678afecb367f032d93F642f64180aa3
 
 # Enclave Configuration
-ENCLAVE_PORT=5000
+ENCLAVE_PORT=8080
 DEBUG=false
+LOG_LEVEL=INFO
 
-# Security Configuration
+# Security Configuration (for production)
 TLS_CERT_PATH=/path/to/cert.pem
 TLS_KEY_PATH=/path/to/key.pem
 ```
 
-### Smart Contract Configuration
+### Enclave Configuration
 
-The lottery smart contract can be configured with the following parameters:
+The `enclave/config/enclave.conf` file contains lottery-specific settings:
 
-- **Draw Interval**: Time between draws (default: 1 hour)
-- **Minimum Bet**: Minimum bet amount (default: 0.01 ETH)
-- **Maximum Bet**: Maximum bet amount (default: 10 ETH)
-- **Betting Cutoff**: Time before draw when betting closes (default: 1 minute)
+```json
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8080
+  },
+  "lottery": {
+    "draw_interval_minutes": 10,
+    "betting_cutoff_minutes": 1,
+    "single_bet_amount": "0.01",
+    "max_bets_per_user": 100
+  },
+  "blockchain": {
+    "rpc_url": "http://localhost:8545",
+    "chain_id": 31337,
+    "contract_address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "private_key": "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+  },
+  "enclave": {
+    "vsock_port": 5000,
+    "attestation_enabled": true
+  }
+}
+```
 
 ## 🛡️ Security
 
@@ -204,142 +319,223 @@ The lottery uses cryptographically secure random number generation:
 - **Medium**: Unusual betting patterns, high error rates
 - **Low**: Information updates, maintenance notices
 
-## 🧪 Testing
+## 🧪 Testing & Development
+
+### Demo Testing
+
+```bash
+# Test all demo modes
+python3 demo.py
+
+# Test specific components
+./scripts/comprehensive_demo.sh  # Web-based demo
+```
 
 ### Unit Tests
 
 ```bash
 # Backend tests
 cd enclave
-python -m pytest tests/
+python -m pytest tests/ -v
 
-# Frontend tests
+# Frontend tests  
 cd enclave/src/frontend
 npm test
 ```
 
-### Integration Tests
+### Build Testing
 
 ```bash
-# End-to-end tests
-./scripts/test_integration.sh
+# Test Docker build
+./scripts/build_docker.sh
+
+# Test enclave build (requires AWS Nitro CLI)
+./scripts/build_enclave.sh
+
+# Test with container runtime
+docker run --rm -p 8081:8080 enclave-lottery-app:latest
 ```
-
-### Security Tests
-
-```bash
-# Security audit
-./scripts/security_audit.sh
-
-# Penetration testing
-./scripts/pentest.sh
-```
-
-## 📈 Performance
-
-### Benchmarks
-
-- **Transaction Throughput**: 1000+ bets per minute
-- **Response Time**: <100ms for API calls
-- **Concurrent Users**: 10,000+ simultaneous connections
-- **Draw Processing**: <5 seconds from betting close to result
-
-### Optimization
-
-- **Caching**: Redis for frequently accessed data
-- **Database**: Optimized queries and indexing
-- **CDN**: CloudFront for static asset delivery
-- **Load Balancing**: Multiple enclave instances
-
-## 🔄 Development
 
 ### Local Development
 
 ```bash
-# Start development environment
+# Development environment setup
 cd enclave
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-# Start frontend development server
-cd src/frontend
-npm install
-npm start
-
 # Start backend development server
-cd ../..
 python src/main.py --dev
+
+# Start frontend development server (separate terminal)
+cd src/frontend
+npm install && npm start
 ```
+
+## � Deployment Options
+
+### 1. Docker Deployment (Recommended for Testing)
+
+```bash
+# Build and run with Docker
+./scripts/build_docker.sh
+docker run -d --name lottery-app \
+  -p 8080:8080 \
+  --add-host host.docker.internal:host-gateway \
+  -e ETHEREUM_RPC_URL=http://host.docker.internal:8545 \
+  -e CONTRACT_ADDRESS=your_contract_address \
+  enclave-lottery-app:latest
+```
+
+### 2. AWS Nitro Enclave Deployment (Production)
+
+```bash
+# Build enclave image file (EIF)
+./scripts/build_enclave.sh
+
+# Deploy to AWS EC2 with Nitro Enclave support
+sudo nitro-cli run-enclave \
+  --eif-path lottery.eif \
+  --cpu-count 2 \
+  --memory 1024 \
+  --enclave-cid 16
+```
+
+### 3. Local Development Deployment
+
+```bash
+# Direct Python execution
+cd enclave
+source venv/bin/activate
+python src/main.py
+```
+
+## 🎮 Demo Modes Explained
+
+### Quick Demo (Option 1)
+- **Duration**: ~5 minutes
+- **Features**: Automated lottery simulation with 5 users, blockchain integration
+- **Best for**: Quick functionality overview
+
+### Interactive Demo (Option 2)  
+- **Duration**: User-controlled
+- **Features**: Step-by-step guided experience with user input
+- **Best for**: Understanding game mechanics
+
+### Technical Demo (Option 3)
+- **Duration**: ~10 minutes  
+- **Features**: Detailed system analysis, enclave features, technical insights
+- **Best for**: Technical evaluation and architecture understanding
+
+### Web Demo (Option 4)
+- **Duration**: Persistent
+- **Features**: Full web interface with real-time updates, MetaMask integration
+- **Best for**: End-user experience testing
+
+### Docker Demo (Option 5)  
+- **Duration**: User-controlled
+- **Features**: Real container environment, network isolation, API testing
+- **Best for**: Enclave simulation and container deployment testing
 
 ### Contributing
 
 1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Run the test suite
-6. Submit a pull request
-
-### Code Standards
-
-- **Python**: Follow PEP 8 style guide
-- **TypeScript**: Use ESLint and Prettier
-- **Solidity**: Follow Solidity style guide
-- **Documentation**: Update docs for any changes
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes with proper tests
+4. Follow code standards (PEP 8 for Python, ESLint for TypeScript)
+5. Update documentation as needed
+6. **Run the test suite (`python3 demo.py` for integration testing)
+7. Submit a pull request
 
 ## 📝 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🆘 Support
+## 🆘 Getting Started & Support
+
+### Quick Start Checklist
+
+1. ✅ **Setup Environment**: Run `./scripts/setup_environment.sh`
+2. ✅ **Start Blockchain**: Launch Anvil with `anvil` command  
+3. ✅ **Build Application**: Execute `./scripts/build_docker.sh`
+4. ✅ **Run Demo**: Launch `python3 demo.py` and select a demo mode
+5. ✅ **Explore Features**: Try Docker Demo (option 5) for full container experience
 
 ### Documentation
 
-- [Architecture Guide](docs/architecture.md)
-- [Deployment Guide](docs/deployment.md)
-- [Security Guide](docs/security.md)
+- 📖 [Demo Guide](DEMO_GUIDE.md) - Comprehensive demo documentation
+- 🏗️ [Architecture Guide](docs/architecture.md) - System design and components
+- 🚀 [Deployment Guide](docs/deployment.md) - Production deployment instructions
+- 🔒 [Security Guide](docs/security.md) - Security features and best practices
+- 💻 [Development Guide](docs/DEVELOPMENT.md) - Development workflows and setup
 
-### Getting Help
+### Troubleshooting
 
-- **Issues**: Report bugs and feature requests on GitHub Issues
-- **Discussions**: Join community discussions on GitHub Discussions
-- **Security**: Report security issues privately to security@example.com
+**Common Issues:**
+
+- **Blockchain Connection**: Ensure Anvil is running on `http://localhost:8545`
+- **Docker Issues**: Check Docker daemon is running and user has permissions
+- **Port Conflicts**: Default ports 8080/8081 should be available
+- **Build Failures**: Run `./scripts/setup_environment.sh` to install dependencies
+
+**Getting Help:**
+
+- 🐛 **Issues**: Report bugs and feature requests on GitHub Issues
+- 💬 **Discussions**: Join community discussions on GitHub Discussions  
+- 🔒 **Security**: Report security issues privately to security@example.com
+- 📧 **Contact**: General inquiries to support@example.com
 
 ### FAQ
 
 **Q: How do I know the lottery is fair?**
-A: All lottery code runs in a verifiable AWS Nitro Enclave, uses cryptographically secure random numbers, and records all results on the blockchain for transparency.
+A: The lottery uses cryptographically secure random numbers, runs in isolated containers/enclaves, and records all results on the blockchain for transparency. The demo modes let you verify this behavior.
 
-**Q: What happens if the enclave fails during a draw?**
-A: The system includes automatic failover mechanisms and all critical state is backed up. Any interrupted draws will be completed or refunded.
+**Q: What's the difference between Docker Demo and actual AWS Nitro Enclave?**
+A: Docker Demo simulates enclave isolation using containers, while AWS Nitro Enclave provides hardware-level isolation. Both run the same lottery code with identical security properties.
 
 **Q: Can I run my own lottery instance?**
-A: Yes! The entire system is open source. Follow the deployment guide to set up your own instance.
+A: Yes! The entire system is open source. Use the build scripts and deployment guides to set up your own instance.
 
 **Q: How are gas fees handled?**
 A: The lottery contract is optimized for gas efficiency. Users only pay standard Ethereum transaction fees for their bets.
 
+**Q: What blockchain networks are supported?**
+A: Currently supports any Ethereum-compatible network. Default setup uses local Anvil for testing.
+
 ## 🗺️ Roadmap
 
+### Current Version (1.0)
+- ✅ Complete demo system with 5 different modes
+- ✅ Docker container simulation of enclave environment  
+- ✅ AWS Nitro Enclave build pipeline
+- ✅ Blockchain integration with smart contracts
+- ✅ React-based web interface
+- ✅ Comprehensive documentation
+
 ### Version 1.1 (Next Release)
-- [ ] Mobile application
-- [ ] Multiple cryptocurrency support
-- [ ] Advanced betting options
-- [ ] Improved user interface
+- [ ] Enhanced mobile-responsive interface
+- [ ] Multi-token support (USDC, DAI, etc.)
+- [ ] Advanced betting strategies
+- [ ] Real-time monitoring dashboard
+- [ ] Performance optimizations
 
 ### Version 1.2 (Future)
-- [ ] Cross-chain support
-- [ ] DAO governance
-- [ ] Staking rewards
-- [ ] Advanced analytics
+- [ ] Cross-chain lottery support
+- [ ] DAO governance for lottery parameters
+- [ ] Staking rewards for participants
+- [ ] Advanced analytics and insights
 
 ### Version 2.0 (Long-term)
-- [ ] Multi-game platform
-- [ ] NFT integration
-- [ ] Social features
-- [ ] Machine learning insights
+- [ ] Multi-game platform expansion
+- [ ] NFT integration and rewards
+- [ ] Social features and referrals
+- [ ] Machine learning for fraud detection
 
 ---
 
-**Built with ❤️ using AWS Nitro Enclaves, Ethereum, and modern web technologies.**
+**🎯 Built with modern technologies:** AWS Nitro Enclaves, Docker, Ethereum, React, FastAPI, and Python
+
+**🔒 Security-first design:** Hardware isolation, blockchain transparency, and cryptographic verification
+
+**🎮 Demo-driven development:** Multiple demonstration modes for comprehensive evaluation

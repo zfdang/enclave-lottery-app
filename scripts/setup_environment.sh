@@ -164,6 +164,60 @@ configure_nitro_enclaves() {
     print_status "Nitro Enclaves configured successfully"
 }
 
+# configure solidity development environment
+configure_solidity() {
+    print_status "Configuring Solidity development environment..."
+    
+    # Check if solc-select is already installed
+    if which solc-select > /dev/null 2>&1; then
+        print_status "solc-select already installed"
+        solc-select --version
+    else
+        print_status "Installing solc-select..."
+        
+        # Install solc-select via pip
+        pip3 install --user solc-select
+        
+        # Ensure ~/.local/bin is in PATH for this session
+        export PATH=$PATH:~/.local/bin
+        
+        if which solc-select > /dev/null 2>&1; then
+            print_status "solc-select installed successfully"
+        else
+            print_error "Failed to install solc-select"
+            exit 1
+        fi
+    fi
+    
+    # Install a stable Solidity version (0.8.19 is widely used and stable)
+    print_status "Installing Solidity compiler version 0.8.19..."
+    solc-select install 0.8.19
+    
+    # Set the default version
+    print_status "Setting Solidity 0.8.19 as default..."
+    solc-select use 0.8.19
+    
+    # Verify installation
+    if which solc > /dev/null 2>&1; then
+        print_status "Solidity compiler configured successfully"
+        solc --version
+    else
+        print_warning "Solidity compiler not found in PATH. You may need to restart your shell."
+    fi
+    
+    # Optional: Install additional common versions
+    print_status "Installing additional Solidity versions..."
+    solc-select install 0.8.20 || print_warning "Failed to install Solidity 0.8.20"
+    solc-select install 0.8.21 || print_warning "Failed to install Solidity 0.8.21"
+    
+    # Show available versions
+    print_status "Available Solidity versions:"
+    solc-select versions
+    
+    print_status "Solidity development environment configured successfully"
+}
+
+
 # Set up environment
 setup_environment() {
     print_status "Setting up environment..."
@@ -188,6 +242,7 @@ main() {
     install_nodejs
     install_python
     configure_nitro_enclaves
+    configure_solidity
     setup_environment
     
     print_status "Setup completed successfully!"

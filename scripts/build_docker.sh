@@ -90,6 +90,12 @@ build_backend() {
     
     cd "$PROJECT_ROOT/enclave"
     
+    # Remove existing venv if it's corrupted
+    if [[ -d "venv" ]] && [[ ! -f "venv/bin/pip" || ! -x "venv/bin/pip" ]]; then
+        log "Removing corrupted virtual environment..."
+        rm -rf venv
+    fi
+    
     # Create virtual environment if it doesn't exist
     if [[ ! -d "venv" ]]; then
         log "Creating Python virtual environment..."
@@ -99,7 +105,7 @@ build_backend() {
     # Activate virtual environment and install dependencies
     log "Installing Python dependencies..."
     source venv/bin/activate
-    pip install --upgrade pip
+    python -m pip install --upgrade pip
     pip install -r requirements.txt
     
     log "Backend preparation completed ✅"
@@ -124,13 +130,25 @@ compile_contracts() {
         fi
     fi
     
-    cd "$PROJECT_ROOT/contracts"
+    # Use the correct contracts directory
+    CONTRACTS_DIR="$PROJECT_ROOT/enclave/src/blockchain/contracts"
+    BUILD_DIR="$CONTRACTS_DIR/compiled"
+    
+    if [[ ! -d "$CONTRACTS_DIR" ]]; then
+        warning "Contracts directory not found at $CONTRACTS_DIR"
+        return
+    fi
+    
+    cd "$CONTRACTS_DIR"
+    
+    # Create build directory
+    mkdir -p "$BUILD_DIR"
     
     # Compile contracts
     for contract in *.sol; do
         if [[ -f "$contract" ]]; then
             log "Compiling $contract..."
-            solc --bin --abi --optimize "$contract" -o build/
+            solc --bin --abi --optimize "$contract" -o "$BUILD_DIR" --overwrite
         fi
     done
     
@@ -144,10 +162,15 @@ build_docker() {
     
     cd "$PROJECT_ROOT"
     
-    # Build the Docker image
-    docker build -t lottery-enclave:latest -f enclave/Dockerfile .
+    # Build the Docker image with the correct context and name
+    # Use the enclave directory as build context since Dockerfile expects relative paths
+    docker build -t enclave-lottery-app:latest -f enclave/Dockerfile enclave/
+    
+    # Also tag it with the alternate name for compatibility
+    docker tag enclave-lottery-app:latest lottery-enclave:latest
     
     log "Docker image build completed ✅"
+    log "Available tags: enclave-lottery-app:latest, lottery-enclave:latest"
 }
 
 # Create environment file if it doesn't exist
@@ -184,7 +207,7 @@ main() {
     log "Starting build process..."
     
     # Create necessary directories
-    mkdir -p "$PROJECT_ROOT/contracts/build"
+    mkdir -p "$PROJECT_ROOT/enclave/src/blockchain/contracts/compiled"
     mkdir -p "$PROJECT_ROOT/logs"
     mkdir -p "$PROJECT_ROOT/data"
     

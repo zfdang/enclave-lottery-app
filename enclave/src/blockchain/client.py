@@ -11,9 +11,10 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from web3 import Web3
-from web3.middleware import geth_poa_middleware
 from eth_account import Account
 from eth_account.messages import encode_defunct
+
+from .deploy import auto_deploy_contracts
 
 logger = logging.getLogger(__name__)
 
@@ -46,10 +47,6 @@ class BlockchainClient:
         try:
             # Connect to blockchain network
             self.w3 = Web3(Web3.HTTPProvider(self.rpc_url))
-            
-            # Add PoA middleware if needed
-            if self.chain_id != 1:  # Not mainnet
-                self.w3.middleware_onion.inject(geth_poa_middleware, layer=0)
                 
             # Check connection
             if not self.w3.is_connected():
@@ -66,89 +63,27 @@ class BlockchainClient:
             raise
             
     async def _setup_contract(self):
-        """Setup smart contract interaction"""
+        """Setup smart contract interaction with automatic deployment"""
         try:
-            if self.contract_address:
-                # Load existing contract
-                contract_abi = self._load_contract_abi()
-                self.contract = self.w3.eth.contract(
-                    address=self.contract_address,
-                    abi=contract_abi
-                )
-                logger.info(f"Loaded contract at: {self.contract_address}")
-            else:
-                # Deploy new contract
-                await self._deploy_contract()
+            # Use the deployment module to ensure contract is deployed
+            contract_address, contract_abi = await auto_deploy_contracts(
+                self.w3, self.account, self.config
+            )
+            
+            # Create contract instance
+            self.contract = self.w3.eth.contract(
+                address=contract_address,
+                abi=contract_abi
+            )
+            
+            # Update config with deployed contract address
+            if not self.contract_address:
+                self.contract_address = contract_address
+                logger.info(f"Contract setup complete at: {contract_address}")
                 
         except Exception as e:
             logger.error(f"Error setting up contract: {e}")
             # Continue without contract for now
-            
-    def _load_contract_abi(self):
-        """Load contract ABI from compiled artifacts"""
-        try:
-            abi_file = Path(__file__).parent / "contracts" / "compiled" / "Lottery.abi"
-            if abi_file.exists():
-                return json.loads(abi_file.read_text())
-            else:
-                # Return minimal ABI for testing
-                return [
-                    {
-                        "inputs": [
-                            {"name": "drawId", "type": "string"},
-                            {"name": "winner", "type": "address"},
-                            {"name": "winningNumber", "type": "uint256"},
-                            {"name": "totalPot", "type": "uint256"}
-                        ],
-                        "name": "recordDraw",
-                        "outputs": [],
-                        "type": "function"
-                    }
-                ]
-        except Exception as e:
-            logger.error(f"Error loading contract ABI: {e}")
-            return []
-            
-    async def _deploy_contract(self):
-        """Deploy lottery smart contract"""
-        try:
-            # Load contract bytecode
-            bytecode_file = Path(__file__).parent / "contracts" / "compiled" / "Lottery.bin"
-            if not bytecode_file.exists():
-                logger.warning("Contract bytecode not found, skipping deployment")
-                return
-                
-            bytecode = bytecode_file.read_text().strip()
-            abi = self._load_contract_abi()
-            
-            # Create contract instance
-            contract = self.w3.eth.contract(abi=abi, bytecode=bytecode)
-            
-            # Deploy contract
-            transaction = contract.constructor().build_transaction({
-                'from': self.account.address,
-                'nonce': self.w3.eth.get_transaction_count(self.account.address),
-                'gas': 2000000,
-                'gasPrice': self.w3.to_wei('20', 'gwei'),
-            })
-            
-            # Sign and send transaction
-            signed_txn = self.account.sign_transaction(transaction)
-            tx_hash = self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
-            
-            # Wait for transaction receipt
-            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
-            
-            # Create contract instance with deployed address
-            self.contract = self.w3.eth.contract(
-                address=receipt.contractAddress,
-                abi=abi
-            )
-            
-            logger.info(f"Contract deployed at: {receipt.contractAddress}")
-            
-        except Exception as e:
-            logger.error(f"Error deploying contract: {e}")
             
     async def verify_transaction(self, tx_hash: str, user_address: str, amount: float) -> bool:
         """Verify a user's bet transaction"""

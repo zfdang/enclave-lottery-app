@@ -31,11 +31,11 @@ class LotteryDemo:
         }
         
         self.users = [
-            {'name': 'Alice', 'address': '0x1111111111111111111111111111111111111111'},
-            {'name': 'Bob', 'address': '0x2222222222222222222222222222222222222222'},
-            {'name': 'Charlie', 'address': '0x3333333333333333333333333333333333333333'},
-            {'name': 'Diana', 'address': '0x4444444444444444444444444444444444444444'},
-            {'name': 'Eve', 'address': '0x5555555555555555555555555555555555555555'}
+            {'name': 'Alice', 'address': '0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc'},
+            {'name': 'Bob', 'address': '0x976EA74026E726554dB657fA54763abd0C3a0aa9'},
+            {'name': 'Charlie', 'address': '0x14dC79964da2C08b23698B3D3cc7Ca32193d9955'},
+            {'name': 'Diana', 'address': '0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f'},
+            {'name': 'Eve', 'address': '0xa0Ee7A142d267C1f36714E4a8F75612F20a79720'}
         ]
         
     def print_header(self, title):
@@ -59,7 +59,8 @@ class LotteryDemo:
         print("2) 🎮 Interactive Demo - Step-by-step guided experience") 
         print("3) 🔬 Technical Demo - Detailed system analysis")
         print("4) 🌐 Web Demo - Launch web interface (if available)")
-        print("5) ❌ Exit")
+        print("5) 🐳 Docker Demo - Real enclave container environment")
+        print("6) ❌ Exit")
         print()
     
     async def quick_demo(self):
@@ -324,12 +325,177 @@ class LotteryDemo:
             print("❌ Web interface not available")
             print("   The web demo is currently in development")
     
+    def docker_demo(self):
+        """Launch real Docker enclave container demo"""
+        self.print_header("Docker Demo - Real Enclave Container")
+        print("🐳 Starting real Docker enclave environment...")
+        
+        try:
+            # Check if Docker is available
+            print("🔍 Checking Docker availability...")
+            result = subprocess.run(["docker", "--version"], 
+                                  capture_output=True, text=True, check=True)
+            print(f"   ✅ {result.stdout.strip()}")
+            
+            # Check if we need to build the image
+            print("\n🔨 Checking enclave Docker image...")
+            image_check = subprocess.run(["docker", "images", "-q", "enclave-lottery-app"], 
+                                       capture_output=True, text=True)
+            
+            if not image_check.stdout.strip():
+                print("   📦 Building enclave Docker image (this may take a few minutes)...")
+                build_result = subprocess.run(
+                    ["docker", "build", "-t", "enclave-lottery-app", "./enclave"],
+                    cwd=PROJECT_ROOT,
+                    check=True
+                )
+                print("   ✅ Docker image built successfully")
+            else:
+                print("   ✅ Docker image already exists")
+            
+            # Stop any existing container
+            print("\n🧹 Cleaning up any existing containers...")
+            subprocess.run(["docker", "stop", "enclave-demo"], 
+                         capture_output=True, text=True)
+            subprocess.run(["docker", "rm", "enclave-demo"], 
+                         capture_output=True, text=True)
+            
+            # Start the enclave container
+            print("\n🚀 Starting enclave container...")
+            container_cmd = [
+                "docker", "run", "-d", 
+                "--name", "enclave-demo",
+                "-p", "8081:8080",  # Use port 8081 to avoid conflicts
+                "--add-host", "host.docker.internal:host-gateway",  # Allow access to host
+                "-e", "BLOCKCHAIN_RPC_URL=http://host.docker.internal:8545",   # Connect to host blockchain
+                "enclave-lottery-app"
+            ]
+            
+            subprocess.run(container_cmd, check=True, cwd=PROJECT_ROOT)
+            print("   ✅ Container started successfully")
+            
+            # Wait for container to be ready
+            print("\n⏳ Waiting for enclave to initialize...")
+            import time
+            for i in range(30):  # Wait up to 30 seconds
+                time.sleep(1)
+                try:
+                    health_check = subprocess.run(
+                        ["curl", "-s", "http://localhost:8081/api/status"],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    if health_check.returncode == 0:
+                        print("   ✅ Enclave is ready!")
+                        break
+                except subprocess.TimeoutExpired:
+                    pass
+                print(f"   ⏳ Waiting... ({i+1}/30)")
+            else:
+                print("   ⚠️  Enclave might still be starting up")
+            
+            # Show container status
+            print("\n📊 Container Status:")
+            subprocess.run(["docker", "ps", "--filter", "name=enclave-demo"], check=True)
+            
+            # Show available endpoints
+            print("\n🌐 Available Endpoints:")
+            print("   • Web Interface: http://localhost:8081")
+            print("   • API Status: http://localhost:8081/api/status") 
+            print("   • Current Draw: http://localhost:8081/api/draw/current")
+            print("   • Draw History: http://localhost:8081/api/draw/history")
+            
+            # Interactive demo options
+            print("\n🎮 Demo Options:")
+            print("1. Open web interface in browser")
+            print("2. Run API demonstration") 
+            print("3. View container logs")
+            print("4. Stop and cleanup")
+            
+            while True:
+                demo_choice = input("\nSelect option (1-4): ").strip()
+                
+                if demo_choice == '1':
+                    print("🌐 Opening web interface...")
+                    try:
+                        # Try to open browser (works on most systems)
+                        subprocess.run(["python3", "-c", 
+                                      "import webbrowser; webbrowser.open('http://localhost:8081')"])
+                        print("   ✅ Browser should open shortly")
+                    except:
+                        print("   ℹ️  Please manually open: http://localhost:8081")
+                    
+                elif demo_choice == '2':
+                    self._run_api_demo()
+                    
+                elif demo_choice == '3':
+                    print("\n📋 Container Logs (last 20 lines):")
+                    subprocess.run(["docker", "logs", "--tail", "20", "enclave-demo"])
+                    
+                elif demo_choice == '4':
+                    break
+                else:
+                    print("❌ Invalid choice. Please select 1-4.")
+            
+            # Cleanup
+            print("\n🧹 Stopping and cleaning up container...")
+            subprocess.run(["docker", "stop", "enclave-demo"], check=True)
+            subprocess.run(["docker", "rm", "enclave-demo"], check=True)
+            print("   ✅ Cleanup complete")
+            
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Docker command failed: {e}")
+            print("   Please ensure Docker is installed and running")
+        except KeyboardInterrupt:
+            print("\n🛑 Docker demo interrupted by user")
+            print("🧹 Cleaning up...")
+            subprocess.run(["docker", "stop", "enclave-demo"], 
+                         capture_output=True, text=True)
+            subprocess.run(["docker", "rm", "enclave-demo"], 
+                         capture_output=True, text=True)
+        except Exception as e:
+            print(f"❌ Error during Docker demo: {e}")
+    
+    def _run_api_demo(self):
+        """Run API demonstration against the Docker container"""
+        print("\n🔧 API Demonstration:")
+        
+        api_tests = [
+            ("System Status", "http://localhost:8081/api/status"),
+            ("Current Draw", "http://localhost:8081/api/draw/current"), 
+            ("Draw History", "http://localhost:8081/api/draw/history"),
+            ("User Statistics", "http://localhost:8081/api/users/stats")
+        ]
+        
+        for test_name, url in api_tests:
+            try:
+                print(f"\n📡 Testing {test_name}...")
+                result = subprocess.run(
+                    ["curl", "-s", url], 
+                    capture_output=True, text=True, timeout=10
+                )
+                if result.returncode == 0:
+                    try:
+                        # Try to format JSON nicely
+                        import json
+                        data = json.loads(result.stdout)
+                        formatted = json.dumps(data, indent=2)
+                        print(f"   ✅ Response:")
+                        print(f"   {formatted}")
+                    except:
+                        print(f"   ✅ Response: {result.stdout}")
+                else:
+                    print(f"   ❌ Failed to connect")
+            except subprocess.TimeoutExpired:
+                print(f"   ⏰ Request timed out")
+            except Exception as e:
+                print(f"   ❌ Error: {e}")
+    
     async def run(self):
         """Main demo runner with interactive menu"""
         while True:
             try:
                 self.print_menu()
-                choice = input("Please select (1-5): ").strip()
+                choice = input("Please select (1-6): ").strip()
                 
                 if choice == '1':
                     await self.quick_demo()
@@ -340,12 +506,14 @@ class LotteryDemo:
                 elif choice == '4':
                     self.web_demo()
                 elif choice == '5':
+                    self.docker_demo()
+                elif choice == '6':
                     print("\n👋 Thank you for trying the Lottery System Demo!")
                     break
                 else:
-                    print("❌ Invalid selection. Please choose 1-5.")
+                    print("❌ Invalid selection. Please choose 1-6.")
                 
-                if choice in ['1', '2', '3']:
+                if choice in ['1', '2', '3', '4', '5']:
                     try:
                         input("\n👆 Press Enter to return to main menu...")
                     except EOFError:

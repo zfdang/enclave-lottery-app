@@ -7,7 +7,7 @@ echo "Building Lottery Enclave Application..."
 
 # Configuration
 ENCLAVE_NAME="lottery-enclave"
-DOCKER_IMAGE_NAME="lottery-app"
+DOCKER_IMAGE_NAME="enclave-lottery-app"
 EIF_FILE="lottery.eif"
 CPU_COUNT=2
 MEMORY_SIZE=1024
@@ -53,16 +53,14 @@ check_nitro_support() {
 # Build Docker image
 build_docker_image() {
     print_status "Building Docker image..."
-    # Build the Docker image.
-    # Compute repository root (directory above this script) so we can
-    # reliably pass it as the build context regardless of the current PWD.
+    # Build the Docker image using the enclave directory as build context
+    # This matches the approach used in build_docker.sh for consistency
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 
-    # Because the Dockerfile references paths like `enclave/...` relative to the
-    # repository root, pass the repo root as the build context and explicitly
-    # point to the Dockerfile inside the enclave directory.
-    docker build -t ${DOCKER_IMAGE_NAME}:latest -f "$REPO_ROOT/enclave/Dockerfile" "$REPO_ROOT"
+    # Use enclave directory as build context since Dockerfile expects relative paths
+    cd "$REPO_ROOT"
+    docker build -t ${DOCKER_IMAGE_NAME}:latest -f enclave/Dockerfile enclave/
     
     if [ $? -eq 0 ]; then
         print_status "Docker image built successfully: ${DOCKER_IMAGE_NAME}:latest"

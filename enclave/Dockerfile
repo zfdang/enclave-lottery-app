@@ -11,18 +11,18 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy requirements and install Python dependencies
-COPY enclave/requirements.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application source code
-COPY enclave/src/ ./src/
+COPY src/ ./src/
 
 # Create necessary directories
 RUN mkdir -p ./src/frontend/dist
 RUN mkdir -p ./src/blockchain/contracts/compiled
 
 # Copy smart contracts
-COPY enclave/src/blockchain/contracts/ ./src/blockchain/contracts/
+COPY src/blockchain/contracts/ ./src/blockchain/contracts/
 
 # Create non-root user for security
 RUN groupadd -r lottery && useradd -r -g lottery lottery
