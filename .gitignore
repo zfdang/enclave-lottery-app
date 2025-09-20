@@ -44,6 +44,7 @@ enclave/web_server.log
 
 # Contracts build
 contracts/build/
+enclave/src/blockchain/contracts/compiled/
 
 # Misc
 coverage/
