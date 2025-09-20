@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.env.*
+
+# Node / Frontend
+node_modules/
+.enclave/node_modules/
+enclave/node_modules/
+enclave/src/frontend/node_modules/
+.enclave/package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Vite/Build
+.enclave/dist/
+enclave/src/frontend/dist/
+enclave/src/frontend/.vite/
+*.local
+
+# Logs
+logs/
+*.log
+*.log.*
+web_server.log
+enclave/server.log
+enclave/web_server.log
+
+# OS/Editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Docker/Compose
+.docker/
+*.eif
+
+# Contracts build
+contracts/build/
+
+# Misc
+coverage/
+.cache/
+**/__pycache__/
