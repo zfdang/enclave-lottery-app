@@ -95,10 +95,11 @@ The application provides multiple demonstration environments:
    ```
 
 4. **Build the application**
-  ```bash
-  # Build Docker images and compile contracts
-  ./scripts/build_docker.sh
-  ```
+   ```bash
+   ```bash
+   # Build Docker images and compile contracts
+   ./scripts/build_docker.sh
+   ```
 
 5. **Build enclave (for production)**
    ```bash
@@ -114,17 +115,6 @@ The application provides multiple demonstration environments:
    # Or run specific components
    ./scripts/comprehensive_demo.sh    # Web-based comprehensive demo
    ```
-
-## 🔗 Useful links
-
-- Demo guide: `DEMO_GUIDE.md`
-- Deployment instructions: `docs/deployment.md`
-- Architecture overview: `docs/architecture.md`
-- Security documentation: `docs/security.md`
-
-## Contributing
-
-If you'd like to contribute, please open an issue or submit a pull request. For large changes, open an issue first to discuss the design. Keep contributions focused and include tests where applicable.
 
 ### Quick Demo Examples
 
