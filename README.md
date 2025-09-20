@@ -211,7 +211,6 @@ enclave-lottery-app/
 
 ## 🔧 Configuration
 
-> 📖 **完整配置指南**: 请参阅 [docs/CONFIG.md](docs/CONFIG.md) 获取详细的配置管理文档。  
 > 📖 **Complete Configuration Guide**: See [docs/CONFIG.md](docs/CONFIG.md) for comprehensive configuration management documentation.
 
 ### Quick Configuration Setup
@@ -237,36 +236,35 @@ nano .env
 Example `.env` configuration:
 
 ```bash
-# Blockchain Configuration (标准化环境变量)
-ETHEREUM_RPC_URL=http://localhost:8545       # 以太坊 RPC 地址
-CHAIN_ID=31337                               # 链 ID (31337 for Anvil/Hardhat)
+# Blockchain Configuration (standardized environment variables)
+ETHEREUM_RPC_URL=http://localhost:8545       # Ethereum RPC URL
+CHAIN_ID=31337                               # Chain ID (31337 for Anvil/Hardhat)
 PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 CONTRACT_ADDRESS=0x5FbDB2315678afecb367f032d93F642f64180aa3
 
-# Server Configuration (服务器配置)
-SERVER_HOST=localhost                        # 服务器地址
-SERVER_PORT=8080                             # 服务器端口
+# Server Configuration
+SERVER_HOST=localhost                        # Server bind address
+SERVER_PORT=8080                             # Server port
 
-# Lottery Configuration (彩票配置)
+# Lottery Configuration
 LOTTERY_DRAW_INTERVAL_MINUTES=5              # 开奖间隔 (分钟)
 LOTTERY_BETTING_CUTOFF_MINUTES=1             # 投注截止时间 (分钟)
 LOTTERY_SINGLE_BET_AMOUNT=0.01               # 单注金额 (ETH)
 LOTTERY_MAX_BETS_PER_USER=10                 # 每用户最大投注数
 
-# Enclave Configuration (Enclave 配置)
+# Enclave Configuration
 ENCLAVE_VSOCK_PORT=5005                      # VSock 端口
 ENCLAVE_ATTESTATION_ENABLED=false            # 启用认证 (生产环境设为 true)
 
-# Frontend Configuration (前端配置)
+# Frontend Configuration
 REACT_APP_API_URL=http://localhost:8080
 REACT_APP_WEBSOCKET_URL=ws://localhost:8080/ws
 ```
 
-**重要提醒 (Important Notes):**
-- ⚠️ **从不**将真实私钥提交到 Git 仓库
-- ⚠️ **Never** commit real private keys to Git repositories
-- 🔒 生产环境请使用密钥管理服务 (Use secret management services in production)
-- 📋 支持旧环境变量名以保持向后兼容 (Legacy variable names supported for backward compatibility)
+**Important Notes:**
+- ⚠️ Never commit real private keys to Git repositories
+- 🔒 Use secret management services in production
+- 📋 Legacy environment variable names are still supported for backward compatibility
 
 ### Configuration Migration
 
