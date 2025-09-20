@@ -157,6 +157,11 @@ class LotteryDemo:
                 
                 winning_probability = winner_tickets / final_draw_info['total_tickets']
                 print(f"   Winning probability: {winning_probability:.2%}")
+            
+            # Complete draw cycle and add to history
+            cycle_result = engine.complete_draw_and_start_next()
+            if cycle_result:
+                print(f"✅ Draw completed and added to history")
         else:
             print(f"\n❌ Draw failed or no participants")
         
@@ -266,6 +271,11 @@ class LotteryDemo:
             print(f"🏆 WINNER: {winner_name}!")
             print(f"   Prize: {winner_info['total_pot']} ETH")
             print(f"   Winning number: {winner_info['winning_number']}")
+            
+            # Complete draw cycle and add to history
+            cycle_result = engine.complete_draw_and_start_next()
+            if cycle_result:
+                print(f"✅ Draw completed and added to history")
         
         print("\n🎉 Interactive demo complete!")
     

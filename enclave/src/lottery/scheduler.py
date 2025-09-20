@@ -80,7 +80,7 @@ class LotteryScheduler:
             await self._conduct_draw()
             
     async def _conduct_draw(self):
-        """Conduct the lottery draw"""
+        """Conduct the lottery draw and automatically start next cycle"""
         try:
             # Conduct draw using lottery engine
             result = self.lottery_engine.conduct_draw()
@@ -89,11 +89,18 @@ class LotteryScheduler:
                 # Record result on blockchain
                 await self._record_draw_on_blockchain(result)
                 
-                # Complete current draw and prepare for next
-                self.lottery_engine.complete_draw()
+                # Complete current draw and automatically start next draw cycle
+                # This implements steps 5-6 of the lottery cycle:
+                # 5. Save to history and blockchain
+                # 6. Clear state and start new draw
+                cycle_result = self.lottery_engine.complete_draw_and_start_next()
                 
-                # Create next draw
-                self.lottery_engine.current_draw = self.lottery_engine.create_new_draw()
+                if cycle_result:
+                    logger.info(f"Draw cycle completed successfully. "
+                              f"Completed: {cycle_result['completed_draw']['draw_id']}, "
+                              f"New draw: {cycle_result['new_draw']['draw_id']}")
+                else:
+                    logger.error("Failed to start new draw cycle")
                 
                 logger.info(f"Draw completed successfully: {result}")
             else:

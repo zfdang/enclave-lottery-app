@@ -247,6 +247,48 @@ class LotteryEngine:
             logger.info(f"Draw {self.current_draw.draw_id} moved to history")
             self.current_draw = None
             
+    def complete_draw_and_start_next(self):
+        """
+        Complete current draw cycle and automatically start next one.
+        
+        This implements the 6-step lottery cycle:
+        1. ✓ Draw was started (already active)
+        2. ✓ Countdown shown, people bet, info displayed (handled by frontend)
+        3. ✓ Betting closed when time reached (handled by scheduler)
+        4. ✓ Draw conducted, winner determined (already completed)
+        5. Save to history and blockchain (this method)
+        6. Clear state and start new draw (this method)
+        """
+        if not self.current_draw:
+            logger.warning("No current draw to complete")
+            return None
+            
+        # Save completed draw info before clearing
+        completed_draw_info = {
+            "draw_id": self.current_draw.draw_id,
+            "draw_time": self.current_draw.draw_time.isoformat(),
+            "total_pot": str(self.current_draw.total_pot),
+            "winner": self.current_draw.winner_address,
+            "winning_number": self.current_draw.winning_number,
+            "participants": len(self.current_draw.bets),
+            "total_tickets": self.current_draw.total_tickets,
+            "status": self.current_draw.status.value
+        }
+        
+        # Step 5: Save to history (blockchain recording handled by scheduler)
+        self.complete_draw()
+        
+        # Step 6: Clear state and start new draw automatically
+        logger.info("Starting new lottery draw cycle")
+        self.current_draw = self.create_new_draw()
+        
+        logger.info(f"Completed draw cycle. New draw started: {self.current_draw.draw_id}")
+        
+        return {
+            "completed_draw": completed_draw_info,
+            "new_draw": self.get_current_draw_info()
+        }
+            
     def get_current_draw_info(self) -> Optional[Dict]:
         """Get current draw information"""
         if not self.current_draw:
