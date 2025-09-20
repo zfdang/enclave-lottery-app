@@ -53,7 +53,7 @@ class LotteryWebServer:
             allow_methods=["*"],
             allow_headers=["*"],
         )
-        
+
     def setup_static_files(self):
         """Setup static file serving for frontend"""
         frontend_dist = Path(__file__).parent / "frontend" / "dist"
@@ -62,8 +62,7 @@ class LotteryWebServer:
             assets_dir = frontend_dist / "assets"
             if assets_dir.exists():
                 self.app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
-            
-            # Mount the dist directory for other static files (icons, etc.)
+            # Mount the dist directory for other static files (icons, etc.) under /static
             self.app.mount("/static", StaticFiles(directory=str(frontend_dist)), name="static")
             
     def setup_routes(self):
@@ -77,41 +76,7 @@ class LotteryWebServer:
                 return HTMLResponse(content=frontend_file.read_text())
             return HTMLResponse(content="<h1>Lottery Enclave - Frontend not built</h1>")
             
-        @self.app.get("/{file_path:path}")
-        async def serve_static_files(file_path: str):
-            """Serve static files from frontend dist directory"""
-            # Only serve files that don't start with 'api'
-            if file_path.startswith('api'):
-                raise HTTPException(status_code=404, detail="Not found")
-                
-            frontend_dist = Path(__file__).parent / "frontend" / "dist"
-            file_full_path = frontend_dist / file_path
-            
-            # Security check: ensure file is within the dist directory
-            try:
-                file_full_path.resolve().relative_to(frontend_dist.resolve())
-            except ValueError:
-                raise HTTPException(status_code=404, detail="Not found")
-                
-            if file_full_path.exists() and file_full_path.is_file():
-                # Determine content type
-                content_type = "text/plain"
-                if file_path.endswith('.js'):
-                    content_type = "application/javascript"
-                elif file_path.endswith('.css'):
-                    content_type = "text/css"
-                elif file_path.endswith('.svg'):
-                    content_type = "image/svg+xml"
-                elif file_path.endswith('.png'):
-                    content_type = "image/png"
-                elif file_path.endswith('.jpg') or file_path.endswith('.jpeg'):
-                    content_type = "image/jpeg"
-                    
-                with open(file_full_path, 'rb') as f:
-                    content = f.read()
-                return Response(content=content, media_type=content_type)
-            
-            raise HTTPException(status_code=404, detail="Not found")
+        # Note: Catch-all SPA/static route must be registered AFTER API routes
             
         @self.app.get("/api/health")
         async def health_check():
@@ -139,15 +104,23 @@ class LotteryWebServer:
                 if not current_draw:
                     raise HTTPException(status_code=404, detail="No active draw")
                     
+                now = datetime.utcnow()
+                lottery_cfg = self.config.get('lottery', {}) if hasattr(self, 'config') else {}
+                minimum_interval_minutes = lottery_cfg.get('minimum_interval_minutes', 3)
+                draw_interval_minutes = lottery_cfg.get('draw_interval_minutes', 10)
+
                 return {
                     "draw_id": current_draw.draw_id,
                     "start_time": current_draw.start_time.isoformat(),
                     "end_time": current_draw.end_time.isoformat(),
                     "draw_time": current_draw.draw_time.isoformat(),
-                    "status": current_draw.status,
+                    "status": current_draw.status.value if hasattr(current_draw.status, 'value') else str(current_draw.status),
                     "total_pot": str(current_draw.total_pot),
                     "participants": len(current_draw.bets),
-                    "time_remaining": max(0, (current_draw.draw_time - datetime.utcnow()).total_seconds())
+                    "time_remaining": max(0, (current_draw.draw_time - now).total_seconds()),
+                    "betting_time_remaining": max(0, (current_draw.end_time - now).total_seconds()),
+                    "minimum_interval_minutes": minimum_interval_minutes,
+                    "draw_interval_minutes": draw_interval_minutes,
                 }
             except Exception as e:
                 logger.error(f"Error getting current draw: {e}")
@@ -281,6 +254,47 @@ class LotteryWebServer:
                 logger.error(f"WebSocket error: {e}")
                 if websocket in self.websocket_connections:
                     self.websocket_connections.remove(websocket)
+
+        # Catch-all route for SPA and static files at root paths (non-API)
+        @self.app.get("/{file_path:path}")
+        async def serve_static_files(file_path: str):
+            """Serve static files from frontend dist directory or fallback to index.html for SPA routes"""
+            # Do not intercept API routes
+            if file_path.startswith('api'):
+                raise HTTPException(status_code=404, detail="Not found")
+
+            frontend_dist = Path(__file__).parent / "frontend" / "dist"
+            file_full_path = frontend_dist / file_path
+
+            # Security check: ensure file is within the dist directory
+            try:
+                file_full_path.resolve().relative_to(frontend_dist.resolve())
+            except ValueError:
+                raise HTTPException(status_code=404, detail="Not found")
+
+            if file_full_path.exists() and file_full_path.is_file():
+                # Determine content type
+                content_type = "text/plain"
+                if file_path.endswith('.js'):
+                    content_type = "application/javascript"
+                elif file_path.endswith('.css'):
+                    content_type = "text/css"
+                elif file_path.endswith('.svg'):
+                    content_type = "image/svg+xml"
+                elif file_path.endswith('.png'):
+                    content_type = "image/png"
+                elif file_path.endswith('.jpg') or file_path.endswith('.jpeg'):
+                    content_type = "image/jpeg"
+
+                with open(file_full_path, 'rb') as f:
+                    content = f.read()
+                return Response(content=content, media_type=content_type)
+
+            # SPA fallback to index.html
+            index_file = frontend_dist / "index.html"
+            if index_file.exists():
+                return HTMLResponse(content=index_file.read_text())
+            raise HTTPException(status_code=404, detail="Not found")
                     
     async def broadcast_update(self, message: Dict):
         """Broadcast update to all connected WebSocket clients"""

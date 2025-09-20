@@ -4,6 +4,7 @@ Lottery Engine - Core lottery logic and game state management
 
 import asyncio
 import logging
+import math
 import secrets
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -69,9 +70,12 @@ class LotteryEngine:
         self.activities: List[Activity] = []
         self.next_ticket_number = 1
         
-        # Configuration
-        self.draw_interval_hours = config.get('lottery', {}).get('draw_interval_hours', 1)
-        self.betting_cutoff_minutes = config.get('lottery', {}).get('betting_cutoff_minutes', 1)
+        # Configuration (minutes-based only)
+        lot_cfg = config.get('lottery', {})
+        # Use minutes exclusively with a sensible default
+        self.draw_interval_minutes = lot_cfg.get('draw_interval_minutes', 10)
+        self.minimum_interval_minutes = lot_cfg.get('minimum_interval_minutes', 3)
+        self.betting_cutoff_minutes = lot_cfg.get('betting_cutoff_minutes', 1)
         self.single_bet_amount = Decimal(str(config.get('lottery', {}).get('single_bet_amount', '0.01')))
         
     def create_new_draw(self) -> LotteryDraw:
@@ -80,8 +84,22 @@ class LotteryEngine:
         draw_id = f"draw_{int(now.timestamp())}"
         
         # Calculate draw times
+        # Rules:
+        # 1) Minimum duration: total duration must be at least minimum_interval_minutes
+        # 2) Maximum duration: total duration should be shorter than draw_interval_minutes * 2
+        # 3) Slot alignment: draw_time minutes must be divisible by draw_interval_minutes (wall-clock slots), seconds=0
         start_time = now
-        draw_time = start_time + timedelta(hours=self.draw_interval_hours)
+        # Earliest acceptable time based on rule (1)
+        earliest = start_time + timedelta(minutes=self.minimum_interval_minutes)
+
+        # Align to next slot boundary at or after 'earliest'
+        dt = earliest.replace(second=0, microsecond=0)
+        delta = math.ceil(dt.minute * 1.0 / self.draw_interval_minutes) * self.draw_interval_minutes - dt.minute
+        dt += timedelta(minutes=delta)
+        
+        draw_time = dt
+
+        # Betting cutoff remains relative to draw_time
         end_time = draw_time - timedelta(minutes=self.betting_cutoff_minutes)
         
         draw = LotteryDraw(
@@ -91,7 +109,6 @@ class LotteryEngine:
             draw_time=draw_time,
             status=DrawStatus.BETTING
         )
-        
         logger.info(f"Created new draw: {draw_id}, betting ends at {end_time}, draw at {draw_time}")
         return draw
         
@@ -246,7 +263,9 @@ class LotteryEngine:
             "participants": len(self.current_draw.bets),
             "total_tickets": self.current_draw.total_tickets,
             "time_remaining": max(0, (self.current_draw.draw_time - now).total_seconds()),
-            "betting_time_remaining": max(0, (self.current_draw.end_time - now).total_seconds())
+            "betting_time_remaining": max(0, (self.current_draw.end_time - now).total_seconds()),
+            "minimum_interval_minutes": int(self.minimum_interval_minutes),
+            "draw_interval_minutes": int(self.draw_interval_minutes),
         }
         
     def get_draw_history(self, limit: int = 10) -> List[Dict]:

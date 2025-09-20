@@ -11,6 +11,8 @@ interface CurrentDraw {
   participants: number
   time_remaining: number
   betting_time_remaining: number
+  minimum_interval_minutes?: number
+  draw_interval_minutes?: number
 }
 
 interface LotteryState {

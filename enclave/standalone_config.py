@@ -19,7 +19,7 @@ async def main():
     # Test configuration
     config = {
         'lottery': {
-            'draw_interval_hours': 1,
+            'draw_interval_minutes': 10,
             'betting_cutoff_minutes': 1,
             'single_bet_amount': '0.01'
         },

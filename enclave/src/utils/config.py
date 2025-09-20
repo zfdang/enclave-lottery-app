@@ -19,7 +19,8 @@ def load_config() -> Dict[str, Any]:
             'port': 8080
         },
         'lottery': {
-            'draw_interval_hours': 1,
+            'draw_interval_minutes': 10,
+            'minimum_interval_minutes': 3,
             'betting_cutoff_minutes': 1,
             'single_bet_amount': '0.01',
             'max_bets_per_user': 100
@@ -62,9 +63,11 @@ def _apply_env_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
     if os.getenv('LOTTERY_SERVER_PORT'):
         config['server']['port'] = int(os.getenv('LOTTERY_SERVER_PORT'))
     
-    # Lottery configuration
-    if os.getenv('LOTTERY_DRAW_INTERVAL_HOURS'):
-        config['lottery']['draw_interval_hours'] = int(os.getenv('LOTTERY_DRAW_INTERVAL_HOURS'))
+    # Lottery configuration (minutes-only)
+    if os.getenv('LOTTERY_DRAW_INTERVAL_MINUTES'):
+        config['lottery']['draw_interval_minutes'] = int(os.getenv('LOTTERY_DRAW_INTERVAL_MINUTES'))
+    if os.getenv('LOTTERY_MINIMUM_INTERVAL_MINUTES'):
+        config['lottery']['minimum_interval_minutes'] = int(os.getenv('LOTTERY_MINIMUM_INTERVAL_MINUTES'))
     if os.getenv('LOTTERY_BETTING_CUTOFF_MINUTES'):
         config['lottery']['betting_cutoff_minutes'] = int(os.getenv('LOTTERY_BETTING_CUTOFF_MINUTES'))
     if os.getenv('LOTTERY_SINGLE_BET_AMOUNT'):

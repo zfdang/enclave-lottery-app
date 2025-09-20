@@ -21,23 +21,33 @@ const LotteryTimer: React.FC = () => {
   const [timeRemaining, setTimeRemaining] = useState<TimeRemaining>({ hours: 0, minutes: 0, seconds: 0 })
   const [bettingTimeRemaining, setBettingTimeRemaining] = useState<TimeRemaining>({ hours: 0, minutes: 0, seconds: 0 })
 
+  // Robust UTC parser: if no timezone is present, treat as UTC by appending 'Z'
+  const parseUtcMillis = (iso: string | undefined | null): number => {
+    if (!iso) return NaN
+    const s = String(iso)
+    const hasTZ = /[Zz]|[+-]\d{2}:\d{2}$/.test(s)
+    return new Date(hasTZ ? s : `${s}Z`).getTime()
+  }
+
   useEffect(() => {
     if (!currentDraw) return
 
     const updateTimers = () => {
-      const now = new Date().getTime()
-      const drawTime = new Date(currentDraw.draw_time).getTime()
-      const endTime = new Date(currentDraw.end_time).getTime()
+      const now = Date.now()
+      const drawTime = parseUtcMillis(currentDraw.draw_time)
+      const endTime = parseUtcMillis(currentDraw.end_time)
 
       // Calculate time remaining until draw
-      const drawDiff = Math.max(0, drawTime - now)
+      const drawDiffRaw = drawTime - now
+      const drawDiff = Number.isNaN(drawDiffRaw) ? 0 : Math.max(0, drawDiffRaw)
       const drawHours = Math.floor(drawDiff / (1000 * 60 * 60))
       const drawMinutes = Math.floor((drawDiff % (1000 * 60 * 60)) / (1000 * 60))
       const drawSeconds = Math.floor((drawDiff % (1000 * 60)) / 1000)
       setTimeRemaining({ hours: drawHours, minutes: drawMinutes, seconds: drawSeconds })
 
       // Calculate time remaining for betting
-      const bettingDiff = Math.max(0, endTime - now)
+      const bettingDiffRaw = endTime - now
+      const bettingDiff = Number.isNaN(bettingDiffRaw) ? 0 : Math.max(0, bettingDiffRaw)
       const bettingHours = Math.floor(bettingDiff / (1000 * 60 * 60))
       const bettingMinutes = Math.floor((bettingDiff % (1000 * 60 * 60)) / (1000 * 60))
       const bettingSeconds = Math.floor((bettingDiff % (1000 * 60)) / 1000)
@@ -82,9 +92,10 @@ const LotteryTimer: React.FC = () => {
 
   const getTotalTimeSeconds = () => {
     if (!currentDraw) return 0
-    const start = new Date(currentDraw.start_time).getTime()
-    const end = new Date(currentDraw.draw_time).getTime()
-    return (end - start) / 1000
+    const start = parseUtcMillis(currentDraw.start_time)
+    const end = parseUtcMillis(currentDraw.draw_time)
+    const diff = end - start
+    return Number.isNaN(diff) ? 0 : diff / 1000
   }
 
   const getRemainingTimeSeconds = () => {
@@ -157,8 +168,12 @@ const LotteryTimer: React.FC = () => {
         </Grid>
       </Grid>
 
-  {/* Betting cutoff reminder */}
-      {currentDraw.status === 'betting' && bettingTimeRemaining.hours === 0 && bettingTimeRemaining.minutes < 10 && (
+  {/* Betting cutoff reminder: only show when time until draw < minimum_interval_minutes */}
+      {currentDraw.status === 'betting' && (() => {
+        const minMin = (currentDraw as any).minimum_interval_minutes ?? 3
+        const secsUntilDraw = timeRemaining.hours * 3600 + timeRemaining.minutes * 60 + timeRemaining.seconds
+        return secsUntilDraw > 0 && secsUntilDraw < minMin * 60
+      })() && (
         <Box mb={2} sx={{ 
           p: 1, 
           bgcolor: 'rgba(255, 152, 0, 0.2)', 

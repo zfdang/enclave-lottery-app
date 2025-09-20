@@ -74,20 +74,23 @@ const ActivityFeed: React.FC = () => {
         const now = new Date()
         const drawTime = new Date(currentDraw.draw_time)
         const endTime = new Date(currentDraw.end_time)
-        const timeToEnd = endTime.getTime() - now.getTime()
-        const timeToClose = endTime.getTime() - now.getTime()
+        const secsUntilDraw = Math.floor((drawTime.getTime() - now.getTime()) / 1000)
+        const msUntilClose = endTime.getTime() - now.getTime()
+        const minMin = (currentDraw as any).minimum_interval_minutes ?? 3
 
-        if (timeToEnd <= 5 * 60 * 1000 && timeToEnd > 4 * 60 * 1000) { // 5 minutes reminder
-          addSystemMessage('⏰ 5 minutes left before betting closes!')
-        } else if (timeToEnd <= 1 * 60 * 1000 && timeToEnd > 0) { // 1 minute reminder
-          addSystemMessage('🚨 Betting closes in 1 minute!')
-        } else if (timeToClose <= 0) {
+        if (secsUntilDraw > 0 && secsUntilDraw < minMin * 60) {
+          // Compose a friendly countdown to betting close (endTime)
+          const mins = Math.floor(msUntilClose / 60000)
+          const secs = Math.max(0, Math.floor((msUntilClose % 60000) / 1000))
+          const label = mins >= 1 ? `${mins} minute${mins !== 1 ? 's' : ''}` : `${secs} seconds`
+          addSystemMessage(`⚠️ Betting closes in ${label}!`)
+        } else if (msUntilClose <= 0) {
           addSystemMessage('🔒 Betting closed, awaiting draw...')
         }
       }
     }
 
-  // Check once per minute
+    // Check once per minute
     const systemInterval = setInterval(checkDrawTime, 60000)
   checkDrawTime() // initial check
 
