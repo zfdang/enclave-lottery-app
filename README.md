@@ -211,29 +211,74 @@ enclave-lottery-app/
 
 ## 🔧 Configuration
 
+> 📖 **完整配置指南**: 请参阅 [docs/CONFIG.md](docs/CONFIG.md) 获取详细的配置管理文档。  
+> 📖 **Complete Configuration Guide**: See [docs/CONFIG.md](docs/CONFIG.md) for comprehensive configuration management documentation.
+
+### Quick Configuration Setup
+
+The application uses a **three-tier configuration system** with the following priority (highest to lowest):
+
+1. **Environment Variables** (highest priority)
+2. **Configuration File** (`enclave/config/enclave.conf`) 
+3. **Hardcoded Defaults** (lowest priority)
+
 ### Environment Variables
 
-The application uses a `.env` file for configuration (automatically created by setup script):
+Copy the template and customize for your environment:
 
 ```bash
-# Ethereum Configuration  
-ETHEREUM_RPC_URL=http://localhost:8545       # Local blockchain URL
+# Copy template to create your configuration
+cp .env.example .env
+
+# Edit with your actual values
+nano .env
+```
+
+Example `.env` configuration:
+
+```bash
+# Blockchain Configuration (标准化环境变量)
+ETHEREUM_RPC_URL=http://localhost:8545       # 以太坊 RPC 地址
+CHAIN_ID=31337                               # 链 ID (31337 for Anvil/Hardhat)
 PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 CONTRACT_ADDRESS=0x5FbDB2315678afecb367f032d93F642f64180aa3
 
-# Container Configuration (for Docker Demo)
-CONTAINER_ETHEREUM_RPC_URL=http://host.docker.internal:8545
-CONTAINER_CONTRACT_ADDRESS=0x5FbDB2315678afecb367f032d93F642f64180aa3
+# Server Configuration (服务器配置)
+SERVER_HOST=localhost                        # 服务器地址
+SERVER_PORT=8080                             # 服务器端口
 
-# Enclave Configuration
-ENCLAVE_PORT=8080
-DEBUG=false
-LOG_LEVEL=INFO
+# Lottery Configuration (彩票配置)
+LOTTERY_DRAW_INTERVAL_MINUTES=5              # 开奖间隔 (分钟)
+LOTTERY_BETTING_CUTOFF_MINUTES=1             # 投注截止时间 (分钟)
+LOTTERY_SINGLE_BET_AMOUNT=0.01               # 单注金额 (ETH)
+LOTTERY_MAX_BETS_PER_USER=10                 # 每用户最大投注数
 
-# Security Configuration (for production)
-TLS_CERT_PATH=/path/to/cert.pem
-TLS_KEY_PATH=/path/to/key.pem
+# Enclave Configuration (Enclave 配置)
+ENCLAVE_VSOCK_PORT=5005                      # VSock 端口
+ENCLAVE_ATTESTATION_ENABLED=false            # 启用认证 (生产环境设为 true)
+
+# Frontend Configuration (前端配置)
+REACT_APP_API_URL=http://localhost:8080
+REACT_APP_WEBSOCKET_URL=ws://localhost:8080/ws
 ```
+
+**重要提醒 (Important Notes):**
+- ⚠️ **从不**将真实私钥提交到 Git 仓库
+- ⚠️ **Never** commit real private keys to Git repositories
+- 🔒 生产环境请使用密钥管理服务 (Use secret management services in production)
+- 📋 支持旧环境变量名以保持向后兼容 (Legacy variable names supported for backward compatibility)
+
+### Configuration Migration
+
+The system supports both new standardized and legacy environment variable names:
+
+| New Standard | Legacy | Description |
+|-------------|---------|-------------|
+| `ETHEREUM_RPC_URL` | `BLOCKCHAIN_RPC_URL` | Ethereum RPC endpoint |
+| `CHAIN_ID` | `BLOCKCHAIN_CHAIN_ID` | Blockchain chain ID |
+| `PRIVATE_KEY` | `BLOCKCHAIN_PRIVATE_KEY` | Private key for transactions |
+| `SERVER_HOST` | `LOTTERY_SERVER_HOST` | Server bind address |
+| `SERVER_PORT` | `LOTTERY_SERVER_PORT` | Server port |
 
 ### Enclave Configuration
 

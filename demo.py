@@ -367,7 +367,7 @@ class LotteryDemo:
                 "--name", "enclave-demo",
                 "-p", "8081:8080",  # Use port 8081 to avoid conflicts
                 "--add-host", "host.docker.internal:host-gateway",  # Allow access to host
-                "-e", "BLOCKCHAIN_RPC_URL=http://host.docker.internal:8545",   # Connect to host blockchain
+                "-e", "ETHEREUM_RPC_URL=http://host.docker.internal:8545",   # Connect to host blockchain
                 "enclave-lottery-app"
             ]
             

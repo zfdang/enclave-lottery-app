@@ -57,11 +57,11 @@ def load_config() -> Dict[str, Any]:
 def _apply_env_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
     """Apply environment variable overrides to configuration"""
     
-    # Server configuration
-    if os.getenv('LOTTERY_SERVER_HOST'):
-        config['server']['host'] = os.getenv('LOTTERY_SERVER_HOST')
-    if os.getenv('LOTTERY_SERVER_PORT'):
-        config['server']['port'] = int(os.getenv('LOTTERY_SERVER_PORT'))
+    # Server configuration - support both new and legacy names
+    if os.getenv('SERVER_HOST') or os.getenv('LOTTERY_SERVER_HOST'):
+        config['server']['host'] = os.getenv('SERVER_HOST') or os.getenv('LOTTERY_SERVER_HOST')
+    if os.getenv('SERVER_PORT') or os.getenv('LOTTERY_SERVER_PORT'):
+        config['server']['port'] = int(os.getenv('SERVER_PORT') or os.getenv('LOTTERY_SERVER_PORT'))
     
     # Lottery configuration (minutes-only)
     if os.getenv('LOTTERY_DRAW_INTERVAL_MINUTES'):
@@ -75,15 +75,15 @@ def _apply_env_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
     if os.getenv('LOTTERY_MAX_BETS_PER_USER'):
         config['lottery']['max_bets_per_user'] = int(os.getenv('LOTTERY_MAX_BETS_PER_USER'))
     
-    # Blockchain configuration
-    if os.getenv('BLOCKCHAIN_RPC_URL'):
-        config['blockchain']['rpc_url'] = os.getenv('BLOCKCHAIN_RPC_URL')
-    if os.getenv('BLOCKCHAIN_CHAIN_ID'):
-        config['blockchain']['chain_id'] = int(os.getenv('BLOCKCHAIN_CHAIN_ID'))
-    if os.getenv('BLOCKCHAIN_CONTRACT_ADDRESS'):
-        config['blockchain']['contract_address'] = os.getenv('BLOCKCHAIN_CONTRACT_ADDRESS')
-    if os.getenv('BLOCKCHAIN_PRIVATE_KEY'):
-        config['blockchain']['private_key'] = os.getenv('BLOCKCHAIN_PRIVATE_KEY')
+    # Blockchain configuration - support both new and legacy names
+    if os.getenv('ETHEREUM_RPC_URL') or os.getenv('BLOCKCHAIN_RPC_URL'):
+        config['blockchain']['rpc_url'] = os.getenv('ETHEREUM_RPC_URL') or os.getenv('BLOCKCHAIN_RPC_URL')
+    if os.getenv('CHAIN_ID') or os.getenv('BLOCKCHAIN_CHAIN_ID'):
+        config['blockchain']['chain_id'] = int(os.getenv('CHAIN_ID') or os.getenv('BLOCKCHAIN_CHAIN_ID'))
+    if os.getenv('CONTRACT_ADDRESS') or os.getenv('BLOCKCHAIN_CONTRACT_ADDRESS'):
+        config['blockchain']['contract_address'] = os.getenv('CONTRACT_ADDRESS') or os.getenv('BLOCKCHAIN_CONTRACT_ADDRESS')
+    if os.getenv('PRIVATE_KEY') or os.getenv('BLOCKCHAIN_PRIVATE_KEY'):
+        config['blockchain']['private_key'] = os.getenv('PRIVATE_KEY') or os.getenv('BLOCKCHAIN_PRIVATE_KEY')
     
     # Enclave configuration
     if os.getenv('ENCLAVE_VSOCK_PORT'):

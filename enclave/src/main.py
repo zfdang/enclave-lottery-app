@@ -10,6 +10,16 @@ import signal
 import sys
 from pathlib import Path
 
+# Load environment variables from .env file if it exists
+try:
+    from dotenv import load_dotenv
+    # Load .env from project root (3 levels up from this file)
+    env_path = Path(__file__).parent.parent.parent / '.env'
+    load_dotenv(env_path)
+except ImportError:
+    # python-dotenv not installed, skip auto-loading
+    pass
+
 # Add src directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
