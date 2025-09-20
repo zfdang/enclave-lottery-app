@@ -1,11 +1,20 @@
 # Python
 __pycache__/
 *.py[cod]
+*.pyo
 *.egg-info/
+*.egg/
+*.whl
 .venv/
 venv/
 .env
 .env.*
+.pytest_cache/
+.mypy_cache/
+.tox/
+.coverage
+coverage.xml
+htmlcov/
 
 # Node / Frontend
 node_modules/
@@ -17,6 +26,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+.npm/
+.yarn/
+.yarnrc
 
 # Vite/Build
 .enclave/dist/
@@ -37,10 +49,23 @@ enclave/web_server.log
 .idea/
 .vscode/
 *.swp
+*~
+*.tmp
+*.temp
+*.bak
+*.orig
+Thumbs.db
 
 # Docker/Compose
 .docker/
 *.eif
+*.tar
+*.dockerignore
+
+# AWS Nitro
+*.eif
+enclave-image.eif
+lottery.eif
 
 # Contracts build
 contracts/build/
@@ -48,5 +73,13 @@ enclave/src/blockchain/contracts/compiled/
 
 # Misc
 coverage/
+
+# IDE
+*.sublime-project
+*.sublime-workspace
+.idea/
+.vscode/settings.json
+.vscode/launch.json
+.vscode/tasks.json
 .cache/
 **/__pycache__/
