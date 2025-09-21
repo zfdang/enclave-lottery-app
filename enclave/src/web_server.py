@@ -83,6 +83,24 @@ class LotteryWebServer:
             """Health check endpoint"""
             return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
             
+        @self.app.get("/api/status")
+        async def system_status():
+            """Get system component status"""
+            return {
+                "timestamp": datetime.utcnow().isoformat(),
+                "components": {
+                    "web_server": True,  # Obviously true if this endpoint is responding
+                    "blockchain_client": self.blockchain_client is not None,
+                    "scheduler": self.scheduler is not None
+                },
+                "services": {
+                    "betting": self.blockchain_client is not None and self.scheduler is not None,
+                    "wallet_verification": self.blockchain_client is not None,
+                    "lottery_info": self.scheduler is not None,
+                    "offline_mode": self.blockchain_client is None
+                }
+            }
+            
         @self.app.get("/api/attestation")
         async def get_attestation():
             """Get enclave attestation document"""
@@ -100,6 +118,13 @@ class LotteryWebServer:
         async def get_current_draw():
             """Get current lottery draw information"""
             try:
+                # Check if scheduler is available
+                if not self.scheduler:
+                    raise HTTPException(
+                        status_code=503, 
+                        detail="Lottery service unavailable - scheduler not initialized"
+                    )
+                
                 current_draw = await self.scheduler.get_current_draw()
                 if not current_draw:
                     raise HTTPException(status_code=404, detail="No active draw")
@@ -130,6 +155,10 @@ class LotteryWebServer:
         async def get_participants():
             """Get current draw participants"""
             try:
+                # Check if scheduler is available
+                if not self.scheduler:
+                    return {"participants": [], "message": "Scheduler unavailable"}
+                
                 current_draw = await self.scheduler.get_current_draw()
                 if not current_draw:
                     return {"participants": []}
@@ -152,6 +181,10 @@ class LotteryWebServer:
         async def get_lottery_history():
             """Get lottery draw history"""
             try:
+                # Check if scheduler is available
+                if not self.scheduler:
+                    return {"history": [], "message": "Scheduler unavailable"}
+                
                 history = await self.scheduler.get_draw_history(limit=10)
                 return {"history": history}
             except Exception as e:
@@ -162,6 +195,10 @@ class LotteryWebServer:
         async def get_recent_activities():
             """Get recent user activities"""
             try:
+                # Check if scheduler is available
+                if not self.scheduler:
+                    return {"activities": [], "message": "Scheduler unavailable"}
+                
                 activities = await self.scheduler.get_recent_activities(limit=20)
                 return {"activities": activities}
             except Exception as e:
@@ -172,6 +209,22 @@ class LotteryWebServer:
         async def connect_wallet(request: ConnectWalletRequest):
             """Connect user wallet"""
             try:
+                # Check if blockchain client is available
+                if not self.blockchain_client:
+                    logger.warning("Blockchain client not available, skipping signature verification")
+                    # In offline mode, we can still log the connection attempt
+                    if self.scheduler:
+                        await self.scheduler.log_activity(
+                            request.address, 
+                            "connect_offline", 
+                            {"timestamp": datetime.utcnow().isoformat(), "mode": "offline"}
+                        )
+                    return {
+                        "status": "connected_offline", 
+                        "address": request.address,
+                        "message": "Connected in offline mode - blockchain verification unavailable"
+                    }
+                
                 # Verify wallet signature
                 is_valid = await self.blockchain_client.verify_signature(
                     request.address, 
@@ -182,11 +235,12 @@ class LotteryWebServer:
                     raise HTTPException(status_code=400, detail="Invalid signature")
                     
                 # Log user connection
-                await self.scheduler.log_activity(
-                    request.address, 
-                    "connect", 
-                    {"timestamp": datetime.utcnow().isoformat()}
-                )
+                if self.scheduler:
+                    await self.scheduler.log_activity(
+                        request.address, 
+                        "connect", 
+                        {"timestamp": datetime.utcnow().isoformat()}
+                    )
                 
                 return {"status": "connected", "address": request.address}
             except Exception as e:
@@ -197,6 +251,20 @@ class LotteryWebServer:
         async def place_bet(request: BetRequest):
             """Place a bet in the current lottery"""
             try:
+                # Check if blockchain client is available
+                if not self.blockchain_client:
+                    raise HTTPException(
+                        status_code=503, 
+                        detail="Blockchain service unavailable - betting is disabled in offline mode"
+                    )
+                
+                # Check if scheduler is available
+                if not self.scheduler:
+                    raise HTTPException(
+                        status_code=503, 
+                        detail="Lottery service unavailable - scheduler not initialized"
+                    )
+                
                 # Verify transaction
                 is_valid = await self.blockchain_client.verify_transaction(
                     request.transaction_hash,
