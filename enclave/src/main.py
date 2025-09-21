@@ -51,21 +51,37 @@ class LotteryEnclaveApp:
         """Initialize all components"""
         logger.info("Initializing Lottery Enclave Application")
         
-        # Initialize blockchain client
-        self.blockchain_client = BlockchainClient(self.config)
-        await self.blockchain_client.initialize()
+        # Initialize blockchain client with error handling
+        try:
+            self.blockchain_client = BlockchainClient(self.config)
+            await self.blockchain_client.initialize()
+            logger.info("Blockchain client initialized successfully")
+        except Exception as e:
+            logger.warning(f"Failed to initialize blockchain client: {e}")
+            logger.info("Application will continue without blockchain functionality")
+            self.blockchain_client = None
         
-        # Initialize lottery scheduler
-        self.scheduler = LotteryScheduler(self.config, self.blockchain_client)
+        # Initialize lottery scheduler (may work in offline mode)
+        try:
+            self.scheduler = LotteryScheduler(self.config, self.blockchain_client)
+            logger.info("Lottery scheduler initialized")
+        except Exception as e:
+            logger.warning(f"Failed to initialize lottery scheduler: {e}")
+            self.scheduler = None
         
-        # Initialize web server
-        self.web_server = LotteryWebServer(
-            self.config, 
-            self.scheduler, 
-            self.blockchain_client
-        )
+        # Initialize web server (should work even without blockchain)
+        try:
+            self.web_server = LotteryWebServer(
+                self.config, 
+                self.scheduler, 
+                self.blockchain_client
+            )
+            logger.info("Web server initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize web server: {e}")
+            raise  # Web server is critical, so we still raise this error
         
-        logger.info("All components initialized successfully")
+        logger.info("Application initialization completed")
         
     async def start(self):
         """Start the lottery application"""
@@ -73,25 +89,43 @@ class LotteryEnclaveApp:
             await self.initialize()
             
             # Generate enclave attestation
-            attestation = EnclaveAttestation()
-            attestation_doc = attestation.generate_attestation()
-            logger.info(f"Enclave attestation generated: {attestation_doc[:50]}...")
+            try:
+                attestation = EnclaveAttestation()
+                attestation_doc = attestation.generate_attestation()
+                logger.info(f"Enclave attestation generated: {attestation_doc[:50]}...")
+            except Exception as e:
+                logger.warning(f"Failed to generate enclave attestation: {e}")
             
-            # Start scheduler
-            scheduler_task = asyncio.create_task(self.scheduler.start())
+            tasks = []
             
-            # Start web server
-            server_task = asyncio.create_task(
-                self.web_server.start(
-                    host=self.config.get('server', {}).get('host', '0.0.0.0'),
-                    port=self.config.get('server', {}).get('port', 8080)
+            # Start scheduler if available
+            if self.scheduler:
+                scheduler_task = asyncio.create_task(self.scheduler.start())
+                tasks.append(scheduler_task)
+                logger.info("Lottery scheduler started")
+            else:
+                logger.warning("Scheduler not available, running in limited mode")
+            
+            # Start web server (required)
+            if self.web_server:
+                server_task = asyncio.create_task(
+                    self.web_server.start(
+                        host=self.config.get('server', {}).get('host', '0.0.0.0'),
+                        port=self.config.get('server', {}).get('port', 8080)
+                    )
                 )
-            )
+                tasks.append(server_task)
+                logger.info("Web server started")
+            else:
+                raise RuntimeError("Web server is required but failed to initialize")
             
             logger.info("Lottery Enclave Application started successfully")
             
-            # Wait for both tasks
-            await asyncio.gather(scheduler_task, server_task)
+            # Wait for all available tasks
+            if tasks:
+                await asyncio.gather(*tasks)
+            else:
+                logger.error("No tasks to run, application will exit")
             
         except Exception as e:
             logger.error(f"Error starting application: {e}")
