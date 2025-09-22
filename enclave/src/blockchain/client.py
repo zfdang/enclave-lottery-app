@@ -123,6 +123,49 @@ class BlockchainClient:
             logger.error(f"Error verifying transaction {tx_hash}: {e}")
             return False
             
+    async def verify_lottery_transaction(self, tx_hash: str, user_address: str, draw_id: str) -> bool:
+        """Verify a lottery bet transaction against the smart contract"""
+        try:
+            if not self.w3 or not self.contract:
+                logger.warning("Blockchain or contract not available for verification")
+                return False
+                
+            # Get transaction receipt
+            receipt = self.w3.eth.get_transaction_receipt(tx_hash)
+            
+            # Verify transaction was successful
+            if receipt.status != 1:
+                logger.warning(f"Transaction failed: {tx_hash}")
+                return False
+                
+            # Check if transaction interacted with our contract
+            if receipt.to.lower() != self.contract.address.lower():
+                logger.warning(f"Transaction not sent to lottery contract: {receipt.to} != {self.contract.address}")
+                return False
+                
+            # Parse transaction logs to verify bet placement
+            try:
+                # Get BetPlaced events from the transaction
+                bet_placed_events = self.contract.events.BetPlaced().process_receipt(receipt)
+                
+                for event in bet_placed_events:
+                    event_args = event['args']
+                    if (event_args['drawId'] == draw_id and 
+                        event_args['user'].lower() == user_address.lower()):
+                        logger.info(f"Verified bet: {user_address} placed bet on draw {draw_id}")
+                        return True
+                        
+                logger.warning(f"No matching BetPlaced event found for user {user_address} on draw {draw_id}")
+                return False
+                
+            except Exception as e:
+                logger.error(f"Error parsing transaction logs: {e}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error verifying lottery transaction {tx_hash}: {e}")
+            return False
+            
     async def verify_signature(self, address: str, signature: str) -> bool:
         """Verify wallet signature for authentication"""
         try:

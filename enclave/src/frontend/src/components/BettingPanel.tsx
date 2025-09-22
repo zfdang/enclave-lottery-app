@@ -18,11 +18,12 @@ import { Casino, AccountBalanceWallet, Edit, Person } from '@mui/icons-material'
 
 import { useWalletStore } from '../services/wallet'
 import { useLotteryStore } from '../services/lottery'
-import { placeBet } from '../services/api'
+import { contractService } from '../services/contract'
+import api from '../services/api'
 import WalletConnection from './WalletConnection'
 
 const BettingPanel: React.FC = () => {
-  const { isConnected, address, sendTransaction } = useWalletStore()
+  const { isConnected, address } = useWalletStore()
   const { currentDraw, fetchCurrentDraw } = useLotteryStore()
   const [betAmount, setBetAmount] = useState('')
   const [isPlacingBet, setIsPlacingBet] = useState(false)
@@ -31,21 +32,52 @@ const BettingPanel: React.FC = () => {
   const [nickname, setNickname] = useState('')
   const [editingNickname, setEditingNickname] = useState(false)
   const [tempNickname, setTempNickname] = useState('')
-
-  const minBetAmount = 0.01 // ETH
-  const maxBetAmount = 1.0  // ETH
+  const [bettingLimits, setBettingLimits] = useState({ min: '0.001', max: '10', maxBetsPerUser: 10 })
+  const [userBetCount, setUserBetCount] = useState(0)
 
   useEffect(() => {
     if (address) {
       const savedNicknames = localStorage.getItem('userNicknames')
       if (savedNicknames) {
         const nicknames = JSON.parse(savedNicknames)
-  setNickname(nicknames[address] || `User ${address.slice(-4)}`)
+        setNickname(nicknames[address] || `User ${address.slice(-4)}`)
       } else {
-  setNickname(`User ${address.slice(-4)}`)
+        setNickname(`User ${address.slice(-4)}`)
       }
     }
   }, [address])
+
+  useEffect(() => {
+    // Load betting limits from contract
+    const loadBettingLimits = async () => {
+      try {
+        const limits = await contractService.getBettingLimits()
+        setBettingLimits(limits)
+      } catch (error) {
+        console.error('Failed to load betting limits:', error)
+      }
+    }
+
+    if (isConnected) {
+      loadBettingLimits()
+    }
+  }, [isConnected])
+
+  useEffect(() => {
+    // Load user's bet count for current draw
+    const loadUserBetCount = async () => {
+      if (currentDraw && address) {
+        try {
+          const userBets = await contractService.getUserBets(currentDraw.draw_id, address)
+          setUserBetCount(userBets.length)
+        } catch (error) {
+          console.error('Failed to load user bet count:', error)
+        }
+      }
+    }
+
+    loadUserBetCount()
+  }, [currentDraw, address])
 
   const handleBetAmountChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const value = event.target.value
@@ -73,25 +105,27 @@ const BettingPanel: React.FC = () => {
 
   const validateBetAmount = (): boolean => {
     const amount = parseFloat(betAmount)
+    const minBetAmount = parseFloat(bettingLimits.min)
+    const maxBetAmount = parseFloat(bettingLimits.max)
     
     if (isNaN(amount) || amount <= 0) {
-  setError('Please enter a valid bet amount')
+      setError('Please enter a valid bet amount')
       return false
     }
     
     if (amount < minBetAmount) {
-  setError(`Minimum bet is ${minBetAmount} ETH`)
+      setError(`Minimum bet is ${bettingLimits.min} ETH`)
       return false
     }
     
     if (amount > maxBetAmount) {
-  setError(`Maximum bet is ${maxBetAmount} ETH`)
+      setError(`Maximum bet is ${bettingLimits.max} ETH`)
       return false
     }
     
-    // Check if amount is multiple of minimum bet
-    if ((amount * 100) % (minBetAmount * 100) !== 0) {
-  setError(`Bet amount must be a multiple of ${minBetAmount} ETH`)
+    // Check if user has reached betting limit
+    if (userBetCount >= bettingLimits.maxBetsPerUser) {
+      setError(`You can only place up to ${bettingLimits.maxBetsPerUser} bets per draw`)
       return false
     }
     
@@ -100,7 +134,7 @@ const BettingPanel: React.FC = () => {
 
   const handlePlaceBet = async () => {
     if (!isConnected || !address) {
-  setError('Please connect your wallet first')
+      setError('Please connect your wallet first')
       return
     }
 
@@ -109,7 +143,7 @@ const BettingPanel: React.FC = () => {
     }
 
     if (!currentDraw || currentDraw.status !== 'betting') {
-  setError('Betting is not available right now')
+      setError('Betting is not available right now')
       return
     }
 
@@ -118,32 +152,32 @@ const BettingPanel: React.FC = () => {
     setSuccess('')
 
     try {
-      // Send transaction via MetaMask
-      const transactionHash = await sendTransaction({
-        to: '0x742d35cc6609c0532c9a6c0b9c0a5e6f6e8c8c8c', // Lottery contract address
-        value: betAmount,
-      })
+      // Place bet directly via smart contract
+      const transactionHash = await contractService.placeBet(currentDraw.draw_id, betAmount)
 
-      if (!transactionHash) {
-  throw new Error('Transaction failed')
+      // Optimistically update UI
+      setSuccess(`Bet placed successfully! Transaction: ${transactionHash.slice(0, 10)}...`)
+      setBetAmount('')
+      
+      // Reload user bet count
+      const userBets = await contractService.getUserBets(currentDraw.draw_id, address)
+      setUserBetCount(userBets.length)
+      
+      // Notify backend for verification (optional)
+      try {
+        await api.post('/api/verify-bet', {
+          user_address: address,
+          transaction_hash: transactionHash,
+          draw_id: currentDraw.draw_id
+        })
+      } catch (err) {
+        console.warn('Backend verification failed:', err)
       }
-
-      // Submit bet to enclave
-      const result = await placeBet({
-        user_address: address,
-        amount: parseFloat(betAmount),
-        transaction_hash: transactionHash,
-      })
-
-      if (result.success) {
-  setSuccess(`Bet successful! Ticket numbers: ${result.ticket_numbers?.join(', ') || 'assigned'}`)
-        setBetAmount('')
-        fetchCurrentDraw()
-      } else {
-  setError(result.error || 'Bet failed')
-      }
+      
+      // Refresh current draw
+      fetchCurrentDraw()
     } catch (err: any) {
-  setError(err.message || 'Bet failed')
+      setError(err.message || 'Bet failed')
     } finally {
       setIsPlacingBet(false)
     }
@@ -151,6 +185,7 @@ const BettingPanel: React.FC = () => {
 
   const calculateTickets = (): number => {
     const amount = parseFloat(betAmount)
+    const minBetAmount = parseFloat(bettingLimits.min)
     if (isNaN(amount)) return 0
     return Math.floor(amount / minBetAmount)
   }
@@ -289,7 +324,7 @@ const BettingPanel: React.FC = () => {
         </Grid>
 
         <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.6)' }}>
-          Range: {minBetAmount} - {maxBetAmount} ETH
+          Range: {bettingLimits.min} - {bettingLimits.max} ETH
         </Typography>
       </Box>
 
@@ -355,9 +390,9 @@ const BettingPanel: React.FC = () => {
       )}
 
       <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.6)', lineHeight: 1.2 }}>
-  • Every {minBetAmount} ETH = 1 ticket<br />
-  • More tickets, higher winning chance<br />
-  • Winner takes the entire pool
+        • Every {bettingLimits.min} ETH = 1 ticket<br />
+        • More tickets, higher winning chance<br />
+        • Winner takes the entire pool
       </Typography>
 
   {/* Nickname edit dialog */}

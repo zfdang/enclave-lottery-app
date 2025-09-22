@@ -300,6 +300,56 @@ class LotteryWebServer:
                 logger.error(f"Error placing bet: {e}")
                 raise HTTPException(status_code=500, detail="Internal server error")
                 
+        @self.app.post("/api/verify-bet")
+        async def verify_bet(request: dict):
+            """Verify a bet transaction from the blockchain"""
+            try:
+                # Check if blockchain client is available
+                if not self.blockchain_client:
+                    logger.warning("Blockchain client not available, skipping bet verification")
+                    return {"status": "skipped", "message": "Blockchain service unavailable"}
+                
+                user_address = request.get("user_address")
+                transaction_hash = request.get("transaction_hash")
+                draw_id = request.get("draw_id")
+                
+                if not all([user_address, transaction_hash, draw_id]):
+                    raise HTTPException(status_code=400, detail="Missing required fields")
+                
+                # Verify transaction on blockchain
+                try:
+                    is_valid = await self.blockchain_client.verify_lottery_transaction(
+                        transaction_hash,
+                        user_address,
+                        draw_id
+                    )
+                    
+                    if is_valid:
+                        # Log successful verification
+                        if self.scheduler:
+                            await self.scheduler.log_activity(
+                                user_address,
+                                "bet_verified",
+                                {
+                                    "transaction_hash": transaction_hash,
+                                    "draw_id": draw_id,
+                                    "timestamp": datetime.utcnow().isoformat()
+                                }
+                            )
+                        
+                        return {"status": "verified", "transaction_hash": transaction_hash}
+                    else:
+                        logger.warning(f"Invalid bet transaction: {transaction_hash}")
+                        return {"status": "invalid", "transaction_hash": transaction_hash}
+                        
+                except Exception as e:
+                    logger.error(f"Error verifying transaction {transaction_hash}: {e}")
+                    return {"status": "error", "message": str(e)}
+                    
+            except Exception as e:
+                logger.error(f"Error in verify-bet endpoint: {e}")
+                raise HTTPException(status_code=500, detail="Internal server error")
+                
         @self.app.websocket("/ws/lottery")
         async def websocket_endpoint(websocket: WebSocket):
             """WebSocket endpoint for real-time updates"""

@@ -7,27 +7,34 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
-WORKDIR /app
+# Create non-root user early to avoid permission issues
+RUN groupadd -r lottery && useradd -r -g lottery lottery -m
 
-# Copy requirements and install Python dependencies
-COPY requirements.txt .
+# Set working directory and change ownership
+WORKDIR /app
+RUN chown lottery:lottery /app
+
+# Copy requirements first for better caching
+COPY --chown=lottery:lottery requirements.txt .
+
+# Install Python dependencies as root for system-wide installation
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application source code
-COPY src/ ./src/
+# Switch to non-root user for subsequent operations
+USER lottery
 
 # Create necessary directories
-RUN mkdir -p ./src/frontend/dist
-RUN mkdir -p ./src/blockchain/contracts/compiled
+RUN mkdir -p ./src/frontend/dist ./src/blockchain/contracts/compiled
 
-# Copy smart contracts
-COPY src/blockchain/contracts/ ./src/blockchain/contracts/
+# Copy backend source code
+COPY --chown=lottery:lottery src/main.py /app/src/
+COPY --chown=lottery:lottery src/web_server.py /app/src/
+COPY --chown=lottery:lottery src/blockchain/ /app/src/blockchain/
+COPY --chown=lottery:lottery src/lottery/ /app/src/lottery/
+COPY --chown=lottery:lottery src/utils/ /app/src/utils/
 
-# Create non-root user for security
-RUN groupadd -r lottery && useradd -r -g lottery lottery
-RUN chown -R lottery:lottery /app
-USER lottery
+# Copy only the compiled frontend assets (not source)
+COPY --chown=lottery:lottery src/frontend/dist/ /app/src/frontend/dist/
 
 # Expose port
 EXPOSE 8080

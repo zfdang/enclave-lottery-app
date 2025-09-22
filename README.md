@@ -247,14 +247,14 @@ SERVER_HOST=localhost                        # Server bind address
 SERVER_PORT=8080                             # Server port
 
 # Lottery Configuration
-LOTTERY_DRAW_INTERVAL_MINUTES=5              # 开奖间隔 (分钟)
-LOTTERY_BETTING_CUTOFF_MINUTES=1             # 投注截止时间 (分钟)
-LOTTERY_SINGLE_BET_AMOUNT=0.01               # 单注金额 (ETH)
-LOTTERY_MAX_BETS_PER_USER=10                 # 每用户最大投注数
+LOTTERY_DRAW_INTERVAL_MINUTES=5              # Draw interval (minutes)
+LOTTERY_BETTING_CUTOFF_MINUTES=1             # Betting cutoff time (minutes)
+LOTTERY_SINGLE_BET_AMOUNT=0.01               # Single bet amount (ETH)
+LOTTERY_MAX_BETS_PER_USER=10                 # Maximum bets per user
 
 # Enclave Configuration
-ENCLAVE_VSOCK_PORT=5005                      # VSock 端口
-ENCLAVE_ATTESTATION_ENABLED=false            # 启用认证 (生产环境设为 true)
+ENCLAVE_VSOCK_PORT=5005                      # VSock port
+ENCLAVE_ATTESTATION_ENABLED=false            # Enable attestation (set to true in production)
 
 # Frontend Configuration
 REACT_APP_API_URL=http://localhost:8080
