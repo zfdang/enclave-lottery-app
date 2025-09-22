@@ -1,0 +1,17 @@
+{
+  "blockchain": {
+    "rpc_url": "http://localhost:8545",
+    "private_key": "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6",
+    "chain_id": 31337
+  },
+  "contract": {
+    "commission_rate": 500,
+    "min_bet": 0.01,
+    "betting_duration": 900,
+    "draw_delay": 90
+  },
+  "output": {
+    "config_output": "admin/operator.conf",
+    "deployment_output": "admin/deployment.json"
+  }
+}

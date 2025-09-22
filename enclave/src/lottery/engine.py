@@ -1,152 +1,406 @@
 """
-Lottery Engine - Core lottery logic and game state management
+Lottery Engine - Automated operator for managing lottery rounds
 """
 
 import asyncio
 import logging
-import math
-import secrets
+import time
 from datetime import datetime, timedelta
-from decimal import Decimal
-from typing import Dict, List, Optional
-from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass
 from enum import Enum
 
 logger = logging.getLogger(__name__)
 
 
-class DrawStatus(Enum):
-    """Lottery draw status"""
-    BETTING = "betting"
-    CLOSED = "closed"
-    DRAWN = "drawn"
-    COMPLETED = "completed"
+class OperatorMode(Enum):
+    """Operator operational modes"""
+    MANUAL = "manual"           # Manual round management
+    AUTOMATIC = "automatic"     # Automatic round management
+    SCHEDULED = "scheduled"     # Schedule-based round management
 
 
 @dataclass
-class Bet:
-    """Represents a single bet in the lottery"""
-    bet_id: str
-    draw_id: str
-    user_address: str
-    amount: Decimal
-    ticket_numbers: List[int]
-    timestamp: datetime
-    transaction_hash: str
-
-
-@dataclass
-class LotteryDraw:
-    """Represents a lottery draw"""
-    draw_id: str
-    start_time: datetime
-    end_time: datetime
-    draw_time: datetime
-    status: DrawStatus = DrawStatus.BETTING
-    bets: List[Bet] = field(default_factory=list)
-    total_pot: Decimal = Decimal('0')
-    winner_address: Optional[str] = None
-    winning_number: Optional[int] = None
-    total_tickets: int = 0
+class RoundInfo:
+    """Information about a lottery round"""
+    round_id: int
+    start_time: int
+    end_time: int
+    draw_time: int
+    total_pot: int
+    participant_count: int
+    winner: Optional[str]
+    admin_commission: int
+    winner_prize: int
+    completed: bool
+    cancelled: bool
+    refunded: bool
+    
+    @property
+    def start_datetime(self) -> datetime:
+        return datetime.fromtimestamp(self.start_time)
+    
+    @property
+    def end_datetime(self) -> datetime:
+        return datetime.fromtimestamp(self.end_time)
+    
+    @property
+    def draw_datetime(self) -> datetime:
+        return datetime.fromtimestamp(self.draw_time)
 
 
 @dataclass
 class Activity:
-    """Represents user activity"""
+    """Represents system activity"""
     activity_id: str
-    user_address: str
-    activity_type: str  # "join", "bet", "win"
-    details: Dict
+    activity_type: str  # "round_created", "bet_placed", "round_completed", etc.
+    details: Dict[str, Any]
     timestamp: datetime
 
 
 class LotteryEngine:
-    """Core lottery game engine"""
+    """Automated lottery operator engine"""
     
-    def __init__(self, config):
+    def __init__(self, blockchain_client, config):
+        self.blockchain_client = blockchain_client
         self.config = config
-        self.current_draw: Optional[LotteryDraw] = None
-        self.draw_history: List[LotteryDraw] = []
+        
+        # Current state
+        self.current_round: Optional[RoundInfo] = None
+        self.round_history: List[RoundInfo] = []
         self.activities: List[Activity] = []
-        self.next_ticket_number = 1
+        self.is_running = False
         
-        # Configuration (minutes-based only)
-        lot_cfg = config.get('lottery', {})
-        # Use minutes exclusively with a sensible default
-        self.draw_interval_minutes = lot_cfg.get('draw_interval_minutes', 10)
-        self.minimum_interval_minutes = lot_cfg.get('minimum_interval_minutes', 3)
-        self.betting_cutoff_minutes = lot_cfg.get('betting_cutoff_minutes', 1)
-        self.single_bet_amount = Decimal(str(config.get('lottery', {}).get('single_bet_amount', '0.01')))
+        # Operator configuration
+        operator_config = config.get('operator', {})
+        self.auto_start_rounds = operator_config.get('auto_start_rounds', True)
+        self.round_check_interval = operator_config.get('round_check_interval', 30)  # seconds
+        self.mode = OperatorMode(operator_config.get('mode', 'automatic'))
         
-    def create_new_draw(self) -> LotteryDraw:
-        """Create a new lottery draw"""
-        now = datetime.utcnow()
-        draw_id = f"draw_{int(now.timestamp())}"
+        # Get contract configuration
+        self.contract_config = {}
         
-        # Calculate draw times
-        # Rules:
-        # 1) Minimum duration: total duration must be at least minimum_interval_minutes
-        # 2) Maximum duration: total duration should be shorter than draw_interval_minutes * 2
-        # 3) Slot alignment: draw_time minutes must be divisible by draw_interval_minutes (wall-clock slots), seconds=0
-        start_time = now
-        # Earliest acceptable time based on rule (1)
-        earliest = start_time + timedelta(minutes=self.minimum_interval_minutes)
-
-        # Align to next slot boundary at or after 'earliest'
-        dt = earliest.replace(second=0, microsecond=0)
-        delta = math.ceil(dt.minute * 1.0 / self.draw_interval_minutes) * self.draw_interval_minutes - dt.minute
-        dt += timedelta(minutes=delta)
+        logger.info(f"Lottery engine initialized in {self.mode.value} mode")
+    
+    async def initialize(self):
+        """Initialize the lottery engine"""
+        try:
+            # Get contract configuration
+            self.contract_config = await self.blockchain_client.get_contract_config()
+            
+            if self.contract_config:
+                logger.info("Contract configuration loaded:")
+                logger.info(f"  Admin: {self.contract_config.get('admin')}")
+                logger.info(f"  Operator: {self.contract_config.get('operator')}")
+                logger.info(f"  Commission Rate: {self.contract_config.get('commission_rate', 0) / 100}%")
+                logger.info(f"  Min Bet: {self.blockchain_client.wei_to_eth(self.contract_config.get('min_bet_amount', 0))} ETH")
+                logger.info(f"  Betting Duration: {self.contract_config.get('betting_duration', 0)} seconds")
+                logger.info(f"  Draw Delay: {self.contract_config.get('draw_delay', 0)} seconds")
+            
+            # Load current round state
+            await self._load_current_round()
+            
+            logger.info("Lottery engine initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize lottery engine: {e}")
+            raise
+    
+    async def start(self):
+        """Start the automated operator"""
+        if self.is_running:
+            logger.warning("Lottery engine is already running")
+            return
+            
+        self.is_running = True
+        logger.info("Starting automated lottery operator...")
         
-        draw_time = dt
-
-        # Betting cutoff remains relative to draw_time
-        end_time = draw_time - timedelta(minutes=self.betting_cutoff_minutes)
+        if self.mode == OperatorMode.AUTOMATIC:
+            # Start automatic round management
+            asyncio.create_task(self._automatic_round_manager())
+            
+        # Start event monitoring
+        asyncio.create_task(self._monitor_blockchain_events())
         
-        draw = LotteryDraw(
-            draw_id=draw_id,
-            start_time=start_time,
-            end_time=end_time,
-            draw_time=draw_time,
-            status=DrawStatus.BETTING
+        logger.info("Lottery engine started")
+    
+    async def stop(self):
+        """Stop the automated operator"""
+        self.is_running = False
+        logger.info("Lottery engine stopped")
+    
+    async def _load_current_round(self):
+        """Load current round state from blockchain"""
+        try:
+            round_data = await self.blockchain_client.get_current_round()
+            
+            if round_data and round_data['round_id'] > 0:
+                self.current_round = RoundInfo(**round_data)
+                logger.info(f"Loaded current round: Round {self.current_round.round_id}")
+                self._log_activity("round_loaded", {
+                    "round_id": self.current_round.round_id,
+                    "status": "active" if not self.current_round.completed else "completed"
+                })
+            else:
+                logger.info("No active round found")
+                
+        except Exception as e:
+            logger.error(f"Error loading current round: {e}")
+    
+    async def _automatic_round_manager(self):
+        """Automatic round management loop"""
+        logger.info("Starting automatic round management")
+        
+        while self.is_running:
+            try:
+                await self._check_and_manage_rounds()
+                await asyncio.sleep(self.round_check_interval)
+                
+            except Exception as e:
+                logger.error(f"Error in automatic round manager: {e}")
+                await asyncio.sleep(self.round_check_interval)
+    
+    async def _check_and_manage_rounds(self):
+        """Check and manage current round state"""
+        try:
+            # Refresh current round state
+            await self._load_current_round()
+            
+            current_time = int(time.time())
+            
+            if not self.current_round:
+                # No active round, start a new one if auto-start is enabled
+                if self.auto_start_rounds:
+                    logger.info("No active round found, starting new round...")
+                    await self.start_new_round()
+                return
+            
+            # Check if current round can be drawn
+            if (not self.current_round.completed and 
+                not self.current_round.cancelled and 
+                current_time >= self.current_round.draw_time):
+                
+                # Check if round meets minimum requirements
+                if self.current_round.participant_count >= self.contract_config.get('min_participants', 2):
+                    logger.info(f"Drawing winner for round {self.current_round.round_id}")
+                    await self.draw_current_round()
+                else:
+                    logger.warning(f"Round {self.current_round.round_id} doesn't have enough participants, cancelling...")
+                    await self.cancel_current_round("Not enough participants")
+            
+            # Check if round is completed and we should start a new one
+            if (self.current_round.completed or self.current_round.cancelled) and self.auto_start_rounds:
+                logger.info("Current round completed, starting new round...")
+                await self.start_new_round()
+                
+        except Exception as e:
+            logger.error(f"Error checking and managing rounds: {e}")
+    
+    async def start_new_round(self) -> Dict[str, Any]:
+        """Start a new lottery round"""
+        try:
+            if self.current_round and not self.current_round.completed and not self.current_round.cancelled:
+                raise ValueError("Cannot start new round while another is active")
+            
+            # Start new round on blockchain
+            result = await self.blockchain_client.start_new_round()
+            
+            # Update local state
+            await self._load_current_round()
+            
+            self._log_activity("round_created", {
+                "round_id": result['round_id'],
+                "start_time": result['start_time'],
+                "end_time": result['end_time'],
+                "draw_time": result['draw_time'],
+                "tx_hash": result['tx_hash']
+            })
+            
+            logger.info(f"New round started: Round {result['round_id']}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error starting new round: {e}")
+            raise
+    
+    async def draw_current_round(self) -> Dict[str, Any]:
+        """Draw winner for current round"""
+        try:
+            if not self.current_round:
+                raise ValueError("No active round to draw")
+            
+            # Check if round can be drawn
+            can_draw = await self.blockchain_client.can_draw_current_round()
+            if not can_draw:
+                raise ValueError("Current round cannot be drawn yet")
+            
+            # Draw winner on blockchain
+            result = await self.blockchain_client.draw_winner(self.current_round.round_id)
+            
+            # Update local state
+            await self._load_current_round()
+            
+            self._log_activity("round_completed", {
+                "round_id": result['round_id'],
+                "winner": result['winner'],
+                "total_pot": self.blockchain_client.wei_to_eth(result['total_pot']),
+                "winner_prize": self.blockchain_client.wei_to_eth(result['winner_prize']),
+                "admin_commission": self.blockchain_client.wei_to_eth(result['admin_commission']),
+                "tx_hash": result['tx_hash']
+            })
+            
+            logger.info(f"Round {result['round_id']} completed. Winner: {result['winner']}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error drawing current round: {e}")
+            raise
+    
+    async def cancel_current_round(self, reason: str) -> Dict[str, Any]:
+        """Cancel current round"""
+        try:
+            if not self.current_round:
+                raise ValueError("No active round to cancel")
+            
+            # Cancel round on blockchain
+            result = await self.blockchain_client.cancel_round(self.current_round.round_id, reason)
+            
+            # Update local state
+            await self._load_current_round()
+            
+            self._log_activity("round_cancelled", {
+                "round_id": result['round_id'],
+                "reason": result['reason'],
+                "total_refunded": self.blockchain_client.wei_to_eth(result['total_refunded']),
+                "tx_hash": result['tx_hash']
+            })
+            
+            logger.info(f"Round {result['round_id']} cancelled: {reason}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error cancelling current round: {e}")
+            raise
+    
+    async def _monitor_blockchain_events(self):
+        """Monitor blockchain events"""
+        logger.info("Starting blockchain event monitoring")
+        
+        async def event_callback(event_type: str, event_data: Dict[str, Any]):
+            """Handle blockchain events"""
+            try:
+                if event_type == 'RoundCreated':
+                    self._log_activity("bet_window_opened", {
+                        "round_id": event_data['roundId'],
+                        "betting_end_time": event_data['endTime']
+                    })
+                    
+                elif event_type == 'BetPlaced':
+                    self._log_activity("bet_placed", {
+                        "round_id": event_data['roundId'],
+                        "player": event_data['player'],
+                        "amount": self.blockchain_client.wei_to_eth(event_data['amount']),
+                        "new_total": self.blockchain_client.wei_to_eth(event_data['newTotal'])
+                    })
+                    
+                elif event_type == 'RoundCompleted':
+                    self._log_activity("winner_selected", {
+                        "round_id": event_data['roundId'],
+                        "winner": event_data['winner'],
+                        "prize": self.blockchain_client.wei_to_eth(event_data['winnerPrize'])
+                    })
+                    
+            except Exception as e:
+                logger.error(f"Error handling event {event_type}: {e}")
+        
+        # Start event monitoring (this will run indefinitely)
+        await self.blockchain_client.listen_for_events(event_callback)
+    
+    def _log_activity(self, activity_type: str, details: Dict[str, Any]):
+        """Log activity for tracking"""
+        activity = Activity(
+            activity_id=f"{activity_type}_{int(time.time() * 1000)}",
+            activity_type=activity_type,
+            details=details,
+            timestamp=datetime.utcnow()
         )
-        logger.info(f"Created new draw: {draw_id}, betting ends at {end_time}, draw at {draw_time}")
-        return draw
         
-    def can_place_bet(self) -> tuple[bool, str]:
-        """Check if betting is currently allowed"""
-        if not self.current_draw:
-            return False, "No active draw"
-            
-        now = datetime.utcnow()
+        self.activities.append(activity)
         
-        if self.current_draw.status != DrawStatus.BETTING:
-            return False, "Betting is closed for this draw"
+        # Keep only last 1000 activities
+        if len(self.activities) > 1000:
+            self.activities = self.activities[-1000:]
+    
+    # =============== STATUS AND INFORMATION METHODS ===============
+    
+    def get_current_round_info(self) -> Optional[Dict[str, Any]]:
+        """Get current round information"""
+        if not self.current_round:
+            return None
             
-        if now >= self.current_draw.end_time:
-            return False, "Betting period has ended"
+        return {
+            "round_id": self.current_round.round_id,
+            "start_time": self.current_round.start_time,
+            "end_time": self.current_round.end_time,
+            "draw_time": self.current_round.draw_time,
+            "total_pot": self.blockchain_client.wei_to_eth(self.current_round.total_pot),
+            "participant_count": self.current_round.participant_count,
+            "winner": self.current_round.winner,
+            "completed": self.current_round.completed,
+            "cancelled": self.current_round.cancelled,
+            "time_until_end": max(0, self.current_round.end_time - int(time.time())),
+            "time_until_draw": max(0, self.current_round.draw_time - int(time.time())),
+            "can_bet": (not self.current_round.completed and 
+                       not self.current_round.cancelled and 
+                       int(time.time()) < self.current_round.end_time)
+        }
+    
+    def get_recent_activities(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """Get recent activities"""
+        recent = self.activities[-limit:] if len(self.activities) > limit else self.activities
+        return [
+            {
+                "activity_id": activity.activity_id,
+                "type": activity.activity_type,
+                "details": activity.details,
+                "timestamp": activity.timestamp.isoformat()
+            }
+            for activity in reversed(recent)
+        ]
+    
+    def get_operator_status(self) -> Dict[str, Any]:
+        """Get operator status information"""
+        return {
+            "is_running": self.is_running,
+            "mode": self.mode.value,
+            "auto_start_rounds": self.auto_start_rounds,
+            "round_check_interval": self.round_check_interval,
+            "current_round": self.get_current_round_info(),
+            "operator_address": self.blockchain_client.account.address,
+            "contract_address": self.blockchain_client.contract_address,
+            "contract_config": self.contract_config
+        }
+    
+    async def get_round_participants(self, round_id: int = None) -> List[str]:
+        """Get participants for a round"""
+        if round_id is None and self.current_round:
+            round_id = self.current_round.round_id
             
-        return True, "OK"
-        
-    def place_bet(self, user_address: str, amount: Decimal, transaction_hash: str) -> Dict:
-        """Place a bet in the current draw"""
-        can_bet, reason = self.can_place_bet()
-        if not can_bet:
-            return {"success": False, "error": reason}
+        if round_id is None:
+            return []
             
-        # Validate bet amount (must be multiple of single bet amount)
-        if amount % self.single_bet_amount != 0:
-            return {"success": False, "error": f"Bet amount must be multiple of {self.single_bet_amount} ETH"}
+        return await self.blockchain_client.get_round_participants(round_id)
+    
+    async def get_player_bet_amount(self, player_address: str, round_id: int = None) -> float:
+        """Get player's bet amount for a round"""
+        if round_id is None and self.current_round:
+            round_id = self.current_round.round_id
             
-        # Calculate number of tickets
-        num_tickets = int(amount / self.single_bet_amount)
-        if num_tickets <= 0:
-            return {"success": False, "error": "Invalid bet amount"}
+        if round_id is None:
+            return 0.0
             
-        # Generate ticket numbers
-        ticket_numbers = []
-        for _ in range(num_tickets):
-            ticket_numbers.append(self.next_ticket_number)
-            self.next_ticket_number += 1
+        bet_wei = await self.blockchain_client.get_player_bet(round_id, player_address)
+        return self.blockchain_client.wei_to_eth(bet_wei)
             
         # Create bet
         bet_id = f"bet_{user_address}_{int(datetime.utcnow().timestamp())}"

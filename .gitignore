@@ -1,3 +1,6 @@
+# Enclave Lottery App - Git Ignore File
+# Excludes sensitive config files, deployment records, and build artifacts
+
 # Python
 __pycache__/
 *.py[cod]
@@ -71,6 +74,20 @@ lottery.eif
 contracts/build/
 enclave/src/blockchain/contracts/compiled/
 
+# Admin configuration and deployment records
+admin/admin.conf
+admin/deployment_*.json
+admin/operator.conf
+deployment_*.json
+
+# Enclave configuration (may contain sensitive keys)
+enclave/config/enclave.conf
+enclave/config/operator.conf
+
+# Virtual environments
+enclave/venv/
+*/venv/
+
 # Misc
 coverage/
 
@@ -83,3 +100,4 @@ coverage/
 .vscode/tasks.json
 .cache/
 **/__pycache__/
+=1.12.0

@@ -181,7 +181,7 @@ enclave-lottery-app/
 │   │   │   └── scheduler.py  # Draw scheduling
 │   │   ├── blockchain/       # Ethereum integration
 │   │   │   ├── client.py     # Blockchain client
-│   │   │   ├── contracts.py  # Smart contract interface
+│   │   │   ├── client.py      # Enhanced blockchain client
 │   │   │   └── contracts/    # Solidity contracts
 │   │   │       └── Lottery.sol
 │   │   ├── frontend/         # React application

@@ -237,7 +237,7 @@ CMD ["python", "src/main.py"]
 **Production Image Contents:**
 - ✅ **Backend Python code**: Essential application logic only
 - ✅ **Compiled frontend assets**: `dist/` directory with production build
-- ✅ **Smart contract artifacts**: Compiled contracts in `/contracts/compiled/`
+- ✅ **Smart contract reference**: Contract source in `/contracts/`
 - ❌ **Frontend source files**: React components, TypeScript files excluded
 - ❌ **Development tools**: Node modules, build tools excluded
 - ❌ **Unnecessary directories**: No `/logs`, `/data` directories created

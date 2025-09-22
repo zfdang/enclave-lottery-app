@@ -7,7 +7,7 @@ Based on your architectural requirements, I have implemented a hybrid betting sy
 ## Architecture Components
 
 ### 1. Smart Contract (`Lottery.sol`)
-**File**: `enclave/src/blockchain/contracts/Lottery.sol`
+**File**: `contracts/Lottery.sol`
 
 **Key Features**:
 - **Direct User Betting**: Users call `placeBet()` function directly via MetaMask
@@ -119,7 +119,7 @@ PRIVATE_KEY=your_enclave_private_key
 ```
 
 ### Contract Deployment
-The system includes automatic contract deployment if no address is configured. The enclave will:
+The system uses pre-deployed contracts configured by admin. The enclave will:
 1. Deploy the Lottery contract on startup
 2. Configure itself as the authorized enclave address
 3. Set default betting parameters (min: 0.001 ETH, max: 10 ETH)
