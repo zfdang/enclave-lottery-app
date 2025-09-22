@@ -4,104 +4,153 @@ This `contract-tools/` folder contains role-specific command-line tools and help
 Purpose
 - Provide focused tools for the Publisher and Sparsity roles.
 - Avoid a single monolithic admin utility; reduce blast radius for credentials and operations.
-Important: role-specific configuration files
+# Contract Tools — Lottery Contract Management
 
-Each tool requires a role-specific JSON configuration file located in `contract-tools/`:
-- `publisher.conf` (based on `publisher.conf.example`)
-- `sparsity.conf` (based on `sparsity.conf.example`)
+Secure, role-focused CLI tools for deploying and managing the Lottery smart contract.
 
-Quick setup
+- Publisher: deploy contracts, set sparsity, query your deployments
+- Sparsity: set/update operator, fund operator, query your contracts
+
+## 1) Quick Start
 
 ```bash
 cd contract-tools
-cp publisher.conf.example publisher.conf   # edit and add your publisher private key
-cp sparsity.conf.example sparsity.conf     # edit and add your sparsity private key
+cp publisher.conf.example publisher.conf   # add your publisher private key
+cp sparsity.conf.example sparsity.conf     # add your sparsity private key
 ```
-Quick commands
 
-- Deploy a contract (publisher):
+Common actions:
 
 ```bash
+# Deploy a contract (publisher)
 ./publisher.py --deploy
-```
-- Query contracts (publisher):
 
-```bash
-./publisher.py --query
-```
-- Set sparsity address (publisher, one-time):
-
-```bash
+# Set sparsity address (publisher)
 ./publisher.py --set-sparsity --contract 0x... --sparsity 0x...
-```
-- Set/update operator (sparsity):
 
-```bash
+# Set operator (sparsity)
 ./sparsity.py --set-operator --contract 0x... --operator 0x...
+
+# Fund operator (sparsity)
+./sparsity.py --fund-operator --operator 0x... --amount 1.0
+
+# Query contracts
+./publisher.py --query
+./sparsity.py --query
 ```
-- Fund operator (sparsity):
+
+## 2) Configuration
+
+Each tool loads a role-specific JSON config in this folder:
+
+- `publisher.conf` (template: `publisher.conf.example`)
+- `sparsity.conf` (template: `sparsity.conf.example`)
+
+Publisher config keys:
+
+```json
+{
+	"blockchain": { "rpc_url": "http://localhost:8545", "private_key": "0x...", "chain_id": 31337 },
+	"contract": { "publisher_commission_rate": 200, "sparsity_commission_rate": 300 },
+	"output": { "deployment_output": "deployments/" }
+}
+```
+
+Sparsity config keys:
+
+```json
+{
+	"blockchain": { "rpc_url": "http://localhost:8545", "private_key": "0x...", "chain_id": 31337 },
+	"funding": { "default_operator_funding": 1.0, "auto_fund_threshold": 0.1 }
+}
+```
+
+You can override most values with CLI flags. For example:
 
 ```bash
-./sparsity.py --fund-operator --operator 0x... --amount 1.5
+./publisher.py --rpc-url https://mainnet.infura.io/... --chain-id 1 --deploy
+./publisher.py --publisher-commission-rate 200 --sparsity-commission-rate 300 --deploy
+./publisher.py --private-key 0x... --query
 ```
-Deployment records
 
-- Deployment metadata (ABI, address, deployer, tx hash and block) are stored in `contract-tools/deployments/` as `deployment_*.json` files. Keep these safe — they include ABIs and addresses used by the admin tools.
+## 3) Tool Reference
+
+### Publisher (`publisher.py`)
+- Modes: `--deploy`, `--query`, `--set-sparsity`
+- Flags: `--publisher-commission-rate`, `--sparsity-commission-rate`, `--deployment-output`, `--contract`, `--sparsity`
+
+Examples:
+
+```bash
+# Interactive mode
+./publisher.py
+
+# Deploy with custom rates
+./publisher.py --deploy --publisher-commission-rate 250 --sparsity-commission-rate 300
+
+# Set sparsity for a deployed contract
+./publisher.py --set-sparsity --contract 0x123... --sparsity 0xabc...
+```
+
+### Sparsity (`sparsity.py`)
+- Modes: `--set-operator`, `--update-operator`, `--fund-operator`, `--query`
+- Flags: `--contract`, `--operator`, `--amount`
+
+Examples:
+
+```bash
+# Interactive mode
+./sparsity.py
+
+# Set operator
+./sparsity.py --set-operator --contract 0x123... --operator 0xdef...
+
+# Fund operator with 2 ETH
+./sparsity.py --fund-operator --operator 0xdef... --amount 2
+```
+
+## 4) Deployment Records
+
+Deployment JSON files are written under `contract-tools/deployments/` (e.g., `deployment_*.json`) containing:
+
+- Contract address and ABI
+- Deployer address and tx details
+- Timestamps and gas usage
+
+These files are auto-discovered by the tools for queries and updates.
+
+## 5) File Structure
+
+```
+contract-tools/
+├── publisher.py
+├── sparsity.py
+├── common.py
+├── config.py
+├── publisher.conf.example
+├── sparsity.conf.example
+├── deployments/
+│   └── deployment_*.json
+└── README.md
+```
+
+## 6) Security & Troubleshooting
+
+Security
+- Never commit real private keys
+- Ensure `.conf` files are in `.gitignore`
+- Protect deployment records (addresses + ABIs)
 
 Troubleshooting
+- Missing config file: copy from `*.conf.example` and edit
+- Invalid JSON: fix syntax errors in your `.conf`
+- solcx missing: `pip3 install py-solc-x`
+- Connection issues: verify RPC URL, chain ID, and balances
 
-- If a tool exits immediately with a message like `Publisher configuration file not found: contract-tools/publisher.conf`, run:
+## 7) Related Docs
 
-	```bash
-	cd contract-tools
-	cp publisher.conf.example publisher.conf
-	# then edit publisher.conf and re-run the tool
-	```
-- If you see `Invalid JSON in ...`, open the file and fix the JSON syntax.
-
-- If deployment fails with `Incorrect argument count` during deployment, ensure the local `contracts/Lottery.sol` constructor signature matches the tooling (current tools expect the 2-arg constructor above).
-
-Security notes
-
-- Do not commit real private keys into git. Add role-specific `.conf` files to `.gitignore`.
-- Protect deployment records — they list contract addresses and ABIs.
-
-Further reading
-
-- `publisher.conf.example` and `sparsity.conf.example` show the expected JSON structure for each role.
-- `CONFIGURATION.md` contains expanded configuration guidance.
-
-
-# Lottery Contract Management Tools
-
-Administrative tools for managing lottery smart contracts with a 4-role architecture. The system is refactored into specialized, role-based tools for better security, usability, and maintainability.
-
-## Architecture Overview
-
-The lottery system uses a 4-role architecture with dedicated management tools:
-
-- **Publisher**: Deploys contracts and receives commission (2% default) → Uses `publisher.py`
-- **Sparsity**: Manages operator nodes, receives commission (3% default) → Uses `sparsity.py`
-- **Operator**: Manages lottery rounds and draws (operational role only) → Web interface
-- **Player**: Places bets and receives winnings → Web interface
-
-### Role Flow
-
-```
-Publisher → Deploys Contract → Sets Sparsity → Steps Back
-Sparsity → Sets/Updates Operator → Funds Operator → Receives Commission
-Operator → Manages Rounds → Conducts Draws
-Players → Place Bets → Receive Winnings
-```
-
-## Tool Architecture
-
-The management system is split into focused, role-specific tools:
-
-### 🚀 Publisher Tool (`publisher.py`)
-**Role**: Contract deployment and one-time sparsity setting
-
-- Deploy new contracts
+- `publisher.conf.example`, `sparsity.conf.example` — templates
+- Project docs under `docs/` for architecture/internals
 - Set sparsity address (one-time)
 - Query contracts where you are publisher
 
