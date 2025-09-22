@@ -12,6 +12,26 @@ Role-focused CLI tools for deploying and managing the Lottery smart contract. Th
 - `sparsity.conf.example` — Sparsity config template
 - `deployments/` — Deployment records (`deployment_*.json`), auto-created
 
+## Architecture Overview
+
+The lottery system uses a 4-role architecture with dedicated management tools:
+
+- **Publisher**: Deploys contracts and receives commission (2% default) → Uses `publisher.py`
+- **Sparsity**: Manages operator nodes, receives commission (3% default) → Uses `sparsity.py`
+- **Operator**: Manages lottery rounds and draws (operational role only) → Web interface
+- **Player**: Places bets and receives winnings → Web interface
+
+### Role Flow
+
+```
+Publisher → Deploys Contract → Sets Sparsity → Steps Back → Receives Commission
+Sparsity → Sets/Updates Operator → Funds Operator → Receives Commission
+Operator → Manages Rounds → Conducts Draws
+Players → Place Bets → Receive Winnings
+```
+
+
+
 ## Prerequisites
 
 - Python 3.8+
