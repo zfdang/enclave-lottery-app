@@ -16,10 +16,10 @@ contract Lottery {
     // =============== IMMUTABLE CONFIGURATION ===============
     uint256 public immutable publisherCommissionRate; // Basis points (200 = 2%)
     uint256 public immutable sparsityCommissionRate;  // Basis points (300 = 3%)
-    uint256 public immutable minBetAmount;            // Minimum bet in wei
-    uint256 public immutable bettingDuration;         // Betting period in seconds
-    uint256 public immutable drawDelayAfterEnd;       // Grace period before draw in seconds
-    uint256 public immutable minParticipants;         // Minimum players required (2)
+    uint256 public minBetAmount;            // Minimum bet in wei
+    uint256 public bettingDuration;         // Betting period in seconds
+    uint256 public drawDelayAfterEnd;       // Grace period before draw in seconds
+    uint256 public minParticipants;         // Minimum players required (2)
     
     // =============== STRUCTS ===============
     struct LotteryRound {
@@ -125,17 +125,11 @@ contract Lottery {
     // =============== CONSTRUCTOR ===============
     constructor(
         uint256 _publisherCommissionRate,
-        uint256 _sparsityCommissionRate,
-        uint256 _minBetAmount,
-        uint256 _bettingDuration,
-        uint256 _drawDelayAfterEnd
+        uint256 _sparsityCommissionRate
     ) {
         require(_publisherCommissionRate <= 500, "Publisher commission too high (max 5%)");
         require(_sparsityCommissionRate <= 500, "Sparsity commission too high (max 5%)");
         require(_publisherCommissionRate + _sparsityCommissionRate <= 1000, "Total commission too high (max 10%)");
-        require(_minBetAmount > 0, "Minimum bet must be positive");
-        require(_bettingDuration >= 300, "Betting duration too short (min 5 minutes)");
-        require(_drawDelayAfterEnd >= 60, "Draw delay too short (min 1 minute)");
         
         publisher = msg.sender;
         sparsity = address(0);                    // Will be set by publisher
@@ -143,10 +137,6 @@ contract Lottery {
         sparsitySet = false;
         publisherCommissionRate = _publisherCommissionRate;
         sparsityCommissionRate = _sparsityCommissionRate;
-        minBetAmount = _minBetAmount;
-        bettingDuration = _bettingDuration;
-        drawDelayAfterEnd = _drawDelayAfterEnd;
-        minParticipants = 2;
         
         currentRoundId = 0;
         totalRounds = 0;

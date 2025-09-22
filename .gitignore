@@ -18,6 +18,7 @@ venv/
 .coverage
 coverage.xml
 htmlcov/
+admin/__pycache__/
 
 # Node / Frontend
 node_modules/
@@ -75,8 +76,13 @@ contracts/build/
 enclave/src/blockchain/contracts/compiled/
 
 # Admin configuration and deployment records
+# Role-specific configurations (contain private keys)
 admin/admin.conf
+admin/publisher.conf
+admin/sparsity.conf
+# Deployment records and generated configs
 admin/deployment_*.json
+admin/deployments/
 admin/operator.conf
 deployment_*.json
 

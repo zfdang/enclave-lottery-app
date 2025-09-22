@@ -1,0 +1,11 @@
+{
+  "blockchain": {
+    "rpc_url": "http://localhost:8545",
+    "private_key": "0xdbda1821b80551c9d65939329250298aa3472ba22feea921c0cf5d620ea67b97",
+    "chain_id": 31337
+  },
+  "funding": {
+    "default_operator_funding": 1.0,
+    "auto_fund_threshold": 0.1
+  }
+}
