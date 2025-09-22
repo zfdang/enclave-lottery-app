@@ -101,19 +101,22 @@ class LotteryManager:
             
             # Get configuration
             config = contract.functions.getConfig().call()
-            admin_addr, operator_addr, commission_rate, min_bet, betting_dur, draw_delay, min_part = config
+            publisher_addr, sparsity_addr, operator_addr, publisher_commission, sparsity_commission, min_bet, betting_dur, draw_delay, min_part, sparsity_is_set = config
             
             # Get current round info
             try:
                 current_round = contract.functions.getCurrentRound().call()
-                round_id, start_time, end_time, status, participant_count, total_bets = current_round
+                round_id, start_time, end_time, draw_time, total_pot, participant_count, winner, pub_comm, spar_comm, winner_prize, completed, cancelled, refunded = current_round
             except:
                 current_round = None
             
             return {
-                'admin': admin_addr,
+                'publisher': publisher_addr,
+                'sparsity': sparsity_addr if sparsity_addr != "0x0000000000000000000000000000000000000000" else None,
                 'operator': operator_addr if operator_addr != "0x0000000000000000000000000000000000000000" else None,
-                'commission_rate': commission_rate,
+                'sparsity_set': sparsity_is_set,
+                'publisher_commission_rate': publisher_commission,
+                'sparsity_commission_rate': sparsity_commission,
                 'min_bet_wei': min_bet,
                 'min_bet_eth': self.w3.from_wei(min_bet, 'ether'),
                 'betting_duration': betting_dur,
@@ -143,22 +146,25 @@ class LotteryManager:
             
             print(f"\n{i}. Contract: {deployment['contract_address']}")
             print(f"   📁 File: {info['file_path']}")
-            admin_addr = deployment.get('admin_address') or deployment.get('deployer') or 'Unknown'
-            print(f"   📍 Admin: {admin_addr}")
+            publisher_addr = deployment.get('publisher_address') or deployment.get('deployer') or 'Unknown'
+            print(f"   📍 Publisher: {publisher_addr}")
             
             if status['is_accessible']:
+                sparsity_status = status['sparsity'] or "Not set"
                 operator_status = status['operator'] or "Not set"
+                print(f"   🔧 Sparsity: {sparsity_status}")
                 print(f"   👤 Operator: {operator_status}")
-                print(f"   💰 Commission: {status['commission_rate'] / 100}%")
+                print(f"   💰 Publisher Commission: {status['publisher_commission_rate'] / 100}%")
+                print(f"   💰 Sparsity Commission: {status['sparsity_commission_rate'] / 100}%")
                 print(f"   💸 Min Bet: {status['min_bet_eth']} ETH")
                 print(f"   ⏱️  Betting Duration: {status['betting_duration'] // 60} minutes")
                 print(f"   ⏳ Draw Delay: {status['draw_delay']} seconds")
                 
-                if status['current_round']:
-                    round_id, start_time, end_time, round_status, participant_count, total_bets = status['current_round']
-                    print(f"   🎯 Current Round: #{round_id} (Status: {round_status})")
+                if status['current_round'] and status['current_round'][0] > 0:  # Check if round ID > 0
+                    round_id, start_time, end_time, draw_time, total_pot, participant_count = status['current_round'][:6]
+                    print(f"   🎯 Current Round: #{round_id}")
                     print(f"   👥 Participants: {participant_count}")
-                    print(f"   💎 Total Bets: {self.w3.from_wei(total_bets, 'ether')} ETH")
+                    print(f"   💎 Total Pot: {self.w3.from_wei(total_pot, 'ether')} ETH")
                 else:
                     print(f"   🎯 Current Round: No active round")
             else:
@@ -315,7 +321,8 @@ class LotteryManager:
     
     def deploy_contract(self, 
                        contract_interface: Dict[str, Any],
-                       commission_rate: int,
+                       publisher_commission_rate: int,
+                       sparsity_commission_rate: int,
                        min_bet_amount: float,
                        betting_duration: int,
                        draw_delay: int) -> Dict[str, Any]:
@@ -327,8 +334,12 @@ class LotteryManager:
         min_bet_wei = self.w3.to_wei(min_bet_amount, 'ether')
         
         # Validate parameters
-        if commission_rate > 1000:  # Max 10%
-            raise ValueError("Commission rate too high (max 10 percent)")
+        if publisher_commission_rate > 500:  # Max 5%
+            raise ValueError("Publisher commission rate too high (max 5 percent)")
+        if sparsity_commission_rate > 500:  # Max 5%
+            raise ValueError("Sparsity commission rate too high (max 5 percent)")
+        if publisher_commission_rate + sparsity_commission_rate > 1000:  # Max 10% total
+            raise ValueError("Total commission rate too high (max 10 percent)")
         if betting_duration < 300:  # Min 5 minutes
             raise ValueError("Betting duration too short (min 5 minutes)")
         if draw_delay < 60:  # Min 1 minute
@@ -342,7 +353,8 @@ class LotteryManager:
         
         # Build constructor transaction
         constructor_txn = contract_factory.constructor(
-            commission_rate,
+            publisher_commission_rate,
+            sparsity_commission_rate,
             min_bet_wei,
             betting_duration,
             draw_delay
@@ -393,15 +405,18 @@ class LotteryManager:
         
         # Get configuration from contract
         config = contract.functions.getConfig().call()
-        admin_addr, operator_addr, commission_rate, min_bet, betting_dur, draw_delay, min_part = config
+        publisher_addr, sparsity_addr, operator_addr, publisher_commission, sparsity_commission, min_bet, betting_dur, draw_delay, min_part, sparsity_is_set = config
         
         # Verify parameters
-        assert admin_addr.lower() == self.account.address.lower(), "Admin address mismatch"
+        assert publisher_addr.lower() == self.account.address.lower(), "Publisher address mismatch"
         
-        # Operator should always be zero address after deployment
+        # Sparsity and operator should not be set during deployment
+        assert sparsity_addr == "0x0000000000000000000000000000000000000000", "Sparsity should not be set during deployment"
         assert operator_addr == "0x0000000000000000000000000000000000000000", "Operator should not be set during deployment"
+        assert not sparsity_is_set, "Sparsity flag should be false during deployment"
         
-        assert commission_rate == expected_params['commission_rate'], "Commission rate mismatch"
+        assert publisher_commission == expected_params['publisher_commission_rate'], "Publisher commission rate mismatch"
+        assert sparsity_commission == expected_params['sparsity_commission_rate'], "Sparsity commission rate mismatch"
         assert min_bet == expected_params['min_bet_wei'], "Min bet amount mismatch"
         assert betting_dur == expected_params['betting_duration'], "Betting duration mismatch"
         assert draw_delay == expected_params['draw_delay'], "Draw delay mismatch"
@@ -411,9 +426,11 @@ class LotteryManager:
         
         # Display configuration
         print("\n📋 Contract Configuration:")
-        print(f"   Admin: {admin_addr}")
-        print(f"   Operator: Not set (use management tool to set)")
-        print(f"   Commission Rate: {commission_rate / 100}%")
+        print(f"   Publisher: {publisher_addr}")
+        print(f"   Sparsity: Not set (use setSparsity function)")
+        print(f"   Operator: Not set (sparsity will set later)")
+        print(f"   Publisher Commission: {publisher_commission / 100}%")
+        print(f"   Sparsity Commission: {sparsity_commission / 100}%")
         print(f"   Min Bet Amount: {self.w3.from_wei(min_bet, 'ether')} ETH")
         print(f"   Betting Duration: {betting_dur} seconds ({betting_dur // 60} minutes)")
         print(f"   Draw Delay: {draw_delay} seconds ({draw_delay // 60} minutes)")
@@ -477,7 +494,8 @@ def parse_arguments():
     mode_group.add_argument("--interactive", action="store_true", default=True, help="Interactive mode (default)")
     
     # Contract configuration
-    parser.add_argument("--commission-rate", type=int, default=admin_config['contract']['commission_rate'], help=f"Admin commission rate in basis points (default: {admin_config['contract']['commission_rate']} = {admin_config['contract']['commission_rate']/100}%%)")
+    parser.add_argument("--publisher-commission-rate", type=int, default=admin_config['contract'].get('publisher_commission_rate', 200), help=f"Publisher commission rate in basis points (default: 200 = 2.0%%)")
+    parser.add_argument("--sparsity-commission-rate", type=int, default=admin_config['contract'].get('sparsity_commission_rate', 300), help=f"Sparsity commission rate in basis points (default: 300 = 3.0%%)")
     parser.add_argument("--min-bet", type=float, default=admin_config['contract']['min_bet'], help=f"Minimum bet amount in ETH (default: {admin_config['contract']['min_bet']})")
     parser.add_argument("--betting-duration", type=int, default=admin_config['contract']['betting_duration'], help=f"Betting duration in seconds (default: {admin_config['contract']['betting_duration']} = {admin_config['contract']['betting_duration']//60} minutes)")
     parser.add_argument("--draw-delay", type=int, default=admin_config['contract']['draw_delay'], help=f"Draw delay after betting ends in seconds (default: {admin_config['contract']['draw_delay']} = {admin_config['contract']['draw_delay']//60:.1f} minutes)")
@@ -576,13 +594,15 @@ def deploy_new_contract(manager: LotteryManager):
         admin_config = load_admin_config()
         
         # Use configuration defaults directly
-        commission_rate = admin_config['contract']['commission_rate']
+        publisher_commission_rate = admin_config['contract'].get('publisher_commission_rate', 200)
+        sparsity_commission_rate = admin_config['contract'].get('sparsity_commission_rate', 300)
         min_bet = admin_config['contract']['min_bet']
         betting_duration = admin_config['contract']['betting_duration']
         draw_delay = admin_config['contract']['draw_delay']
         
         print("📋 Using configuration defaults:")
-        print(f"   💰 Commission rate: {commission_rate} basis points ({commission_rate/100}%)")
+        print(f"   💰 Publisher commission: {publisher_commission_rate} basis points ({publisher_commission_rate/100}%)")
+        print(f"   💰 Sparsity commission: {sparsity_commission_rate} basis points ({sparsity_commission_rate/100}%)")
         print(f"   💸 Minimum bet: {min_bet} ETH")
         print(f"   ⏱️  Betting duration: {betting_duration} seconds ({betting_duration//60} minutes)")
         print(f"   ⏳ Draw delay: {draw_delay} seconds ({draw_delay//60:.1f} minutes)")
@@ -592,7 +612,8 @@ def deploy_new_contract(manager: LotteryManager):
         contract_interface = manager.compile_contract()
         contract_info = manager.deploy_contract(
             contract_interface=contract_interface,
-            commission_rate=commission_rate,
+            publisher_commission_rate=publisher_commission_rate,
+            sparsity_commission_rate=sparsity_commission_rate,
             min_bet_amount=min_bet,
             betting_duration=betting_duration,
             draw_delay=draw_delay
@@ -600,7 +621,8 @@ def deploy_new_contract(manager: LotteryManager):
         
         # Verify deployment
         expected_params = {
-            'commission_rate': commission_rate,
+            'publisher_commission_rate': publisher_commission_rate,
+            'sparsity_commission_rate': sparsity_commission_rate,
             'min_bet_wei': manager.w3.to_wei(min_bet, 'ether'),
             'betting_duration': betting_duration,
             'draw_delay': draw_delay

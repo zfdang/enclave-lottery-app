@@ -2,21 +2,24 @@
 pragma solidity ^0.8.19;
 
 /**
- * @title Lottery Contract - Role-based Architecture
- * @dev Smart contract for managing lottery rounds with admin/operator/player roles
- * @notice Admin deploys and configures, Operator manages rounds, Players place bets
+ * @title Lottery Contract - 4-Role Architecture
+ * @dev Smart contract for managing lottery rounds with publisher/sparsity/operator/player roles
+ * @notice Publisher deploys, Sparsity manages operator, Operator runs rounds, Players place bets
  */
 contract Lottery {
     // =============== ROLES ===============
-    address public immutable admin;
-    address public operator;
+    address public immutable publisher;        // Contract deployer, receives commission
+    address public sparsity;                   // Cloud manager, manages operator
+    address public operator;                   // Round manager, handles lottery rounds
+    bool public sparsitySet;                   // One-time flag for sparsity assignment
     
     // =============== IMMUTABLE CONFIGURATION ===============
-    uint256 public immutable adminCommissionRate; // Basis points (500 = 5%)
-    uint256 public immutable minBetAmount; // Minimum bet in wei
-    uint256 public immutable bettingDuration; // Betting period in seconds
-    uint256 public immutable drawDelayAfterEnd; // Grace period before draw in seconds
-    uint256 public immutable minParticipants; // Minimum players required (2)
+    uint256 public immutable publisherCommissionRate; // Basis points (200 = 2%)
+    uint256 public immutable sparsityCommissionRate;  // Basis points (300 = 3%)
+    uint256 public immutable minBetAmount;            // Minimum bet in wei
+    uint256 public immutable bettingDuration;         // Betting period in seconds
+    uint256 public immutable drawDelayAfterEnd;       // Grace period before draw in seconds
+    uint256 public immutable minParticipants;         // Minimum players required (2)
     
     // =============== STRUCTS ===============
     struct LotteryRound {
@@ -27,7 +30,8 @@ contract Lottery {
         uint256 totalPot;
         uint256 participantCount;
         address winner;
-        uint256 adminCommission;
+        uint256 publisherCommission;
+        uint256 sparsityCommission;
         uint256 winnerPrize;
         bool completed;
         bool cancelled;
@@ -65,7 +69,8 @@ contract Lottery {
         address indexed winner,
         uint256 totalPot,
         uint256 winnerPrize,
-        uint256 adminCommission,
+        uint256 publisherCommission,
+        uint256 sparsityCommission,
         uint256 randomSeed
     );
     
@@ -81,15 +86,29 @@ contract Lottery {
         uint256 participantCount
     );
     
+    event SparsitySet(address indexed sparsity);
+    event OperatorUpdated(address indexed oldOperator, address indexed newOperator);
+    
     // =============== MODIFIERS ===============
-    modifier onlyAdmin() {
-        require(msg.sender == admin, "Only admin can call this function");
+    modifier onlyPublisher() {
+        require(msg.sender == publisher, "Only publisher can call this function");
+        _;
+    }
+    
+    modifier onlySparsity() {
+        require(sparsitySet, "Sparsity not set");
+        require(msg.sender == sparsity, "Only sparsity can call this function");
         _;
     }
     
     modifier onlyOperator() {
         require(operator != address(0), "Operator not set");
         require(msg.sender == operator, "Only operator can call this function");
+        _;
+    }
+    
+    modifier sparsityNotSet() {
+        require(!sparsitySet, "Sparsity already set");
         _;
     }
     
@@ -105,19 +124,25 @@ contract Lottery {
     
     // =============== CONSTRUCTOR ===============
     constructor(
-        uint256 _adminCommissionRate,
+        uint256 _publisherCommissionRate,
+        uint256 _sparsityCommissionRate,
         uint256 _minBetAmount,
         uint256 _bettingDuration,
         uint256 _drawDelayAfterEnd
     ) {
-        require(_adminCommissionRate <= 1000, "Commission rate too high (max 10%)");
+        require(_publisherCommissionRate <= 500, "Publisher commission too high (max 5%)");
+        require(_sparsityCommissionRate <= 500, "Sparsity commission too high (max 5%)");
+        require(_publisherCommissionRate + _sparsityCommissionRate <= 1000, "Total commission too high (max 10%)");
         require(_minBetAmount > 0, "Minimum bet must be positive");
         require(_bettingDuration >= 300, "Betting duration too short (min 5 minutes)");
         require(_drawDelayAfterEnd >= 60, "Draw delay too short (min 1 minute)");
         
-        admin = msg.sender;
-        operator = address(0); // Operator will be set later by admin
-        adminCommissionRate = _adminCommissionRate;
+        publisher = msg.sender;
+        sparsity = address(0);                    // Will be set by publisher
+        operator = address(0);                    // Will be set by sparsity
+        sparsitySet = false;
+        publisherCommissionRate = _publisherCommissionRate;
+        sparsityCommissionRate = _sparsityCommissionRate;
         minBetAmount = _minBetAmount;
         bettingDuration = _bettingDuration;
         drawDelayAfterEnd = _drawDelayAfterEnd;
@@ -128,18 +153,57 @@ contract Lottery {
         hasActiveRound = false;
     }
     
-    // =============== ADMIN FUNCTIONS ===============
+    // =============== PUBLISHER FUNCTIONS ===============
+    
+    /**
+     * @dev Set the sparsity address (one-time only)
+     * @param _sparsity The address of the sparsity (cloud manager)
+     * @notice Can only be called by publisher, and only once
+     */
+    function setSparsity(address _sparsity) external onlyPublisher sparsityNotSet {
+        require(_sparsity != address(0), "Invalid sparsity address");
+        require(_sparsity != publisher, "Sparsity cannot be publisher");
+        
+        sparsity = _sparsity;
+        sparsitySet = true;
+        
+        emit SparsitySet(_sparsity);
+    }
+    
+    // =============== SPARSITY FUNCTIONS ===============
     
     /**
      * @dev Set the operator address
      * @param _operator The address of the operator
-     * @notice Can only be called by admin, and only when no operator is set or no active round exists
+     * @notice Can only be called by sparsity when no active round exists
      */
-    function setOperator(address _operator) external onlyAdmin {
+    function setOperator(address _operator) external onlySparsity {
         require(_operator != address(0), "Invalid operator address");
+        require(_operator != publisher, "Operator cannot be publisher");
+        require(_operator != sparsity, "Operator cannot be sparsity");
         require(!hasActiveRound, "Cannot change operator during active round");
         
+        address oldOperator = operator;
         operator = _operator;
+        
+        emit OperatorUpdated(oldOperator, _operator);
+    }
+    
+    /**
+     * @dev Update the operator address (same as setOperator, for clarity)
+     * @param _operator The new address of the operator
+     * @notice Can only be called by sparsity when no active round exists
+     */
+    function updateOperator(address _operator) external onlySparsity {
+        require(_operator != address(0), "Invalid operator address");
+        require(_operator != publisher, "Operator cannot be publisher");
+        require(_operator != sparsity, "Operator cannot be sparsity");
+        require(!hasActiveRound, "Cannot change operator during active round");
+        
+        address oldOperator = operator;
+        operator = _operator;
+        
+        emit OperatorUpdated(oldOperator, _operator);
     }
     
     // =============== OPERATOR FUNCTIONS ===============
@@ -166,7 +230,8 @@ contract Lottery {
             totalPot: 0,
             participantCount: 0,
             winner: address(0),
-            adminCommission: 0,
+            publisherCommission: 0,
+            sparsityCommission: 0,
             winnerPrize: 0,
             completed: false,
             cancelled: false,
@@ -195,7 +260,7 @@ contract Lottery {
         // Generate pseudo-random winner using block-based randomness
         uint256 randomSeed = uint256(keccak256(abi.encodePacked(
             block.timestamp,
-            block.difficulty,
+            block.prevrandao,
             block.number,
             roundId,
             round.totalPot
@@ -204,24 +269,37 @@ contract Lottery {
         uint256 winnerIndex = randomSeed % round.participantCount;
         address winner = roundParticipants[roundId][winnerIndex];
         
-        // Calculate payouts
-        uint256 commission = (round.totalPot * adminCommissionRate) / 10000;
-        uint256 prize = round.totalPot - commission;
+        // Calculate and distribute payouts
+        _distributePayout(round, winner, randomSeed);
+    }
+    
+    /**
+     * @dev Internal function to calculate and distribute payouts
+     */
+    function _distributePayout(LotteryRound storage round, address winner, uint256 randomSeed) internal {
+        // Calculate commissions
+        uint256 publisherCommission = (round.totalPot * publisherCommissionRate) / 10000;
+        uint256 sparsityCommission = (round.totalPot * sparsityCommissionRate) / 10000;
+        uint256 prize = round.totalPot - publisherCommission - sparsityCommission;
         
         // Update round state
         round.winner = winner;
-        round.adminCommission = commission;
+        round.publisherCommission = publisherCommission;
+        round.sparsityCommission = sparsityCommission;
         round.winnerPrize = prize;
         round.completed = true;
         hasActiveRound = false;
         
         // Transfer funds
-        if (commission > 0) {
-            payable(admin).transfer(commission);
+        if (publisherCommission > 0) {
+            payable(publisher).transfer(publisherCommission);
+        }
+        if (sparsityCommission > 0 && sparsity != address(0)) {
+            payable(sparsity).transfer(sparsityCommission);
         }
         payable(winner).transfer(prize);
         
-        emit RoundCompleted(roundId, winner, round.totalPot, prize, commission, randomSeed);
+        emit RoundCompleted(round.roundId, winner, round.totalPot, prize, publisherCommission, sparsityCommission, randomSeed);
     }
     
     /**
@@ -332,7 +410,7 @@ contract Lottery {
             return rounds[currentRoundId];
         }
         // Return empty round if no active round
-        return LotteryRound(0, 0, 0, 0, 0, 0, address(0), 0, 0, false, false, false);
+        return LotteryRound(0, 0, 0, 0, 0, 0, address(0), 0, 0, 0, false, false, false);
     }
     
     /**
@@ -372,22 +450,28 @@ contract Lottery {
      * @dev Get contract configuration
      */
     function getConfig() external view returns (
-        address adminAddr,
+        address publisherAddr,
+        address sparsityAddr,
         address operatorAddr,
-        uint256 commissionRate,
+        uint256 publisherCommission,
+        uint256 sparsityCommission,
         uint256 minBet,
         uint256 bettingDur,
         uint256 drawDelay,
-        uint256 minPart
+        uint256 minPart,
+        bool sparsityIsSet
     ) {
         return (
-            admin,
+            publisher,
+            sparsity,
             operator,
-            adminCommissionRate,
+            publisherCommissionRate,
+            sparsityCommissionRate,
             minBetAmount,
             bettingDuration,
             drawDelayAfterEnd,
-            minParticipants
+            minParticipants,
+            sparsitySet
         );
     }
 }

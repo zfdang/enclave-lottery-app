@@ -1,25 +1,64 @@
 # Admin Tools
 
-Administrative tools for managing lottery smart contracts. This directory contains everything needed to deploy, configure, and manage lottery contracts in a production environment.
+Administrative tools for managing lottery smart contracts with 4-role architecture. This directory contains everything needed to deploy, configure, and manage lottery contracts in a production environment.
 
-## Overview
+## Architecture Overview
 
-The admin tools provide a complete contract management solution with:
-- **Smart Contract Deployment**: Deploy new lottery contracts with configuration defaults
-- **Contract Management**: Query deployed contracts and their status
-- **Operator Management**: Set and update contract operators
-- **Configuration Management**: Centralized configuration for all admin operations
+The lottery system uses a 4-role architecture:
+
+- **Publisher**: Deploys contracts and receives commission (2% default)
+- **Sparsity**: Manages operator nodes in cloud environment, receives commission (3% default)  
+- **Operator**: Manages lottery rounds and draws (operational role only)
+- **Player**: Places bets and receives winnings
+
+## Role Flow
+
+```
+Publisher → Deploys Contract → Sets Sparsity → Steps Back
+Sparsity → Sets/Updates Operator → Receives Commission
+Operator → Manages Rounds → Conducts Draws  
+Players → Place Bets → Receive Winnings
+```
 
 ## Quick Start
 
-### 1. Deploy a New Contract
+### 1. Deploy a New Contract (Publisher)
 
 ```bash
-# Deploy with default configuration
+# Deploy with default configuration (Publisher: 2%, Sparsity: 3%)
 python3 admin/manage_lottery_contract.py --deploy
 
-# Deploy with custom settings
-python3 admin/manage_lottery_contract.py --commission-rate 300 --min-bet 0.005 --deploy
+# Deploy with custom commission rates
+python3 admin/manage_lottery_contract.py --deploy --publisher-commission-rate 150 --sparsity-commission-rate 250
+```
+
+### 2. Query Deployed Contracts
+
+```bash
+# View all deployed contracts and their role status
+python3 admin/manage_lottery_contract.py --query
+```
+
+### 3. Set Sparsity Address (Publisher - One Time Only)
+
+After deployment, the publisher must set the sparsity address using the contract's `setSparsity()` function directly on the blockchain.
+
+### 4. Set/Update Operator (Sparsity Role)
+
+```bash
+# Interactive operator management (for sparsity)
+python3 admin/manage_lottery_contract.py --set-operator
+
+# Set operator for specific contract with command line address
+python3 admin/manage_lottery_contract.py --set-operator --contract 0x123... --operator 0xOperatorAddress...
+```
+
+### 5. Interactive Mode
+
+```bash
+# Launch interactive menu (default)
+python3 admin/manage_lottery_contract.py
+```
 ```
 
 ### 2. Query Deployed Contracts

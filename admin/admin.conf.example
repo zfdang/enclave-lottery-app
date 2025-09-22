@@ -5,7 +5,8 @@
     "chain_id": 31337
   },
   "contract": {
-    "commission_rate": 500,
+    "publisher_commission_rate": 200,
+    "sparsity_commission_rate": 300,
     "min_bet": 0.01,
     "betting_duration": 900,
     "draw_delay": 90

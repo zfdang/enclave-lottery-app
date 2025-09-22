@@ -1,19 +1,29 @@
 # Smart Contracts
 
-This directory contains the smart contracts for the Enclave Lottery App.
+This directory contains the smart contracts for the Enclave Lottery App with 4-role architecture.
 
 ## Files
 
-- **`Lottery.sol`** - Main lottery contract with role-based architecture
+- **`Lottery.sol`** - Main lottery contract with 4-role architecture
 - **`build/`** - Compiled contract artifacts (auto-generated)
 
 ## Contract Architecture
 
-The lottery contract implements a role-based system:
+The lottery contract implements a 4-role system:
 
-- **Admin**: Deploys contracts and sets configuration
-- **Operator**: Manages lottery rounds (start/draw)  
-- **Players**: Place bets and participate in draws
+- **Publisher**: Deploys contracts, receives commission (2% default), sets sparsity (one-time)
+- **Sparsity**: Manages operator nodes in cloud, receives commission (3% default)
+- **Operator**: Manages lottery rounds (start/draw), operational role only
+- **Players**: Place bets and participate in draws, receive winnings (95% default)
+
+## Role Flow
+
+```
+Publisher → Deploys → Sets Sparsity → Steps Back
+Sparsity → Manages Operator → Receives Commission  
+Operator → Runs Rounds → Conducts Draws
+Players → Place Bets → Receive Winnings
+```
 
 ## Usage
 
