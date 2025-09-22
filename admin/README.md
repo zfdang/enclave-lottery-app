@@ -35,8 +35,11 @@ python3 admin/manage_lottery_contract.py --query
 # Interactive operator management
 python3 admin/manage_lottery_contract.py --set-operator
 
-# Set operator for specific contract
+# Set operator for specific contract (interactive input)
 python3 admin/manage_lottery_contract.py --contract 0x123... --set-operator
+
+# Set operator for specific contract with command line address
+python3 admin/manage_lottery_contract.py --contract 0x123... --set-operator --operator 0xOperatorAddress...
 ```
 
 ### 4. Interactive Mode

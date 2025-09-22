@@ -24,6 +24,23 @@ sys.path.insert(0, str(Path(__file__).parent))
 from config import load_admin_config
 
 
+def validate_ethereum_address(address: str) -> bool:
+    """Validate Ethereum address format"""
+    if not address:
+        return False
+    
+    # Check basic format
+    if not address.startswith('0x') or len(address) != 42:
+        return False
+    
+    # Check if it's valid hex
+    try:
+        int(address[2:], 16)
+        return True
+    except ValueError:
+        return False
+
+
 class LotteryManager:
     def __init__(self, rpc_url: str, private_key: str, chain_id: int):
         """Initialize the manager with blockchain connection"""
@@ -471,6 +488,7 @@ def parse_arguments():
     
     # Specific contract for set-operator mode
     parser.add_argument("--contract", help="Contract address for set-operator mode")
+    parser.add_argument("--operator", help="Operator address to set (for --set-operator mode)")
     
     return parser.parse_args()
 
@@ -663,14 +681,25 @@ def main():
                     print(f"❌ Contract {args.contract} not found in deployment files")
                     return
                 
-                operator_address = input(f"Enter operator address for {args.contract}: ").strip()
+                # Use operator address from command line or prompt for it
+                operator_address = args.operator
+                if not operator_address:
+                    operator_address = input(f"Enter operator address for {args.contract}: ").strip()
+                
                 if operator_address:
+                    # Validate address format
+                    if not validate_ethereum_address(operator_address):
+                        print("❌ Invalid Ethereum address format. Address must be 42 characters long and start with 0x")
+                        return
+                    
                     manager.set_operator(
                         contract_address=target_contract['deployment']['contract_address'],
                         abi=target_contract['deployment'].get('abi') or manager._load_contract_abi(),
                         operator_address=operator_address,
                         deployment_file=target_contract['file_path']
                     )
+                else:
+                    print("❌ No operator address provided")
             else:
                 # Interactive selection
                 manager.set_operator_interactive(contracts_info)
