@@ -25,25 +25,36 @@ class BlockchainClient:
         self.w3: Optional[Web3] = None
         self.contract = None
         self.account = None
-        self.role = None  # 'admin', 'operator', or 'player'
+        self.role = None  # None if not verified, "operator" after verified
         
         # Blockchain configuration
         self.rpc_url = config.get('blockchain', {}).get('rpc_url', 'http://localhost:8545')
         self.chain_id = config.get('blockchain', {}).get('chain_id', 31337)
-        self.contract_address = config.get('contract', {}).get('address') or config.get('blockchain', {}).get('contract_address')
+        self.contract_address = config.get('blockchain', {}).get('contract_address')
         
         # Load contract ABI
-        self.contract_abi = config.get('contract', {}).get('abi')
+        self.contract_abi_path = config.get('development', {}).get('contract_abi_path')
         
         # Load private key from config
-        private_key = config.get('blockchain', {}).get('private_key')
-        if not private_key:
-            raise ValueError("Private key is required for blockchain operations")
-            
-        self.account = Account.from_key(private_key)
-        
-        # Determine role from config or contract
-        self.role = config.get('operator', {}).get('role', 'operator')
+        operator_address = config.get('blockchain', {}).get('operator_address')
+        operator_private_key = config.get('blockchain', {}).get('operator_private_key')
+
+        # if operator_private_key is empty, we will generate a new account
+        if operator_private_key:
+            self.account = Account.from_key(operator_private_key)
+            # check account.address matches operator_address if provided
+            if operator_address and self.account.address.lower() != operator_address.lower():
+                logger.error("Operator address does not match private key!")
+                raise ValueError("Operator address and private key mismatch")
+            logger.info("Operator credentials found in configuration")
+        else:
+            # Generate a new random account for player role
+            self.account = Account.create()
+            operator_address = self.account.address
+            operator_private_key = self.account.key.hex()
+            logger.info("Generated temporary operator account")
+        logger.info(f"Operator address: {self.account.address}")
+
             
     async def initialize(self):
         """Initialize blockchain connection and contract"""
@@ -54,16 +65,14 @@ class BlockchainClient:
             # Check connection
             if not self.w3.is_connected():
                 raise Exception("Failed to connect to blockchain network")
-                
             logger.info(f"Connected to blockchain: {self.rpc_url}")
-            logger.info(f"Account address: {self.account.address}")
-            logger.info(f"Account role: {self.role}")
             
-            # Setup contract interaction
-            await self._setup_contract()
+            if self.contract_address:
+                # setup contract only if address is provided
+                await self._setup_contract()
             
-            # Verify role permissions
-            await self._verify_role_permissions()
+                # Verify role permissions
+                await self._verify_role_permissions()
             
         except Exception as e:
             logger.error(f"Failed to initialize blockchain client: {e}")
@@ -72,18 +81,25 @@ class BlockchainClient:
     async def _setup_contract(self):
         """Setup smart contract interaction"""
         try:
-            if not self.contract_address:
-                raise ValueError("Contract address not provided in configuration")
-                
-            if not self.contract_abi:
-                raise ValueError("Contract ABI not found in configuration")
+            # show current working path
+            logger.info(f"Current working directory: {Path.cwd()}")
             
+            # show abi path
+            logger.info(f"Contract ABI path: {self.contract_abi_path}")
+            
+            # check where abi file is
+            abi_path = Path(self.contract_abi_path)
+            if not abi_path.is_file():
+                raise FileNotFoundError(f"Contract ABI file not found: {abi_path}")
+            with open(abi_path, 'r') as f:
+                abi_json = json.load(f)
+                self.contract_abi = abi_json    
+                    
             # Create contract instance
             self.contract = self.w3.eth.contract(
                 address=self.contract_address,
                 abi=self.contract_abi
             )
-            
             logger.info(f"Contract connected at: {self.contract_address}")
                 
         except Exception as e:
@@ -98,20 +114,17 @@ class BlockchainClient:
                 
             # Get contract configuration
             config = await self._call_contract_function('getConfig')
-            admin_addr, operator_addr, _, _, _, _, _ = config
+            logger.info(f"Contract config: {config}")
+            
+            # If getConfig now returns a struct/dict, update accordingly
+            operatorAddr = config['operatorAddr'] if isinstance(config, dict) else config[2]
             
             # Verify role permissions
-            if self.role == 'admin':
-                if self.account.address.lower() != admin_addr.lower():
-                    raise ValueError(f"Account {self.account.address} is not the admin")
-                    
-            elif self.role == 'operator':
-                if self.account.address.lower() != operator_addr.lower():
-                    raise ValueError(f"Account {self.account.address} is not the operator")
-                    
-            # Players don't need special verification
-            
-            logger.info(f"Role permissions verified for {self.role}")
+            if self.account.address.lower() != operatorAddr.lower():
+                raise ValueError(f"Account {self.account.address} is not the operator")
+            else:
+                self.role = 'operator'
+                logger.info(f"Role permissions verified for {self.role}")
             
         except Exception as e:
             logger.warning(f"Could not verify role permissions: {e}")
@@ -409,18 +422,33 @@ class BlockchainClient:
         """Get contract configuration"""
         try:
             config = await self._call_contract_function('getConfig')
-            admin_addr, operator_addr, commission_rate, min_bet, betting_dur, draw_delay, min_part = config
-            
-            return {
-                'admin': admin_addr,
-                'operator': operator_addr,
-                'commission_rate': commission_rate,
-                'min_bet_amount': min_bet,
-                'betting_duration': betting_dur,
-                'draw_delay': draw_delay,
-                'min_participants': min_part
-            }
-            
+            # Support both dict (struct) and tuple return types
+            if isinstance(config, dict):
+                return {
+                    'publisherAddr': config.get('publisherAddr'),
+                    'sparsityAddr': config.get('sparsityAddr'),
+                    'operatorAddr': config.get('operatorAddr'),
+                    'commissionRate': config.get('commissionRate'),
+                    'minBet': config.get('minBet'),
+                    'bettingDuration': config.get('bettingDuration'),
+                    'drawDelay': config.get('drawDelay'),
+                    'minParticipants': config.get('minParticipants'),
+                    'sparsityIsSet': config.get('sparsityIsSet')
+                }
+            else:
+                # fallback for tuple/legacy
+                publisherAddr, sparsityAddr, operatorAddr, commissionRate, minBet, bettingDuration, drawDelay, minParticipants = config
+                return {
+                    'publisherAddr': publisherAddr,
+                    'sparsityAddr': sparsityAddr,
+                    'operatorAddr': operatorAddr,
+                    'commissionRate': commissionRate,
+                    'minBet': minBet,
+                    'bettingDuration': bettingDuration,
+                    'drawDelay': drawDelay,
+                    'minParticipants': minParticipants,
+                    'sparsityIsSet': sparsityIsSet
+                }
         except Exception as e:
             logger.error(f"Error getting contract config: {e}")
             return {}

@@ -64,10 +64,11 @@ class LotteryOperatorApp:
         logger.info("🎲 Initializing Lottery Operator Application")
         
         # Check if we have operator configuration
-        if not self.config.get('contract', {}).get('address'):
-            logger.error("❌ Contract address not found in configuration")
-            logger.error("Please ensure the admin has deployed the contract and generated operator.conf")
-            raise ValueError("Missing contract configuration")
+        if not self.config.get('blockchain', {}).get('contract_address'):
+            logger.info("📍 Contract address not configured")
+            logger.info(" We need to get this address from registry node later")
+        else:
+            logger.info(f"📍 Using contract address: {self.config['blockchain']['contract_address']}")
         
         # Initialize blockchain client with operator role
         try:

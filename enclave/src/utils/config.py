@@ -13,29 +13,7 @@ logger = logging.getLogger(__name__)
 
 def load_config() -> Dict[str, Any]:
     """Load configuration from files and environment variables"""
-    config = {
-        'server': {
-            'host': '0.0.0.0',
-            'port': 8080
-        },
-        'lottery': {
-            'draw_interval_minutes': 10,
-            'minimum_interval_minutes': 3,
-            'betting_cutoff_minutes': 1,
-            'single_bet_amount': '0.01',
-            'max_bets_per_user': 100
-        },
-        'blockchain': {
-            'rpc_url': 'http://localhost:8545',
-            'chain_id': 1337,
-            'contract_address': None,
-            'private_key': None
-        },
-        'enclave': {
-            'vsock_port': 5000,
-            'attestation_enabled': True
-        }
-    }
+    config = {}
     
     # Try to load from config file
     config_file = Path(__file__).parent.parent.parent / "config" / "enclave.conf"
@@ -47,50 +25,43 @@ def load_config() -> Dict[str, Any]:
                 logger.info(f"Loaded configuration from {config_file}")
         except Exception as e:
             logger.error(f"Error loading config file: {e}")
-    
-    # Override with environment variables
+    else:
+        logger.warning(f"Config file {config_file} not found. Will only use environment variables.")
+
+    # Override with environment variables, defined in .env
     config = _apply_env_overrides(config)
     
+    # show config again
+    logger.info(f"Configuration after applying environment overrides: {json.dumps(config, indent=2)}")
+
     return config
 
 
 def _apply_env_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
     """Apply environment variable overrides to configuration"""
-    
-    # Server configuration - support both new and legacy names
-    if os.getenv('SERVER_HOST') or os.getenv('LOTTERY_SERVER_HOST'):
-        config['server']['host'] = os.getenv('SERVER_HOST') or os.getenv('LOTTERY_SERVER_HOST')
-    if os.getenv('SERVER_PORT') or os.getenv('LOTTERY_SERVER_PORT'):
-        config['server']['port'] = int(os.getenv('SERVER_PORT') or os.getenv('LOTTERY_SERVER_PORT'))
-    
-    # Lottery configuration (minutes-only)
-    if os.getenv('LOTTERY_DRAW_INTERVAL_MINUTES'):
-        config['lottery']['draw_interval_minutes'] = int(os.getenv('LOTTERY_DRAW_INTERVAL_MINUTES'))
-    if os.getenv('LOTTERY_MINIMUM_INTERVAL_MINUTES'):
-        config['lottery']['minimum_interval_minutes'] = int(os.getenv('LOTTERY_MINIMUM_INTERVAL_MINUTES'))
-    if os.getenv('LOTTERY_BETTING_CUTOFF_MINUTES'):
-        config['lottery']['betting_cutoff_minutes'] = int(os.getenv('LOTTERY_BETTING_CUTOFF_MINUTES'))
-    if os.getenv('LOTTERY_SINGLE_BET_AMOUNT'):
-        config['lottery']['single_bet_amount'] = os.getenv('LOTTERY_SINGLE_BET_AMOUNT')
-    if os.getenv('LOTTERY_MAX_BETS_PER_USER'):
-        config['lottery']['max_bets_per_user'] = int(os.getenv('LOTTERY_MAX_BETS_PER_USER'))
-    
-    # Blockchain configuration - support both new and legacy names
-    if os.getenv('ETHEREUM_RPC_URL') or os.getenv('BLOCKCHAIN_RPC_URL'):
-        config['blockchain']['rpc_url'] = os.getenv('ETHEREUM_RPC_URL') or os.getenv('BLOCKCHAIN_RPC_URL')
-    if os.getenv('CHAIN_ID') or os.getenv('BLOCKCHAIN_CHAIN_ID'):
-        config['blockchain']['chain_id'] = int(os.getenv('CHAIN_ID') or os.getenv('BLOCKCHAIN_CHAIN_ID'))
-    if os.getenv('CONTRACT_ADDRESS') or os.getenv('BLOCKCHAIN_CONTRACT_ADDRESS'):
-        config['blockchain']['contract_address'] = os.getenv('CONTRACT_ADDRESS') or os.getenv('BLOCKCHAIN_CONTRACT_ADDRESS')
-    if os.getenv('PRIVATE_KEY') or os.getenv('BLOCKCHAIN_PRIVATE_KEY'):
-        config['blockchain']['private_key'] = os.getenv('PRIVATE_KEY') or os.getenv('BLOCKCHAIN_PRIVATE_KEY')
-    
-    # Enclave configuration
-    if os.getenv('ENCLAVE_VSOCK_PORT'):
-        config['enclave']['vsock_port'] = int(os.getenv('ENCLAVE_VSOCK_PORT'))
-    if os.getenv('ENCLAVE_ATTESTATION_ENABLED'):
-        config['enclave']['attestation_enabled'] = os.getenv('ENCLAVE_ATTESTATION_ENABLED').lower() == 'true'
-    
+    for key, value in os.environ.items():
+        # Convert key from ENV_VAR_NAME to section.key format
+        if key.startswith("LOTTERY_"):
+            section = "lottery"
+            key = key[len("LOTTERY_"):].lower()
+        elif key.startswith("BLOCKCHAIN_"):
+            section = "blockchain"
+            key = key[len("BLOCKCHAIN_"):].lower()
+        elif key.startswith("ENCLAVE_"):
+            section = "enclave"
+            key = key[len("ENCLAVE_"):].lower()
+        elif key.startswith("SERVER_"):
+            section = "server"
+            key = key[len("SERVER_"):].lower()
+        elif key.startswith("APP_"):
+            section = "app"
+            key = key[len("APP_"):].lower()
+        else:
+            continue
+
+        config.setdefault(section, {})[key] = value
+        # logger.info(f"Overridden config '{section}.{key}' with env var '{key}'")
+
     return config
 
 

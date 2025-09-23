@@ -29,7 +29,6 @@ log() {
 
 error() {
     echo -e "${RED}[ERROR] $1${NC}"
-    exit 1
 }
 
 warning() {
@@ -43,12 +42,15 @@ check_prerequisites() {
     # Check if Docker is installed
     if ! command -v docker &> /dev/null; then
         error "Docker is not installed. Please install Docker first."
+        exit
+    else
+        log "Docker version: $(docker --version)"
     fi
     
     # Check if Node.js is installed
     if ! command -v node &> /dev/null; then
-        warning "Node.js is not installed. Frontend build will be skipped."
-        SKIP_FRONTEND=true
+        error "Node.js is not installed. Frontend build will be skipped."
+        exit 1
     else
         log "Node.js version: $(node --version)"
     fi
@@ -56,18 +58,16 @@ check_prerequisites() {
     # Check if Python is available
     if ! command -v python3 &> /dev/null; then
         error "Python 3 is not installed."
+        exit 1
+    else
+        log "Python version: $(python3 --version)"  
     fi
     
     log "Prerequisites check completed ✅"
 }
 
 # Build frontend
-build_frontend() {
-    if [[ "$SKIP_FRONTEND" == "true" ]]; then
-        warning "Skipping frontend build - Node.js not available"
-        return
-    fi
-    
+build_frontend() {    
     log "Building React frontend..."
     
     cd "$PROJECT_ROOT/enclave/src/frontend"
@@ -120,21 +120,13 @@ compile_contracts() {
     
     # Check if solc is installed
     if ! command -v solc &> /dev/null; then
-        warning "Solidity compiler (solc) not found. Installing..."
-        
-        # Try to install solc via snap if available
-        if command -v snap &> /dev/null; then
-            sudo snap install solc
-        else
-            warning "Could not install solc automatically. Please install manually."
-            warning "Smart contract compilation will be skipped."
-            return
-        fi
+        error "Solidity compiler (solc) not found. please run ./scripts/setup_environment.sh to install solc-select"
+        exit 1
     fi
     
     # Use the correct contracts directory
-    CONTRACTS_DIR="$PROJECT_ROOT/enclave/src/blockchain/contracts"
-    BUILD_DIR="$CONTRACTS_DIR/compiled"
+    CONTRACTS_DIR="$PROJECT_ROOT/contracts"
+    BUILD_DIR="$PROJECT_ROOT/enclave/src/contracts/compiled"
     
     if [[ ! -d "$CONTRACTS_DIR" ]]; then
         warning "Contracts directory not found at $CONTRACTS_DIR"
@@ -142,6 +134,10 @@ compile_contracts() {
     fi
     
     cd "$CONTRACTS_DIR"
+
+    # list all files in current directory
+    # log "Found Solidity files:"
+    # ls -1 *.sol || { warning "No Solidity files found."; return; }
     
     # Create build directory
     mkdir -p "$BUILD_DIR"
@@ -173,7 +169,7 @@ build_docker() {
 }
 
 # Check if environment file exists, stop build if not
-create_env_file() {
+check_env_file() {
     if [[ ! -f "$PROJECT_ROOT/.env" ]]; then
         error ".env file does not exist! Please create .env file with proper configuration before building Docker image."
         error "You can copy from .env.example: cp .env.example .env"
@@ -187,23 +183,19 @@ create_env_file() {
 # Main build process
 main() {
     log "Starting build process..."
-    
-    # Create necessary directories
-    mkdir -p "$PROJECT_ROOT/enclave/src/blockchain/contracts/compiled"
-    
+        
     # Run build steps
     check_prerequisites
-    create_env_file
+    check_env_file
+    compile_contracts
     build_backend
     build_frontend
-    compile_contracts
     build_docker
     
     log "🎉 Build process completed successfully!"
     log ""
     log "📦 Docker Image Details:"
     log "   • Image: enclave-lottery-app:latest (255MB)"
-    log "   • Alias: lottery-enclave:latest"
     log "   • Optimized: Excludes frontend source files"
     log "   • Security: Runs as non-root user 'lottery'"
     log ""
