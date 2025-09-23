@@ -7,6 +7,15 @@ SERVICE_NAME="anvil"
 APP_HOME="/home/${APP_USER}"
 FOUNDRY_DIR="${APP_HOME}/.foundry"
 
+# install foundry if not already installed
+if [ ! -d "$FOUNDRY_DIR" ]; then
+    echo "Foundry not found, installing..."
+    sudo -u ${APP_USER} bash -c "curl -L https://foundry.paradigm.xyz | bash"
+    sudo -u ${APP_USER} bash -c "${FOUNDRY_DIR}/bin/foundryup"
+else
+    echo "Foundry already installed, skipping installation."
+fi
+
 
 # Ensure foundry binaries are in PATH for the service
 FOUNDRY_BIN="${APP_HOME}/.foundry/bin"
@@ -34,6 +43,9 @@ SERVICE_EOF
 sudo systemctl daemon-reload
 sudo systemctl enable ${SERVICE_NAME}
 sudo systemctl start ${SERVICE_NAME}
+
+# show anvil logs
+sudo journalctl -u ${SERVICE_NAME} -f --no-pager &
 
 echo "Anvil should now be running on port 8545"
 

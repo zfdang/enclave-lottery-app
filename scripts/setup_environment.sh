@@ -98,9 +98,9 @@ install_docker() {
     sudo systemctl enable docker
     
     # Add user to docker group
-    sudo usermod -a -G docker ec2-user
-    sudo usermod -a -G ne ec2-user
-    
+    sudo usermod -aG ne ec2-user
+    sudo usermod -aG docker ec2-user
+
     print_status "Docker installed successfully"
     print_warning "Please log out and log back in for group changes to take effect"
 }
@@ -126,25 +126,40 @@ install_nodejs() {
     npm --version
 }
 
-# Install Python 3.11
+# Install Python 3.9
 install_python() {
-    print_status "Installing Python 3.11..."
+    print_status "Installing Python 3.9..."
     
-    # Check if Python 3.11 is available
-    if python3.11 --version > /dev/null 2>&1; then
-        print_status "Python 3.11 already installed"
-        python3.11 --version
-        return
+    # Check if Python 3.9 is available
+    if python3 --version > /dev/null 2>&1; then
+        print_status "Python 3 already installed"
+        python3 --version
+    else
+        print_status "Python 3 not found, proceeding with installation"
+        # install python3 through dnf
+        sudo yum install -y python3
+        print_status "Python 3 installed successfully"
+        python3 --version
     fi
+
+    # Check if pip3 is available
+    if pip3 --version > /dev/null 2>&1; then
+        print_status "pip3 already installed"
+        pip3 --version
+    else
+        print_status "pip3 not found, proceeding with installation"
+        # install pip3 through dnf
+        sudo yum install -y python3-pip
+        print_status "pip3 installed successfully"
+        pip3 --version
+    fi
+
     
-    # Install Python 3.11
-    sudo yum install -y python3.11 python3.11-pip python3.11-devel
-    
-    # Create symlinks
-    sudo alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
-    sudo alternatives --install /usr/bin/pip3 pip3 /usr/bin/pip3.11 1
-    
-    print_status "Python 3.11 installed successfully"
+    # Install Python 3.9
+    print_status "Installing Python3-devel via yum..."
+    sudo yum install -y python3-devel
+
+    print_status "Python 3 installed successfully"
     python3 --version
     pip3 --version
 }
@@ -221,10 +236,7 @@ configure_solidity() {
 # Set up environment
 setup_environment() {
     print_status "Setting up environment..."
-    
-    # Create directories
-    mkdir -p ~/lottery-app
-    
+        
     # Set environment variables
     echo 'export PATH=$PATH:~/.local/bin' >> ~/.bashrc
     
@@ -238,10 +250,11 @@ main() {
     check_ec2_instance
     check_instance_type
     install_nitro_cli
+    configure_nitro_enclaves
+
     install_docker
     install_nodejs
     install_python
-    configure_nitro_enclaves
     configure_solidity
     setup_environment
     

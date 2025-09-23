@@ -73,18 +73,12 @@ lottery.eif
 
 # Contracts build
 contracts/build/
-enclave/src/blockchain/contracts/compiled/
 
-# Admin configuration and deployment records
+# contract configuration and deployment records
 # Role-specific configurations (contain private keys)
-admin/admin.conf
-admin/publisher.conf
-admin/sparsity.conf
-# Deployment records and generated configs
-admin/deployment_*.json
-admin/deployments/
-admin/operator.conf
-deployment_*.json
+contract-tools/publisher.conf
+contract-tools/sparsity.conf
+contract-tools/deployments/
 
 # Enclave configuration (may contain sensitive keys)
 enclave/config/enclave.conf
