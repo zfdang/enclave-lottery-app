@@ -146,7 +146,7 @@ class LotteryOperatorApp:
             # Start web server for player interface
             if self.web_server:
                 server_host = self.config.get('server', {}).get('host', '0.0.0.0')
-                server_port = self.config.get('server', {}).get('port', 8080)
+                server_port = int(self.config.get('server', {}).get('port', 6080))
                 
                 logger.info(f"🌍 Starting web server on {server_host}:{server_port}...")
                 server_task = asyncio.create_task(

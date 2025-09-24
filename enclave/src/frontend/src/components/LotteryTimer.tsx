@@ -65,10 +65,6 @@ const LotteryTimer: React.FC = () => {
       <Box sx={{ p: 2, textAlign: 'center', color: 'white' }}>
         {loading ? (
           <Typography variant="body1">Loading lottery information...</Typography>
-        ) : error ? (
-          <Typography variant="body1" sx={{ color: 'rgba(255, 193, 7, 0.9)' }}>
-            Backend offline - Unable to load lottery data
-          </Typography>
         ) : (
           <Typography variant="body1">No lottery data available</Typography>
         )}
