@@ -8,15 +8,10 @@ import {
   MenuItem,
   Divider,
   Alert,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
 } from '@mui/material'
 import { 
   AccountBalanceWallet, 
   ExpandMore,
-  VerifiedUser,
   ContentCopy,
   ExitToApp
 } from '@mui/icons-material'
@@ -35,7 +30,6 @@ const WalletConnection: React.FC = () => {
   
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
   const [error, setError] = useState('')
-  const [showAttestationDialog, setShowAttestationDialog] = useState(false)
 
   const handleConnect = async () => {
     try {
@@ -196,11 +190,6 @@ const WalletConnection: React.FC = () => {
           Copy Address
         </MenuItem>
         
-        <MenuItem onClick={() => { setShowAttestationDialog(true); handleMenuClose(); }}>
-          <VerifiedUser sx={{ mr: 2 }} />
-          View Enclave Attestation
-        </MenuItem>
-        
         <Divider />
         
         <MenuItem onClick={handleDisconnect}>
@@ -208,56 +197,6 @@ const WalletConnection: React.FC = () => {
           Disconnect
         </MenuItem>
       </Menu>
-
-      {/* Enclave Attestation Dialog */}
-      <Dialog 
-        open={showAttestationDialog} 
-        onClose={() => setShowAttestationDialog(false)}
-        maxWidth="md"
-        fullWidth
-      >
-        <DialogTitle>
-          <Box display="flex" alignItems="center">
-            <VerifiedUser sx={{ mr: 1 }} />
-            Enclave Attestation
-          </Box>
-        </DialogTitle>
-        <DialogContent>
-          <Alert severity="success" sx={{ mb: 2 }}>
-            This lottery application is running in a verified AWS Nitro Enclave
-          </Alert>
-          
-          <Typography variant="body2" color="text.secondary" paragraph>
-            The enclave attestation document proves that this application is running in a secure, 
-            isolated environment where no one (including AWS or the host) can access the lottery logic.
-          </Typography>
-          
-          <Box sx={{ backgroundColor: 'rgba(0, 0, 0, 0.1)', p: 2, borderRadius: 1, mb: 2 }}>
-            <Typography variant="caption" color="text.secondary">
-              Enclave PCRs (Platform Configuration Registers)
-            </Typography>
-            <Typography variant="body2" fontFamily="monospace" sx={{ wordBreak: 'break-all' }}>
-              PCR0: a1b2c3d4e5f6...
-            </Typography>
-            <Typography variant="body2" fontFamily="monospace" sx={{ wordBreak: 'break-all' }}>
-              PCR1: f6e5d4c3b2a1...
-            </Typography>
-            <Typography variant="body2" fontFamily="monospace" sx={{ wordBreak: 'break-all' }}>
-              PCR2: 1a2b3c4d5e6f...
-            </Typography>
-          </Box>
-          
-          <Typography variant="body2" color="text.secondary">
-            You can independently verify this attestation document to ensure the integrity 
-            of the lottery system and that no tampering is possible.
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setShowAttestationDialog(false)}>
-            Close
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   )
 }

@@ -9,6 +9,11 @@ import {
   AppBar,
   Toolbar,
   Chip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button
 } from '@mui/material'
 import { Security, VerifiedUser, ErrorOutline } from '@mui/icons-material'
 
@@ -87,6 +92,34 @@ function App() {
     setSnackbar({ ...snackbar, open: false })
   }
 
+  const [attestationOpen, setAttestationOpen] = useState(false);
+  const [attestation, setAttestation] = useState<string>('');
+  const [attestationLoading, setAttestationLoading] = useState(false);
+  const [attestationError, setAttestationError] = useState('');
+
+  const handleAttestationClick = async () => {
+    setAttestationOpen(true);
+    setAttestationLoading(true);
+    setAttestationError('');
+    try {
+      // Fetch attestation from backend
+      const response = await fetch('/api/attestation');
+      if (!response.ok) throw new Error('Failed to fetch attestation');
+      const data = await response.json();
+      setAttestation(JSON.stringify(data, null, 2));
+    } catch (err: any) {
+      setAttestationError(err.message || 'Error fetching attestation');
+    } finally {
+      setAttestationLoading(false);
+    }
+  };
+
+  const handleAttestationClose = () => {
+    setAttestationOpen(false);
+    setAttestation('');
+    setAttestationError('');
+  };
+
   return (
     <Box sx={{ 
       height: '100vh',
@@ -104,13 +137,6 @@ function App() {
               Lottery Enclave
             </Typography>
 
-            <Chip
-              icon={<VerifiedUser />}
-              label="Nitro Enclave Verified"
-              color="primary"
-              variant="outlined"
-              sx={{ mr: 2 }}
-            />
             
             {/* Backend status indicator */}
             {!backendOnline && (
@@ -122,6 +148,16 @@ function App() {
                 sx={{ mr: 2, color: '#f44336', borderColor: '#f44336' }}
               />
             )}
+            
+            <Chip
+              icon={<VerifiedUser />}
+              label="Nitro Enclave Verified"
+              color="primary"
+              variant="outlined"
+              sx={{ mr: 2, cursor: backendOnline ? 'pointer' : 'not-allowed', opacity: backendOnline ? 1 : 0.5 }}
+              clickable={backendOnline}
+              onClick={backendOnline ? handleAttestationClick : undefined}
+            />
             
           </Toolbar>
         </AppBar>
@@ -245,6 +281,64 @@ function App() {
           {snackbar.message}
         </Alert>
       </Snackbar>
+
+      {/* Enclave Attestation Dialog */}
+      <Dialog 
+        open={attestationOpen} 
+        onClose={handleAttestationClose}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box display="flex" alignItems="center">
+            <VerifiedUser sx={{ mr: 1 }} />
+            Enclave Attestation
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          {attestationLoading ? (
+            <Typography>Loading attestation...</Typography>
+          ) : attestationError ? (
+            <Alert severity="error">{attestationError}</Alert>
+          ) : (
+            <>
+              <Alert severity="success" sx={{ mb: 2 }}>
+                This lottery application is running in a verified AWS Nitro Enclave
+              </Alert>
+              
+              <Typography variant="body2" color="text.secondary" paragraph>
+                The enclave attestation document proves that this application is running in a secure, 
+                isolated environment where no one (including AWS or the host) can access the lottery logic.
+              </Typography>
+              
+              <Box sx={{ backgroundColor: 'rgba(0, 0, 0, 0.1)', p: 2, borderRadius: 1, mb: 2 }}>
+                <Typography variant="caption" color="text.secondary">
+                  Attestation Document
+                </Typography>
+                <Typography variant="body2" fontFamily="monospace" sx={{ 
+                  wordBreak: 'break-all',
+                  whiteSpace: 'pre-wrap',
+                  fontSize: '0.75rem',
+                  maxHeight: '300px',
+                  overflow: 'auto'
+                }}>
+                  {attestation}
+                </Typography>
+              </Box>
+              
+              <Typography variant="body2" color="text.secondary">
+                You can independently verify this attestation document to ensure the integrity 
+                of the lottery system and that no tampering is possible.
+              </Typography>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleAttestationClose}>
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   )
 }
