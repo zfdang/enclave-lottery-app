@@ -6,6 +6,7 @@ import {
   Alert,
   CircularProgress,
   IconButton,
+  Dialog,
 } from '@mui/material'
 import { Casino, Add, Remove } from '@mui/icons-material'
 
@@ -16,6 +17,8 @@ import api from '../services/api'
 import WalletConnection from './WalletConnection'
 
 const BettingPanel: React.FC = () => {
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [unmetConditions, setUnmetConditions] = useState<string[]>([])
   const { isConnected, address } = useWalletStore()
   const { currentDraw, fetchCurrentDraw } = useLotteryStore()
   const [isPlacingBet, setIsPlacingBet] = useState(false)
@@ -79,20 +82,28 @@ const BettingPanel: React.FC = () => {
   }
 
   const handlePlaceBet = async () => {
+    // Collect unmet conditions
+    const unmet: string[] = []
     if (!isConnected || !address) {
-      setError('Please connect your wallet first')
-      return
+      unmet.push('Wallet is not connected.')
     }
-
     if (!currentDraw || currentDraw.status !== 'betting') {
-      setError('Betting is not available right now')
-      return
+      unmet.push('Betting is not available right now.')
     }
-
+    if (getTotalMultiplier() <= 0) {
+      unmet.push('Please select at least one bet multiplier.')
+    }
+    if (isPlacingBet) {
+      unmet.push('A bet is already being placed. Please wait.')
+    }
     const betAmount = getTotalBetAmount()
     if (betAmount <= 0) {
-      setError('Please set a valid bet amount')
-      return
+      unmet.push('Please set a valid bet amount.')
+    }
+    if (unmet.length > 0) {
+      setUnmetConditions(unmet)
+      setDialogOpen(true)
+      return false
     }
 
     setIsPlacingBet(true)
@@ -101,23 +112,22 @@ const BettingPanel: React.FC = () => {
 
     try {
       // Place bet directly via smart contract
+      if (!currentDraw) throw new Error('No current draw')
       const transactionHash = await contractService.placeBet(currentDraw.draw_id, betAmount.toString())
 
       // Optimistically update UI
       setSuccess(`Bet placed successfully! Transaction: ${transactionHash.slice(0, 10)}...`)
       setUserBetAmount(prev => prev + betAmount)
-      
       // Notify backend for verification (optional)
       try {
         await api.post('/api/verify-bet', {
           user_address: address,
           transaction_hash: transactionHash,
-          draw_id: currentDraw.draw_id
+          draw_id: currentDraw ? currentDraw.draw_id : ''
         })
       } catch (err) {
         console.warn('Backend verification failed:', err)
       }
-      
       // Refresh current draw
       fetchCurrentDraw()
     } catch (err: any) {
@@ -125,16 +135,10 @@ const BettingPanel: React.FC = () => {
     } finally {
       setIsPlacingBet(false)
     }
+    return true
   }
 
-  const canPlaceBet = (): boolean => {
-    return (
-      isConnected &&
-      currentDraw?.status === 'betting' &&
-      getTotalMultiplier() > 0 &&
-      !isPlacingBet
-    )
-  }
+  // Bet button is always enabled, checks moved to handlePlaceBet
 
   const MultiplierControl: React.FC<{
     label: string
@@ -232,12 +236,12 @@ const BettingPanel: React.FC = () => {
             {/* Base Amount Display */}
             <Box sx={{ 
               p: 1,
-              background: isConnected ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+              background: 'rgba(255, 255, 255, 0.1)',
               borderRadius: 1,
               border: '1px solid rgba(255, 255, 255, 0.2)',
               minWidth: '80px',
               textAlign: 'center',
-              opacity: isConnected ? 1 : 0.5
+              opacity: 1
             }}>
               <Typography variant="caption" sx={{ color: 'white' }}>
                 Base Bet
@@ -253,7 +257,6 @@ const BettingPanel: React.FC = () => {
               value={ones}
               onChange={setOnes}
               max={99}
-              disabled={!isConnected}
             />
             
             <MultiplierControl
@@ -261,7 +264,6 @@ const BettingPanel: React.FC = () => {
               value={tens}
               onChange={setTens}
               max={9}
-              disabled={!isConnected}
             />
             
             <MultiplierControl
@@ -269,34 +271,26 @@ const BettingPanel: React.FC = () => {
               value={hundreds}
               onChange={setHundreds}
               max={9}
-              disabled={!isConnected}
             />
 
             {/* Bet Button */}
             <Button
               variant="contained"
               onClick={handlePlaceBet}
-              disabled={!canPlaceBet()}
               startIcon={isPlacingBet ? <CircularProgress size={16} /> : <Casino />}
               sx={{ 
-                background: !isConnected 
-                  ? 'rgba(128, 128, 128, 0.3)' 
-                  : isPlacingBet 
-                    ? 'rgba(76, 175, 80, 0.3)' 
-                    : 'linear-gradient(135deg, #4CAF50 0%, #81C784 100%)',
-                '&:hover': !isConnected 
-                  ? { background: 'rgba(128, 128, 128, 0.3)' }
-                  : { background: 'linear-gradient(135deg, #66BB6A 0%, #A5D6A7 100%)' },
+                background: isPlacingBet
+                  ? 'rgba(76, 175, 80, 0.3)'
+                  : 'linear-gradient(135deg, #4CAF50 0%, #81C784 100%)',
+                '&:hover': { background: 'linear-gradient(135deg, #66BB6A 0%, #A5D6A7 100%)' },
                 minWidth: '100px',
                 height: '56px',
-                opacity: isConnected ? 1 : 0.6
+                opacity: isPlacingBet ? 0.6 : 1
               }}
             >
-              {!isConnected 
-                ? 'Connect Wallet' 
-                : isPlacingBet 
-                  ? 'Betting...' 
-                  : `Bet ${getTotalBetAmount().toFixed(2)} ETH`}
+              {isPlacingBet
+                ? 'Betting...'
+                : `Bet ${getTotalBetAmount().toFixed(2)} ETH`}
             </Button>
           </Box>
         </Box>
@@ -314,6 +308,32 @@ const BettingPanel: React.FC = () => {
           {success}
         </Alert>
       )}
+
+      {/* Unmet Conditions Dialog */}
+      <Box>
+        <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)}>
+          <Box sx={{ p: 3, minWidth: 320 }}>
+            <Typography variant="h6" sx={{ mb: 2 }}>
+              Unable to Place Bet
+            </Typography>
+            <Typography variant="body2" sx={{ mb: 1 }}>
+              Please resolve the following issues:
+            </Typography>
+            <ul style={{ margin: 0, paddingLeft: 20 }}>
+              {unmetConditions.map((cond, idx) => (
+                <li key={idx} style={{ color: '#d32f2f', marginBottom: 8 }}>
+                  {cond}
+                </li>
+              ))}
+            </ul>
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
+              <Button variant="contained" color="primary" onClick={() => setDialogOpen(false)}>
+                OK
+              </Button>
+            </Box>
+          </Box>
+        </Dialog>
+      </Box>
     </Box>
   )
 }
