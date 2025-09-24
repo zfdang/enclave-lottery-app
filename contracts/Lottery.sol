@@ -7,53 +7,65 @@ pragma solidity ^0.8.19;
  * @notice Publisher deploys, Sparsity manages operator, Operator runs rounds, Players place bets
  */
 contract Lottery {
+    // =============== REENTRANCY GUARD ===============
+    bool private _locked;
+    
+    modifier nonReentrant() {
+        require(!_locked, "ReentrancyGuard: reentrant call");
+        _locked = true;
+        _;
+        _locked = false;
+    }
     // =============== ROLES ===============
     address public immutable publisher;        // Contract deployer, receives commission
     address public sparsity;                   // Cloud manager, manages operator
     address public operator;                   // Round manager, handles lottery rounds
-    bool public sparsitySet;                   // One-time flag for sparsity assignment
     
     // =============== IMMUTABLE CONFIGURATION ===============
     uint256 public immutable publisherCommissionRate; // Basis points (200 = 2%)
     uint256 public immutable sparsityCommissionRate;  // Basis points (300 = 3%)
-    uint256 public minBetAmount;            // Minimum bet in wei
+    uint256 public minBetAmount;            // Minimum bet in wei (operator can modify in waiting state)
     uint256 public bettingDuration;         // Betting period in seconds
-    uint256 public drawDelayAfterEnd;       // Grace period before draw in seconds
+    uint256 public minDrawDelayAfterEnd;    // Minimum delay before operator can draw
+    uint256 public maxDrawDelayAfterEnd;    // Maximum delay before anyone can refund
+    uint256 public minEndTimeExtension;     // Minimum time extension when operator extends betting
     uint256 public minParticipants;         // Minimum players required (2)
+    
+    // =============== ENUMS ===============
+    enum RoundState { Waiting, Betting, Drawing, Completed, Refunded }
     
     // =============== STRUCTS ===============
     struct LotteryRound {
         uint256 roundId;
         uint256 startTime;
         uint256 endTime;
-        uint256 drawTime;
+        uint256 minDrawTime;        // endTime + minDrawDelayAfterEnd
+        uint256 maxDrawTime;        // endTime + maxDrawDelayAfterEnd
         uint256 totalPot;
         uint256 participantCount;
         address winner;
         uint256 publisherCommission;
         uint256 sparsityCommission;
         uint256 winnerPrize;
-        bool completed;
-        bool cancelled;
-        bool refunded;
+        RoundState state;
     }
     
     // =============== STATE VARIABLES ===============
-    uint256 public currentRoundId;
-    uint256 public totalRounds;
-    bool public hasActiveRound;
+    uint256 public roundId;
+    RoundState public state;         // Current overall state
     
-    mapping(uint256 => LotteryRound) public rounds;
-    mapping(uint256 => mapping(address => uint256)) public roundBets; // roundId => player => betAmount
-    mapping(uint256 => address[]) public roundParticipants; // roundId => participants array
-    mapping(uint256 => mapping(address => bool)) public hasParticipated; // roundId => player => participated
+    // Current round data (only current round is stored)
+    LotteryRound public round;
+    mapping(address => uint256) public bets; // player => betAmount for current round
+    address[] public participants; // participants array for current round
     
     // =============== EVENTS ===============
     event RoundCreated(
         uint256 indexed roundId,
         uint256 startTime,
         uint256 endTime,
-        uint256 drawTime
+        uint256 minDrawTime,
+        uint256 maxDrawTime
     );
     
     event BetPlaced(
@@ -62,6 +74,18 @@ contract Lottery {
         uint256 amount,
         uint256 newTotal,
         uint256 timestamp
+    );
+    
+    event EndTimeExtended(
+        uint256 indexed roundId,
+        uint256 oldEndTime,
+        uint256 newEndTime
+    );
+    
+    event RoundStateChanged(
+        uint256 indexed roundId,
+        RoundState oldState,
+        RoundState newState
     );
     
     event RoundCompleted(
@@ -74,18 +98,14 @@ contract Lottery {
         uint256 randomSeed
     );
     
-    event RoundCancelled(
-        uint256 indexed roundId,
-        string reason,
-        uint256 totalRefunded
-    );
-    
     event RoundRefunded(
         uint256 indexed roundId,
         uint256 totalRefunded,
-        uint256 participantCount
+        uint256 participantCount,
+        string reason
     );
     
+    event MinBetAmountUpdated(uint256 oldAmount, uint256 newAmount);
     event SparsitySet(address indexed sparsity);
     event OperatorUpdated(address indexed oldOperator, address indexed newOperator);
     
@@ -96,7 +116,7 @@ contract Lottery {
     }
     
     modifier onlySparsity() {
-        require(sparsitySet, "Sparsity not set");
+        require(sparsity != address(0), "Sparsity not set");
         require(msg.sender == sparsity, "Only sparsity can call this function");
         _;
     }
@@ -108,39 +128,47 @@ contract Lottery {
     }
     
     modifier sparsityNotSet() {
-        require(!sparsitySet, "Sparsity already set");
+        require(sparsity == address(0), "Sparsity already set");
         _;
     }
     
-    modifier validRound(uint256 roundId) {
-        require(roundId > 0 && roundId <= totalRounds, "Invalid round ID");
-        _;
-    }
-    
-    modifier roundExists(uint256 roundId) {
-        require(rounds[roundId].roundId != 0, "Round does not exist");
-        _;
-    }
     
     // =============== CONSTRUCTOR ===============
     constructor(
         uint256 _publisherCommissionRate,
-        uint256 _sparsityCommissionRate
+        uint256 _sparsityCommissionRate,
+        uint256 _minBetAmount,
+        uint256 _bettingDuration,
+        uint256 _minDrawDelayAfterEnd,
+        uint256 _maxDrawDelayAfterEnd,
+        uint256 _minEndTimeExtension,
+        uint256 _minParticipants
     ) {
         require(_publisherCommissionRate <= 500, "Publisher commission too high (max 5%)");
         require(_sparsityCommissionRate <= 500, "Sparsity commission too high (max 5%)");
         require(_publisherCommissionRate + _sparsityCommissionRate <= 1000, "Total commission too high (max 10%)");
+        require(_minBetAmount > 0, "Min bet amount must be positive");
+        require(_bettingDuration > 0, "Betting duration must be positive");
+        require(_minDrawDelayAfterEnd >= 60, "Min draw delay must be at least 1 minute");
+        require(_maxDrawDelayAfterEnd > _minDrawDelayAfterEnd, "Max draw delay must be greater than min");
+        require(_minEndTimeExtension >= 300, "Min end time extension must be at least 5 minutes");
+        require(_minParticipants >= 2, "Min participants must be at least 2");
         
         publisher = msg.sender;
         sparsity = address(0);                    // Will be set by publisher
         operator = address(0);                    // Will be set by sparsity
-        sparsitySet = false;
         publisherCommissionRate = _publisherCommissionRate;
         sparsityCommissionRate = _sparsityCommissionRate;
         
-        currentRoundId = 0;
-        totalRounds = 0;
-        hasActiveRound = false;
+        minBetAmount = _minBetAmount;
+        bettingDuration = _bettingDuration;
+        minDrawDelayAfterEnd = _minDrawDelayAfterEnd;
+        maxDrawDelayAfterEnd = _maxDrawDelayAfterEnd;
+        minEndTimeExtension = _minEndTimeExtension;
+        minParticipants = _minParticipants;
+        
+        roundId = 0;
+        state = RoundState.Waiting;
     }
     
     // =============== PUBLISHER FUNCTIONS ===============
@@ -155,7 +183,6 @@ contract Lottery {
         require(_sparsity != publisher, "Sparsity cannot be publisher");
         
         sparsity = _sparsity;
-        sparsitySet = true;
         
         emit SparsitySet(_sparsity);
     }
@@ -163,32 +190,15 @@ contract Lottery {
     // =============== SPARSITY FUNCTIONS ===============
     
     /**
-     * @dev Set the operator address
-     * @param _operator The address of the operator
-     * @notice Can only be called by sparsity when no active round exists
-     */
-    function setOperator(address _operator) external onlySparsity {
-        require(_operator != address(0), "Invalid operator address");
-        require(_operator != publisher, "Operator cannot be publisher");
-        require(_operator != sparsity, "Operator cannot be sparsity");
-        require(!hasActiveRound, "Cannot change operator during active round");
-        
-        address oldOperator = operator;
-        operator = _operator;
-        
-        emit OperatorUpdated(oldOperator, _operator);
-    }
-    
-    /**
      * @dev Update the operator address (same as setOperator, for clarity)
      * @param _operator The new address of the operator
-     * @notice Can only be called by sparsity when no active round exists
+     * @notice Can only be called by sparsity when in waiting state
      */
     function updateOperator(address _operator) external onlySparsity {
         require(_operator != address(0), "Invalid operator address");
         require(_operator != publisher, "Operator cannot be publisher");
         require(_operator != sparsity, "Operator cannot be sparsity");
-        require(!hasActiveRound, "Cannot change operator during active round");
+        require(state == RoundState.Waiting, "Cannot change operator when not in waiting state");
         
         address oldOperator = operator;
         operator = _operator;
@@ -199,55 +209,110 @@ contract Lottery {
     // =============== OPERATOR FUNCTIONS ===============
     
     /**
+     * @dev Update minimum bet amount (only in waiting state)
+     * @param _newMinBetAmount New minimum bet amount in wei
+     */
+    function updateMinBetAmount(uint256 _newMinBetAmount) external onlyOperator {
+        require(state == RoundState.Waiting, "Can only update min bet amount in waiting state");
+        require(_newMinBetAmount > 0, "Min bet amount must be positive");
+        
+        uint256 oldAmount = minBetAmount;
+        minBetAmount = _newMinBetAmount;
+        
+        emit MinBetAmountUpdated(oldAmount, _newMinBetAmount);
+    }
+    
+    /**
      * @dev Start a new lottery round
-     * @notice Can only be called by operator when no active round exists
+     * @notice Can only be called by operator when in waiting state
      */
     function startNewRound() external onlyOperator {
-        require(!hasActiveRound, "Active round already exists");
+        require(state == RoundState.Waiting, "Must be in waiting state to start new round");
         
-        totalRounds++;
-        currentRoundId = totalRounds;
+        _clearRoundData();
+        
+        roundId++;
         
         uint256 startTime = block.timestamp;
         uint256 endTime = startTime + bettingDuration;
-        uint256 drawTime = endTime + drawDelayAfterEnd;
+        uint256 minDrawTime = endTime + minDrawDelayAfterEnd;
+        uint256 maxDrawTime = endTime + maxDrawDelayAfterEnd;
         
-        rounds[currentRoundId] = LotteryRound({
-            roundId: currentRoundId,
+        round = LotteryRound({
+            roundId: roundId,
             startTime: startTime,
             endTime: endTime,
-            drawTime: drawTime,
+            minDrawTime: minDrawTime,
+            maxDrawTime: maxDrawTime,
             totalPot: 0,
             participantCount: 0,
             winner: address(0),
             publisherCommission: 0,
             sparsityCommission: 0,
             winnerPrize: 0,
-            completed: false,
-            cancelled: false,
-            refunded: false
+            state: RoundState.Betting
         });
         
-        hasActiveRound = true;
+        _changeState(RoundState.Betting);
         
-        emit RoundCreated(currentRoundId, startTime, endTime, drawTime);
+        emit RoundCreated(roundId, startTime, endTime, minDrawTime, maxDrawTime);
     }
     
     /**
-     * @dev Draw winner for a completed round
-     * @param roundId The ID of the round to draw winner for
-     * @notice Can only be called by operator after draw time and with minimum participants
+     * @dev Extend the end time of the current betting round
+     * @param _newEndTime New end time (must be at least current time + minEndTimeExtension)
      */
-    function drawWinner(uint256 roundId) external onlyOperator validRound(roundId) roundExists(roundId) {
-        LotteryRound storage round = rounds[roundId];
+    function extendBettingTime(uint256 _newEndTime) external onlyOperator {
+        require(state == RoundState.Betting, "Must be in betting state");
+        require(roundId > 0, "No active round");
         
-        require(!round.completed, "Round already completed");
-        require(!round.cancelled, "Round was cancelled");
-        require(block.timestamp >= round.drawTime, "Draw time not reached");
-        require(round.participantCount >= minParticipants, "Not enough participants");
+        require(block.timestamp <= round.endTime, "Betting period already ended");
+        require(_newEndTime >= block.timestamp + minEndTimeExtension, "New end time must be at least minEndTimeExtension from now");
+        require(_newEndTime > round.endTime, "New end time must be later than current end time");
+        
+        uint256 oldEndTime = round.endTime;
+        round.endTime = _newEndTime;
+        round.minDrawTime = _newEndTime + minDrawDelayAfterEnd;
+        round.maxDrawTime = _newEndTime + maxDrawDelayAfterEnd;
+        
+        emit EndTimeExtended(roundId, oldEndTime, _newEndTime);
+    }
+    
+    /**
+     * @dev Manually refund current round when draw time expired
+     * @notice Can only be called by operator after maxDrawTime
+     */
+    function refundRound() external onlyOperator {
+        require(state == RoundState.Betting, "Round must be in betting state");
+        require(block.timestamp > round.maxDrawTime, "Draw time has not expired yet");
+        require(round.totalPot > 0, "No funds to refund");
+        
+        _refundRound("Draw time expired");
+    }
+    
+    /**
+     * @dev Draw winner for the current active round
+     * @notice Can only be called by operator after minDrawTime. Auto-refunds if insufficient participants.
+     */
+    function drawWinner() external onlyOperator {
+        require(state == RoundState.Betting, "Round must be in betting state");
+        require(block.timestamp >= round.minDrawTime, "Min draw time not reached");
+        require(block.timestamp <= round.maxDrawTime, "Draw time expired, refund required");
         require(round.totalPot > 0, "No bets placed");
         
-        // Generate pseudo-random winner using block-based randomness
+        // Change to drawing state
+        round.state = RoundState.Drawing;
+        _changeState(RoundState.Drawing);
+        
+        emit RoundStateChanged(roundId, RoundState.Betting, RoundState.Drawing);
+        
+        // Check minimum participants - auto refund if insufficient
+        if (round.participantCount < minParticipants) {
+            _refundRound("Insufficient participants");
+            return;
+        }
+        
+        // Generate weighted random winner based on bet amounts
         uint256 randomSeed = uint256(keccak256(abi.encodePacked(
             block.timestamp,
             block.prevrandao,
@@ -256,17 +321,39 @@ contract Lottery {
             round.totalPot
         )));
         
-        uint256 winnerIndex = randomSeed % round.participantCount;
-        address winner = roundParticipants[roundId][winnerIndex];
+        address winner = _selectWeightedWinner(randomSeed);
         
         // Calculate and distribute payouts
-        _distributePayout(round, winner, randomSeed);
+        _distributePayout(winner, randomSeed);
+    }
+    
+    /**
+     * @dev Internal function to select winner based on weighted probability (proportional to bet amounts)
+     * @param randomSeed Random seed for selection
+     * @return winner The selected winner address
+     */
+    function _selectWeightedWinner(uint256 randomSeed) internal view returns (address) {
+        uint256 randomValue = randomSeed % round.totalPot;
+        uint256 cumulativeSum = 0;
+        
+        for (uint256 i = 0; i < participants.length; i++) {
+            address participant = participants[i];
+            uint256 betAmount = bets[participant];
+            cumulativeSum += betAmount;
+            
+            if (randomValue < cumulativeSum) {
+                return participant;
+            }
+        }
+        
+        // Fallback to last participant (should not happen with proper implementation)
+        return participants[participants.length - 1];
     }
     
     /**
      * @dev Internal function to calculate and distribute payouts
      */
-    function _distributePayout(LotteryRound storage round, address winner, uint256 randomSeed) internal {
+    function _distributePayout(address winner, uint256 randomSeed) internal {
         // Calculate commissions
         uint256 publisherCommission = (round.totalPot * publisherCommissionRate) / 10000;
         uint256 sparsityCommission = (round.totalPot * sparsityCommissionRate) / 10000;
@@ -277,8 +364,11 @@ contract Lottery {
         round.publisherCommission = publisherCommission;
         round.sparsityCommission = sparsityCommission;
         round.winnerPrize = prize;
-        round.completed = true;
-        hasActiveRound = false;
+        round.state = RoundState.Completed;
+        
+        // Emit completion event
+        emit RoundCompleted(roundId, winner, round.totalPot, prize, publisherCommission, sparsityCommission, randomSeed);
+        emit RoundStateChanged(roundId, RoundState.Drawing, RoundState.Completed);
         
         // Transfer funds
         if (publisherCommission > 0) {
@@ -289,27 +379,36 @@ contract Lottery {
         }
         payable(winner).transfer(prize);
         
-        emit RoundCompleted(round.roundId, winner, round.totalPot, prize, publisherCommission, sparsityCommission, randomSeed);
+        // Clear current round data and set state to waiting for next round
+        _clearRoundData();
+        _changeState(RoundState.Waiting);
     }
     
     /**
-     * @dev Cancel an active round (emergency function)
-     * @param roundId The ID of the round to cancel
-     * @param reason Reason for cancellation
+     * @dev Internal function to change global state and emit event
      */
-    function cancelRound(uint256 roundId, string calldata reason) external onlyOperator validRound(roundId) roundExists(roundId) {
-        LotteryRound storage round = rounds[roundId];
+    function _changeState(RoundState newState) internal {
+        RoundState oldState = state;
+        state = newState;
         
-        require(!round.completed, "Cannot cancel completed round");
-        require(!round.cancelled, "Round already cancelled");
+        emit RoundStateChanged(roundId, oldState, newState);
+    }
+    
+    /**
+     * @dev Internal function to refund the current round
+     * @param reason Reason for refund
+     */
+    function _refundRound(string memory reason) internal {
+        round.state = RoundState.Refunded;
         
-        round.cancelled = true;
-        hasActiveRound = false;
+        uint256 totalRefunded = _refundParticipants();
         
-        // Refund all participants
-        uint256 totalRefunded = _refundParticipants(roundId);
+        emit RoundRefunded(roundId, totalRefunded, round.participantCount, reason);
+        emit RoundStateChanged(roundId, RoundState.Drawing, RoundState.Refunded);
         
-        emit RoundCancelled(roundId, reason, totalRefunded);
+        // Clear current round data and set state to waiting for next round
+        _clearRoundData();
+        _changeState(RoundState.Waiting);
     }
     
     // =============== PLAYER FUNCTIONS ===============
@@ -318,70 +417,105 @@ contract Lottery {
      * @dev Place a bet in the current active round
      * @notice Players can place multiple bets, minimum bet amount required
      */
-    function placeBet() external payable {
-        require(hasActiveRound, "No active round");
+    function placeBet() external payable nonReentrant {
+        require(state == RoundState.Betting || state == RoundState.Waiting, "Invalid state for betting");
         require(msg.value >= minBetAmount, "Bet amount too low");
         
-        LotteryRound storage round = rounds[currentRoundId];
+        // If in waiting state, automatically start new round
+        if (state == RoundState.Waiting) {
+            _startNewRoundFromFirstBet();
+        }
+        
         require(block.timestamp >= round.startTime, "Betting not started");
         require(block.timestamp <= round.endTime, "Betting period ended");
-        require(!round.completed && !round.cancelled, "Round not active");
+        require(round.state == RoundState.Betting, "Round not in betting state");
         
         // Add to participant list if first bet
-        if (!hasParticipated[currentRoundId][msg.sender]) {
-            roundParticipants[currentRoundId].push(msg.sender);
-            hasParticipated[currentRoundId][msg.sender] = true;
+        if (bets[msg.sender] == 0) {
+            participants.push(msg.sender);
             round.participantCount++;
         }
         
         // Update bet amount and total pot
-        roundBets[currentRoundId][msg.sender] += msg.value;
+        bets[msg.sender] += msg.value;
         round.totalPot += msg.value;
         
-        emit BetPlaced(currentRoundId, msg.sender, msg.value, round.totalPot, block.timestamp);
+        emit BetPlaced(roundId, msg.sender, msg.value, round.totalPot, block.timestamp);
+    }
+    
+    /**
+     * @dev Internal function to start a new round when first bet is placed
+     */
+    function _startNewRoundFromFirstBet() internal {
+        _clearRoundData();
+        
+        roundId++;
+        
+        uint256 startTime = block.timestamp;
+        uint256 endTime = startTime + bettingDuration;
+        uint256 minDrawTime = endTime + minDrawDelayAfterEnd;
+        uint256 maxDrawTime = endTime + maxDrawDelayAfterEnd;
+        
+        round = LotteryRound({
+            roundId: roundId,
+            startTime: startTime,
+            endTime: endTime,
+            minDrawTime: minDrawTime,
+            maxDrawTime: maxDrawTime,
+            totalPot: 0,
+            participantCount: 0,
+            winner: address(0),
+            publisherCommission: 0,
+            sparsityCommission: 0,
+            winnerPrize: 0,
+            state: RoundState.Betting
+        });
+        
+        _changeState(RoundState.Betting);
+        
+        emit RoundCreated(roundId, startTime, endTime, minDrawTime, maxDrawTime);
     }
     
     // =============== PUBLIC FUNCTIONS ===============
     
     /**
-     * @dev Refund participants of an expired round
-     * @param roundId The ID of the round to refund
-     * @notice Anyone can call this if draw time has passed without completion
+     * @dev Refund current round if it has expired (public function - anyone can call)
+     * @notice Anyone can call this if maxDrawTime has passed without completion
      */
-    function refundExpiredRound(uint256 roundId) external validRound(roundId) roundExists(roundId) {
-        LotteryRound storage round = rounds[roundId];
+    function refundExpiredRound() external {
+        require(roundId > 0, "No active round");
+        require(round.state == RoundState.Betting, "Round not in betting state");
+        require(block.timestamp > round.maxDrawTime, "Max draw time not expired");
         
-        require(!round.completed, "Round already completed");
-        require(!round.cancelled, "Round already cancelled");
-        require(!round.refunded, "Round already refunded");
-        require(block.timestamp > round.drawTime + 3600, "Grace period not expired"); // 1 hour grace
-        
-        round.refunded = true;
-        if (roundId == currentRoundId) {
-            hasActiveRound = false;
-        }
-        
-        uint256 totalRefunded = _refundParticipants(roundId);
-        
-        emit RoundRefunded(roundId, totalRefunded, round.participantCount);
+        _refundRound("Draw time expired - public refund");
     }
     
     // =============== INTERNAL FUNCTIONS ===============
     
     /**
-     * @dev Internal function to refund all participants of a round
-     * @param roundId The ID of the round to refund
+     * @dev Internal function to clear current round data for new round
+     */
+    function _clearRoundData() internal {
+        // Clear current round bets mapping for previous participants
+        for (uint256 i = 0; i < participants.length; i++) {
+            delete bets[participants[i]];
+        }
+        
+        // Clear current round participants array
+        delete participants;
+    }
+    
+    /**
+     * @dev Internal function to refund all participants of current round
      * @return totalRefunded Total amount refunded
      */
-    function _refundParticipants(uint256 roundId) internal returns (uint256 totalRefunded) {
-        address[] memory participants = roundParticipants[roundId];
-        
+    function _refundParticipants() internal returns (uint256 totalRefunded) {
         for (uint256 i = 0; i < participants.length; i++) {
             address participant = participants[i];
-            uint256 betAmount = roundBets[roundId][participant];
+            uint256 betAmount = bets[participant];
             
             if (betAmount > 0) {
-                roundBets[roundId][participant] = 0; // Prevent re-entrancy
+                bets[participant] = 0; // Prevent re-entrancy
                 payable(participant).transfer(betAmount);
                 totalRefunded += betAmount;
             }
@@ -390,50 +524,80 @@ contract Lottery {
         return totalRefunded;
     }
     
+
+    
     // =============== VIEW FUNCTIONS ===============
     
     /**
      * @dev Get current round information
      */
-    function getCurrentRound() external view returns (LotteryRound memory) {
-        if (hasActiveRound && currentRoundId > 0) {
-            return rounds[currentRoundId];
-        }
-        // Return empty round if no active round
-        return LotteryRound(0, 0, 0, 0, 0, 0, address(0), 0, 0, 0, false, false, false);
+    function getRound() external view returns (LotteryRound memory) {
+        return round;
     }
     
     /**
-     * @dev Get round participants
-     * @param roundId The ID of the round
+     * @dev Get current state
      */
-    function getRoundParticipants(uint256 roundId) external view validRound(roundId) returns (address[] memory) {
-        return roundParticipants[roundId];
+    function getState() external view returns (RoundState) {
+        return state;
     }
     
     /**
-     * @dev Get player's bet amount for a specific round
-     * @param roundId The ID of the round
+     * @dev Get current round participants
+     */
+    function getParticipants() external view returns (address[] memory) {
+        return participants;
+    }
+    
+    /**
+     * @dev Get player's bet amount for current round
      * @param player The player's address
      */
-    function getPlayerBet(uint256 roundId, address player) external view validRound(roundId) returns (uint256) {
-        return roundBets[roundId][player];
+    function getPlayerBet(address player) external view returns (uint256) {
+        return bets[player];
     }
     
+
     /**
      * @dev Check if current round can be drawn
      */
-    function canDrawCurrentRound() external view returns (bool) {
-        if (!hasActiveRound || currentRoundId == 0) return false;
+    function canDraw() external view returns (bool) {
+        if (state != RoundState.Betting || roundId == 0) return false;
         
-        LotteryRound memory round = rounds[currentRoundId];
         return (
-            !round.completed &&
-            !round.cancelled &&
-            block.timestamp >= round.drawTime &&
-            round.participantCount >= minParticipants &&
+            round.state == RoundState.Betting &&
+            block.timestamp >= round.minDrawTime &&
+            block.timestamp <= round.maxDrawTime &&
             round.totalPot > 0
         );
+    }
+    
+    /**
+     * @dev Check if current round can be refunded
+     */
+    function canRefund() external view returns (bool) {
+        if (state != RoundState.Betting || roundId == 0) return false;
+        
+        return (
+            round.state == RoundState.Betting &&
+            block.timestamp > round.maxDrawTime
+        );
+    }
+    
+    /**
+     * @dev Get current round timing information
+     */
+    function getRoundTiming() external view returns (
+        uint256 startTime,
+        uint256 endTime,
+        uint256 minDrawTime,
+        uint256 maxDrawTime,
+        uint256 currentTime
+    ) {
+        if (state != RoundState.Waiting && roundId > 0) {
+            return (round.startTime, round.endTime, round.minDrawTime, round.maxDrawTime, block.timestamp);
+        }
+        return (0, 0, 0, 0, block.timestamp);
     }
     
     /**
@@ -447,7 +611,9 @@ contract Lottery {
         uint256 sparsityCommission,
         uint256 minBet,
         uint256 bettingDur,
-        uint256 drawDelay,
+        uint256 minDrawDelay,
+        uint256 maxDrawDelay,
+        uint256 minEndTimeExt,
         uint256 minPart,
         bool sparsityIsSet
     ) {
@@ -459,9 +625,11 @@ contract Lottery {
             sparsityCommissionRate,
             minBetAmount,
             bettingDuration,
-            drawDelayAfterEnd,
+            minDrawDelayAfterEnd,
+            maxDrawDelayAfterEnd,
+            minEndTimeExtension,
             minParticipants,
-            sparsitySet
+            sparsity != address(0)
         );
     }
 }
