@@ -87,24 +87,26 @@ class PublisherManager(LotteryContractBase):
         contract_address = contract_info['contract_address']
         abi = contract_info['abi']
         contract = self.get_contract_instance(contract_address, abi)
-        
+
         # Get configuration from contract
         config = contract.functions.getConfig().call()
-        publisher_addr, sparsity_addr, operator_addr, publisher_commission, sparsity_commission, min_bet, betting_dur, draw_delay, min_part, sparsity_is_set = config
-        
+        publisher_addr, sparsity_addr, operator_addr, publisher_commission, sparsity_commission, min_bet, betting_dur, min_draw_delay, max_draw_delay, min_end_time_ext, min_part, sparsity_is_set = config
+
         # Verify parameters
         assert publisher_addr.lower() == self.account.address.lower(), "Publisher address mismatch"
-        
+
         # Sparsity and operator should not be set during deployment
         assert sparsity_addr == "0x0000000000000000000000000000000000000000", "Sparsity should not be set during deployment"
         assert operator_addr == "0x0000000000000000000000000000000000000000", "Operator should not be set during deployment"
-        assert not sparsity_is_set, "Sparsity flag should be false during deployment"
-        
+
         assert publisher_commission == expected_params['publisher_commission_rate'], "Publisher commission rate mismatch"
         assert sparsity_commission == expected_params['sparsity_commission_rate'], "Sparsity commission rate mismatch"
-        
+
+        # Sparsity flag should be false immediately after deployment
+        assert not sparsity_is_set, "Sparsity flag should be false during deployment"
+
         print("✅ Contract configuration verified")
-        
+
         # Display configuration
         print("\n📋 Contract Configuration:")
         print(f"   Publisher: {publisher_addr}")
@@ -114,7 +116,9 @@ class PublisherManager(LotteryContractBase):
         print(f"   Sparsity Commission: {sparsity_commission / 100}%")
         print(f"   Min Bet Amount: {self.w3.from_wei(min_bet, 'ether')} ETH (operator-managed)")
         print(f"   Betting Duration: {betting_dur} seconds ({betting_dur // 60} minutes) (operator-managed)")
-        print(f"   Draw Delay: {draw_delay} seconds ({draw_delay // 60} minutes) (operator-managed)")
+        print(f"   Min Draw Delay: {min_draw_delay} seconds ({min_draw_delay // 60} minutes)")
+        print(f"   Max Draw Delay: {max_draw_delay} seconds ({max_draw_delay // 60} minutes)")
+        print(f"   Min End Time Extension: {min_end_time_ext} seconds ({min_end_time_ext // 60} minutes)")
         print(f"   Min Participants: {min_part}")
 
     def save_deployment(self, contract_info: Dict[str, Any], output_path: str):
@@ -217,11 +221,11 @@ class PublisherManager(LotteryContractBase):
         # Get contract instance
         contract = self.get_contract_instance(contract_address, abi)
         
-        # Check if sparsity already set
+        # Check if sparsity already set (sparsity is the 2nd element returned by getConfig)
         config = contract.functions.getConfig().call()
-        sparsity_is_set = config[9]  # sparsity_is_set is the 10th element
-        
-        if sparsity_is_set:
+        sparsity_addr = config[1]
+
+        if sparsity_addr != "0x0000000000000000000000000000000000000000":
             print("❌ Sparsity already set for this contract")
             return
         

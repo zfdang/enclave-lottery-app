@@ -136,37 +136,26 @@ contract Lottery {
     // =============== CONSTRUCTOR ===============
     constructor(
         uint256 _publisherCommissionRate,
-        uint256 _sparsityCommissionRate,
-        uint256 _minBetAmount,
-        uint256 _bettingDuration,
-        uint256 _minDrawDelayAfterEnd,
-        uint256 _maxDrawDelayAfterEnd,
-        uint256 _minEndTimeExtension,
-        uint256 _minParticipants
+        uint256 _sparsityCommissionRate
     ) {
         require(_publisherCommissionRate <= 500, "Publisher commission too high (max 5%)");
         require(_sparsityCommissionRate <= 500, "Sparsity commission too high (max 5%)");
         require(_publisherCommissionRate + _sparsityCommissionRate <= 1000, "Total commission too high (max 10%)");
-        require(_minBetAmount > 0, "Min bet amount must be positive");
-        require(_bettingDuration > 0, "Betting duration must be positive");
-        require(_minDrawDelayAfterEnd >= 60, "Min draw delay must be at least 1 minute");
-        require(_maxDrawDelayAfterEnd > _minDrawDelayAfterEnd, "Max draw delay must be greater than min");
-        require(_minEndTimeExtension >= 300, "Min end time extension must be at least 5 minutes");
-        require(_minParticipants >= 2, "Min participants must be at least 2");
-        
+
         publisher = msg.sender;
         sparsity = address(0);                    // Will be set by publisher
         operator = address(0);                    // Will be set by sparsity
         publisherCommissionRate = _publisherCommissionRate;
         sparsityCommissionRate = _sparsityCommissionRate;
-        
-        minBetAmount = _minBetAmount;
-        bettingDuration = _bettingDuration;
-        minDrawDelayAfterEnd = _minDrawDelayAfterEnd;
-        maxDrawDelayAfterEnd = _maxDrawDelayAfterEnd;
-        minEndTimeExtension = _minEndTimeExtension;
-        minParticipants = _minParticipants;
-        
+
+        // Set sensible defaults for other config values
+        minBetAmount = 0.01 ether;
+        bettingDuration = 1 hours;
+        minDrawDelayAfterEnd = 5 minutes;
+        maxDrawDelayAfterEnd = 30 minutes;
+        minEndTimeExtension = 5 minutes;
+        minParticipants = 2;
+
         roundId = 0;
         state = RoundState.Waiting;
     }

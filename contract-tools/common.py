@@ -20,17 +20,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 from config import load_publisher_config, load_sparsity_config
 
 
-def load_generic_config() -> Dict[str, Any]:
-    """Load generic configuration with basic defaults"""
-    return {
-        "blockchain": {
-            "rpc_url": "http://localhost:8545",
-            "private_key": "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6",
-            "chain_id": 31337
-        }
-    }
-
-
 def validate_ethereum_address(address: str) -> bool:
     """Validate Ethereum address format"""
     if not address:
@@ -137,15 +126,28 @@ class LotteryContractBase:
             
             # Get configuration
             config = contract.functions.getConfig().call()
-            publisher_addr, sparsity_addr, operator_addr, publisher_commission, sparsity_commission, min_bet, betting_dur, draw_delay, min_part, sparsity_is_set = config
-            
-            # Get current round info
+            # getConfig returns 12 values
+            publisher_addr, sparsity_addr, operator_addr, publisher_commission, sparsity_commission, min_bet, betting_dur, min_draw_delay, max_draw_delay, min_end_time_ext, min_part, sparsity_is_set = config
+
+            # Get current round info (use getRound which returns the LotteryRound struct)
             try:
-                current_round = contract.functions.getCurrentRound().call()
-                round_id, start_time, end_time, draw_time, total_pot, participant_count, winner, pub_comm, spar_comm, winner_prize, completed, cancelled, refunded = current_round
-            except:
+                current_round_raw = contract.functions.getRound().call()
+                # current_round_raw layout: [roundId, startTime, endTime, minDrawTime, maxDrawTime, totalPot, participantCount, winner, pubComm, sparComm, winnerPrize, state]
+                if current_round_raw and len(current_round_raw) >= 7 and current_round_raw[0] > 0:
+                    # Normalize to the 6-tuple expected by display code: (round_id, start_time, end_time, draw_time, total_pot, participant_count)
+                    current_round = (
+                        current_round_raw[0],  # roundId
+                        current_round_raw[1],  # startTime
+                        current_round_raw[2],  # endTime
+                        current_round_raw[3],  # minDrawTime (draw_time)
+                        current_round_raw[5],  # totalPot
+                        current_round_raw[6]   # participantCount
+                    )
+                else:
+                    current_round = None
+            except Exception:
                 current_round = None
-            
+
             return {
                 'is_accessible': True,
                 'publisher': publisher_addr,
@@ -157,9 +159,11 @@ class LotteryContractBase:
                 'min_bet_wei': min_bet,
                 'min_bet_eth': self.w3.from_wei(min_bet, 'ether'),
                 'betting_duration': betting_dur,
-                'draw_delay': draw_delay,
+                'draw_delay': min_draw_delay,
+                'max_draw_delay': max_draw_delay,
+                'min_end_time_ext': min_end_time_ext,
                 'min_participants': min_part,
-                'current_round': current_round[:6] if current_round and current_round[0] > 0 else None,
+                'current_round': current_round,
                 'error': None
             }
         except Exception as e:
@@ -290,33 +294,68 @@ def display_contracts_table(contracts_info: List[Dict[str, Any]], w3: Web3, role
         
         # Apply role filter if specified
         if role_filter:
-            if role_filter == 'publisher' and status.get('publisher', '').lower() != deployment.get('deployer', '').lower():
-                continue
+            if role_filter == 'publisher':
+                # Normalize possible None values to empty string before comparing
+                pub_addr = (status.get('publisher') or '').lower()
+                deployer_addr = (deployment.get('deployer') or '').lower()
+                if pub_addr != deployer_addr:
+                    continue
             elif role_filter == 'sparsity' and not status.get('sparsity_set', False):
                 continue
         
         print(f"\n{i}. Contract: {deployment['contract_address']}")
         print(f"   📁 File: {info['file_path']}")
         
-        if status['is_accessible']:
-            publisher_addr = status['publisher'] or 'Unknown'
+        if status.get('is_accessible'):
+            # Safe getters with defaults
+            publisher_addr = status.get('publisher') or 'Unknown'
             print(f"   📍 Publisher: {publisher_addr}")
-            
-            sparsity_status = status['sparsity'] or "Not set"
-            operator_status = status['operator'] or "Not set"
+
+            sparsity_status = status.get('sparsity') or "Not set"
+            operator_status = status.get('operator') or "Not set"
             print(f"   🔧 Sparsity: {sparsity_status}")
             print(f"   👤 Operator: {operator_status}")
-            print(f"   💰 Publisher Commission: {status['publisher_commission_rate'] / 100}%")
-            print(f"   💰 Sparsity Commission: {status['sparsity_commission_rate'] / 100}%")
-            print(f"   💸 Min Bet: {status['min_bet_eth']} ETH")
-            print(f"   ⏱️  Betting Duration: {status['betting_duration'] // 60} minutes")
-            print(f"   ⏳ Draw Delay: {status['draw_delay']} seconds")
-            
-            if status['current_round']:
-                round_id, start_time, end_time, draw_time, total_pot, participant_count = status['current_round']
+
+            pub_comm = status.get('publisher_commission_rate')
+            spar_comm = status.get('sparsity_commission_rate')
+            if pub_comm is not None:
+                print(f"   💰 Publisher Commission: {pub_comm / 100}%")
+            if spar_comm is not None:
+                print(f"   💰 Sparsity Commission: {spar_comm / 100}%")
+
+            # Min bet (ETH)
+            min_bet_eth = status.get('min_bet_eth')
+            if min_bet_eth is not None:
+                print(f"   💸 Min Bet: {min_bet_eth} ETH")
+            else:
+                print(f"   💸 Min Bet: Unknown")
+
+            # Betting duration in minutes
+            betting_duration = status.get('betting_duration', 0)
+            print(f"   ⏱️  Betting Duration: {betting_duration // 60} minutes")
+
+            # Draw delay (min/max) and min end time extension
+            min_draw = status.get('draw_delay')
+            max_draw = status.get('max_draw_delay')
+            min_end_ext = status.get('min_end_time_ext')
+            if min_draw is not None and max_draw is not None:
+                print(f"   ⏳ Draw Delay: {min_draw} - {max_draw} seconds")
+            elif min_draw is not None:
+                print(f"   ⏳ Draw Delay: {min_draw} seconds")
+            if min_end_ext is not None:
+                print(f"   🔁 Min End Time Extension: {min_end_ext} seconds")
+
+            # Current round info (normalized to tuple of 6)
+            curr = status.get('current_round')
+            if curr and isinstance(curr, (list, tuple)) and len(curr) >= 6:
+                round_id, start_time, end_time, draw_time, total_pot, participant_count = curr[:6]
                 print(f"   🎯 Current Round: #{round_id}")
                 print(f"   👥 Participants: {participant_count}")
-                print(f"   💎 Total Pot: {w3.from_wei(total_pot, 'ether')} ETH")
+                try:
+                    pot_eth = w3.from_wei(total_pot, 'ether') if total_pot is not None else '0'
+                except Exception:
+                    pot_eth = total_pot
+                print(f"   💎 Total Pot: {pot_eth} ETH")
             else:
                 print(f"   🎯 Current Round: No active round")
         else:

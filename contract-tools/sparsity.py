@@ -32,8 +32,8 @@ class SparsityManager(LotteryContractBase):
             
             # Check if current user is sparsity and sparsity is set
             if (status['is_accessible'] and 
-                status['sparsity'] and 
-                status['sparsity'].lower() == self.account.address.lower()):
+                status.get('sparsity') and 
+                (status.get('sparsity') or '').lower() == self.account.address.lower()):
                 sparsity_contracts.append(info)
         
         if not sparsity_contracts:
@@ -90,7 +90,8 @@ class SparsityManager(LotteryContractBase):
             print("❌ Operator address cannot be the same as sparsity address")
             return
         
-        if operator_address.lower() == selected['status']['publisher'].lower():
+        sel_pub = selected['status'].get('publisher') or ''
+        if operator_address.lower() == sel_pub.lower():
             print("❌ Operator address cannot be the same as publisher address")
             return
         
@@ -123,12 +124,26 @@ class SparsityManager(LotteryContractBase):
         config = contract.functions.getConfig().call()
         sparsity_addr = config[1]  # sparsity is the 2nd element
         
-        if sparsity_addr.lower() != self.account.address.lower():
+        if (sparsity_addr or '').lower() != self.account.address.lower():
             print("❌ You are not the sparsity for this contract")
             return
         
-        # Build transaction
-        transaction = contract.functions.setOperator(operator_address).build_transaction({
+        # Build transaction - choose function name based on ABI
+        fn_name = None
+        try:
+            if any((f.get('name') == 'setOperator') for f in abi):
+                fn_name = 'setOperator'
+            elif any((f.get('name') == 'updateOperator') for f in abi):
+                fn_name = 'updateOperator'
+        except Exception:
+            fn_name = None
+
+        if not fn_name:
+            print("❌ Error: No operator-setting function (setOperator/updateOperator) was found in this contract's ABI.")
+            return
+
+        # Build transaction using the discovered function name
+        transaction = getattr(contract.functions, fn_name)(operator_address).build_transaction({
             'from': self.account.address,
             'gas': 100000,
             'gasPrice': self.w3.to_wei('20', 'gwei'),
@@ -138,20 +153,24 @@ class SparsityManager(LotteryContractBase):
         
         # Send transaction
         tx_hash = self.send_transaction(transaction)
-        print("✅ Operator set successfully!")
-        
-        # Update deployment file
+        print(f"✅ Operator {fn_name} invoked successfully!")
+
+        # Update deployment file (record different keys depending on function used)
         try:
             with open(deployment_file, 'r') as f:
                 deployment_data = json.load(f)
-            
+
             deployment_data['operator_address'] = operator_address
-            deployment_data['operator_set_tx'] = tx_hash
-            deployment_data['operator_set_timestamp'] = int(time.time())
-            
+            if fn_name == 'updateOperator':
+                deployment_data['operator_update_tx'] = tx_hash
+                deployment_data['operator_update_timestamp'] = int(time.time())
+            else:
+                deployment_data['operator_set_tx'] = tx_hash
+                deployment_data['operator_set_timestamp'] = int(time.time())
+
             with open(deployment_file, 'w') as f:
                 json.dump(deployment_data, f, indent=2)
-            
+
             print(f"📝 Updated deployment file: {deployment_file}")
         except Exception as e:
             print(f"⚠️  Warning: Could not update deployment file: {e}")
@@ -168,7 +187,7 @@ class SparsityManager(LotteryContractBase):
         config = contract.functions.getConfig().call()
         sparsity_addr = config[1]  # sparsity is the 2nd element
         
-        if sparsity_addr.lower() != self.account.address.lower():
+        if (sparsity_addr or '').lower() != self.account.address.lower():
             print("❌ You are not the sparsity for this contract")
             return
         
