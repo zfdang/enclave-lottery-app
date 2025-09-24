@@ -23,7 +23,7 @@ For development and demonstrations, start with the unified demos:
 ### Network Requirements
 - Internet connectivity for package downloads
 - Access to Ethereum network (mainnet or testnet)
-- Open ports for web interface (default: 8080)
+- Open ports for web interface (default: 6080)
 
 ## Local Development Setup
 
@@ -317,10 +317,10 @@ df -h
 #### Network Connectivity Issues
 ```bash
 # Test network connectivity
-curl -I http://localhost:8080/health
+curl -I http://localhost:6080/health
 
 # Check enclave networking
-sudo netstat -tlnp | grep 8080
+sudo netstat -tlnp | grep 6080
 ```
 
 #### Smart Contract Deployment Fails

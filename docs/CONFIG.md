@@ -20,7 +20,7 @@ This is a JSON file that contains default settings:
 {
   "server": {
     "host": "0.0.0.0",
-    "port": 8080
+    "port": 6080
   },
   "lottery": {
     "draw_interval_minutes": 5,
@@ -59,7 +59,7 @@ Then edit the `.env` file and set your real configuration values.
 | Variable | Legacy name | Description | Default |
 |----------|-------------|-------------|---------|
 | `SERVER_HOST` | `LOTTERY_SERVER_HOST` | Server bind address | `0.0.0.0` |
-| `SERVER_PORT` | `LOTTERY_SERVER_PORT` | Server port | `8080` |
+| `SERVER_PORT` | `LOTTERY_SERVER_PORT` | Server port | `6080` |
 
 ### Lottery Configuration
 
@@ -91,8 +91,8 @@ Then edit the `.env` file and set your real configuration values.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `REACT_APP_API_URL` | API URL | `http://localhost:8080` |
-| `REACT_APP_WEBSOCKET_URL` | WebSocket URL | `ws://localhost:8080/ws` |
+| `REACT_APP_API_URL` | API URL | `http://localhost:6080` |
+| `REACT_APP_WEBSOCKET_URL` | WebSocket URL | `ws://localhost:6080/ws` |
 
 ## Configuration Usage
 
@@ -122,7 +122,7 @@ Use environment variables in production instead of a `.env` file:
 export ETHEREUM_RPC_URL="https://mainnet.infura.io/v3/YOUR_PROJECT_ID"
 export PRIVATE_KEY="your_production_private_key"
 export SERVER_HOST="0.0.0.0"
-export SERVER_PORT="8080"
+export SERVER_PORT="6080"
 export ENCLAVE_ATTESTATION_ENABLED="true"
 
 # Run the application
@@ -134,7 +134,7 @@ python enclave/src/main.py
 ```bash
 # Run Docker with environment variables
 docker run -d \
-  -p 8080:8080 \
+  -p 6080:6080 \
   -e ETHEREUM_RPC_URL="http://host.docker.internal:8545" \
   -e PRIVATE_KEY="your_private_key" \
   enclave-lottery-app
@@ -248,7 +248,7 @@ ETHEREUM_RPC_URL=http://localhost:8545
 CHAIN_ID=31337
 PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 SERVER_HOST=localhost
-SERVER_PORT=8080
+SERVER_PORT=6080
 LOTTERY_DRAW_INTERVAL_MINUTES=5
 ```
 

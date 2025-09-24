@@ -365,7 +365,7 @@ class LotteryEnclaveApp:
                 server_task = asyncio.create_task(
                     self.web_server.start(
                         host=self.config.get('server', {}).get('host', '0.0.0.0'),
-                        port=self.config.get('server', {}).get('port', 8080)
+                        port=self.config.get('server', {}).get('port', 6080)
                     )
                 )
                 tasks.append(server_task)

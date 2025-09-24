@@ -158,7 +158,7 @@ COPY --chown=lottery:lottery src/frontend/dist/ /app/src/frontend/dist/
 │  │  │  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐  │   │  │
 │  │  │  │ FastAPI     │  │ Lottery      │  │ Blockchain   │  │   │  │
 │  │  │  │ Server      │  │ Engine       │  │ Client (Web3)│  │   │  │
-│  │  │  │   :8080     │  │              │  │              │  │   │  │
+│  │  │  │   :6080     │  │              │  │              │  │   │  │
 │  │  │  └─────────────┘  └──────────────┘  └──────────────┘  │   │  │
 │  │  │           │               │                │          │   │  │
 │  │  │  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐  │   │  │
@@ -226,7 +226,7 @@ COPY --chown=lottery:lottery src/frontend/dist/ /app/src/frontend/dist/
 
 # Health check configuration
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8080/api/health || exit 1
+  CMD curl -f http://localhost:6080/api/health || exit 1
 
 # Run as non-root user
 CMD ["python", "src/main.py"]
@@ -280,7 +280,7 @@ CMD ["python", "src/main.py"]
 ```bash
 # Healthcheck configuration
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8080/api/health || exit 1
+  CMD curl -f http://localhost:6080/api/health || exit 1
 ```
 
 **Checks performed:**
@@ -325,7 +325,7 @@ sequenceDiagram
     Main->>Lottery: 5. Initialize lottery engine
     Lottery->>Lottery: 6. Load config and state
     Main->>WebServer: 7. Start web server
-    WebServer->>WebServer: 8. Bind port 8080
+    WebServer->>WebServer: 8. Bind port 6080
     WebServer->>HealthCheck: 9. Activate health endpoint
     HealthCheck->>Container: 10. Container ready
 ```
@@ -343,7 +343,7 @@ sequenceDiagram
 - User authentication and session management
 
 **Port configuration:**
-- Container internal port: `8080`
+- Container internal port: `6080`
 - Host mapped port: `8081` (Docker Demo mode)
 
 **Main endpoints:**
@@ -435,7 +435,7 @@ CONTRACT_ADDRESS = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
 # Docker run command
 docker run -d \
   --name enclave-demo \
-  -p 8081:8080 \
+  -p 8081:6080 \
   --add-host host.docker.internal:host-gateway \
   -e ETHEREUM_RPC_URL=http://host.docker.internal:8545 \
   -e CONTRACT_ADDRESS=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 \
@@ -444,8 +444,8 @@ docker run -d \
 
 **Networking notes:**
 
-1. **Port mapping:** `-p 8081:8080`
-   - Host port 8081 mapped to container port 8080
+1. **Port mapping:** `-p 8081:6080`
+   - Host port 8081 mapped to container port 6080
    - External access: `http://localhost:8081`
 
 2. **Host network access:** `--add-host host.docker.internal:host-gateway`
@@ -461,7 +461,7 @@ docker run -d \
 ```
 User Browser (localhost:8081)
     ↓ HTTP/WebSocket
-Docker Container (enclave-lottery-app:8080)
+Docker Container (enclave-lottery-app:6080)
     ↓ HTTP RPC
 Host Blockchain Node (host.docker.internal:8545)
     ↓ JSON-RPC
@@ -515,10 +515,10 @@ The `scripts/build_docker.sh` script provides a complete, production-ready build
 ./scripts/build_docker.sh
 
 # Run with environment file
-docker run -p 8080:8080 --env-file .env enclave-lottery-app:latest
+docker run -p 6080:6080 --env-file .env enclave-lottery-app:latest
 
 # Access the application
-open http://localhost:8080
+open http://localhost:6080
 ```
 
 **Production Deployment:**
@@ -526,7 +526,7 @@ open http://localhost:8080
 # Deploy with specific configuration
 docker run -d \
   --name lottery-production \
-  -p 8080:8080 \
+  -p 6080:6080 \
   --env-file .env.production \
   --restart unless-stopped \
   enclave-lottery-app:latest
@@ -541,7 +541,7 @@ docker run -d \
 
 ```bash
 # Container health check
-curl -f http://localhost:8080/api/health
+curl -f http://localhost:6080/api/health
 
 # Response format
 {
@@ -614,7 +614,7 @@ Error starting userland proxy: listen tcp4 0.0.0.0:8081: bind: address already i
 **Fixes:**
 1. Find process using the port: `lsof -i :8081`
 2. Stop the conflicting service or use a different port
-3. Change port mapping: `-p 8082:8080`
+3. Change port mapping: `-p 8082:6080`
 
 #### 3. Container exits immediately on start
 

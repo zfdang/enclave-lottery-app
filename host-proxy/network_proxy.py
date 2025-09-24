@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class NetworkProxy:
     """Simple network proxy for enclave communication"""
     
-    def __init__(self, host_port: int = 8080, enclave_cid: int = 16, enclave_port: int = 8080):
+    def __init__(self, host_port: int = 6080, enclave_cid: int = 16, enclave_port: int = 6080):
         self.host_port = host_port
         self.enclave_cid = enclave_cid
         self.enclave_port = enclave_port

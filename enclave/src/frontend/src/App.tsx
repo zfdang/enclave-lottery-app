@@ -38,7 +38,7 @@ function App() {
   const { currentDraw, fetchCurrentDraw, error: lotteryError } = useLotteryStore()
   
   // WebSocket connection for real-time updates
-  useWebSocket('ws://localhost:8080/ws/lottery', {
+  useWebSocket('ws://localhost:6080/ws/lottery', {
     onMessage: (data) => {
       setBackendOnline(true)
       if (data.type === 'bet_placed') {

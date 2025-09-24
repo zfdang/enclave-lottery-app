@@ -244,7 +244,7 @@ CONTRACT_ADDRESS=0x5FbDB2315678afecb367f032d93F642f64180aa3
 
 # Server Configuration
 SERVER_HOST=localhost                        # Server bind address
-SERVER_PORT=8080                             # Server port
+SERVER_PORT=6080                             # Server port
 
 # Lottery Configuration
 LOTTERY_DRAW_INTERVAL_MINUTES=5              # Draw interval (minutes)
@@ -257,8 +257,8 @@ ENCLAVE_VSOCK_PORT=5005                      # VSock port
 ENCLAVE_ATTESTATION_ENABLED=false            # Enable attestation (set to true in production)
 
 # Frontend Configuration
-REACT_APP_API_URL=http://localhost:8080
-REACT_APP_WEBSOCKET_URL=ws://localhost:8080/ws
+REACT_APP_API_URL=http://localhost:6080
+REACT_APP_WEBSOCKET_URL=ws://localhost:6080/ws
 ```
 
 **Important Notes:**
@@ -286,7 +286,7 @@ The `enclave/config/enclave.conf` file contains lottery-specific settings:
 {
   "server": {
     "host": "0.0.0.0",
-    "port": 8080
+    "port": 6080
   },
   "lottery": {
     "draw_interval_minutes": 10,
@@ -396,7 +396,7 @@ npm test
 ./scripts/build_enclave.sh
 
 # Test with container runtime
-docker run --rm -p 8081:8080 enclave-lottery-app:latest
+docker run --rm -p 6080:6080 enclave-lottery-app:latest
 ```
 
 ### Local Development
@@ -424,7 +424,7 @@ npm install && npm start
 # Build and run with Docker
 ./scripts/build_docker.sh
 docker run -d --name lottery-app \
-  -p 8080:8080 \
+  -p 6080:6080 \
   --add-host host.docker.internal:host-gateway \
   -e ETHEREUM_RPC_URL=http://host.docker.internal:8545 \
   -e CONTRACT_ADDRESS=your_contract_address \
@@ -519,7 +519,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - **Blockchain Connection**: Ensure Anvil is running on `http://localhost:8545`
 - **Docker Issues**: Check Docker daemon is running and user has permissions
-- **Port Conflicts**: Default ports 8080/8081 should be available
+- **Port Conflicts**: Default ports 6080/6080 should be available
 - **Build Failures**: Run `./scripts/setup_environment.sh` to install dependencies
 
 **Getting Help:**

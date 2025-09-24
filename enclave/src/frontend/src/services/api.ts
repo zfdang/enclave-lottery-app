@@ -2,7 +2,7 @@ import axios from 'axios'
 
 const API_BASE_URL = import.meta.env.MODE === 'production' 
   ? '' // Same origin in production
-  : 'http://localhost:8080'
+  : 'http://localhost:6080'
 
 const api = axios.create({
   baseURL: API_BASE_URL,

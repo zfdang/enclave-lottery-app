@@ -37,11 +37,11 @@ COPY --chown=lottery:lottery src/utils/ /app/src/utils/
 COPY --chown=lottery:lottery src/frontend/dist/ /app/src/frontend/dist/
 
 # Expose port
-EXPOSE 8080
+EXPOSE 6080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8080/api/health || exit 1
+  CMD curl -f http://localhost:6080/api/health || exit 1
 
 # Default command
 CMD ["python", "src/main.py"]

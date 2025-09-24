@@ -433,7 +433,7 @@ class LotteryWebServer:
         for websocket in disconnected:
             self.websocket_connections.remove(websocket)
             
-    async def start(self, host: str = "0.0.0.0", port: int = 8080):
+    async def start(self, host: str = "0.0.0.0", port: int = 6080):
         """Start the web server"""
         import uvicorn
         
