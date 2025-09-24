@@ -113,7 +113,38 @@ class LotteryWebServer:
                     "PCR2": "mock_pcr2_value"
                 }
             }
-            
+        
+        @self.app.get("/api/lottery/contract")
+        async def get_lottery_contract():
+            """Get lottery contract address"""
+            try:
+                # Check if blockchain client is available
+                if not self.blockchain_client:
+                    raise HTTPException(
+                        status_code=503, 
+                        detail="Blockchain service unavailable - contract information not accessible"
+                    )
+                
+                contract_address = getattr(self.blockchain_client, 'contract_address', None)
+                if not contract_address:
+                    raise HTTPException(
+                        status_code=404, 
+                        detail="Contract address not configured"
+                    )
+                
+                return {
+                    "contract_address": contract_address,
+                    "network": getattr(self.blockchain_client, 'rpc_url', 'unknown'),
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"Error getting contract address: {e}")
+                raise HTTPException(status_code=500, detail="Internal server error")
+        
+        
+        
         @self.app.get("/api/draw/current")
         async def get_current_draw():
             """Get current lottery draw information"""

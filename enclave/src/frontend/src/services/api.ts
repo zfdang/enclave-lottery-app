@@ -60,6 +60,12 @@ export const getActivities = async () => {
   return response.data
 }
 
+// Get lottery contract address and network
+export const getLotteryContract = async () => {
+  const response = await api.get('/api/lottery/contract')
+  return response.data
+}
+
 // Connect wallet
 export const connectWallet = async (address: string, signature: string) => {
   const response = await api.post('/api/auth/connect', {
