@@ -33,7 +33,9 @@ class BlockchainClient:
         self.contract_address = config.get('blockchain', {}).get('contract_address')
         
         # Load contract ABI
-        self.contract_abi_path = config.get('development', {}).get('contract_abi_path')
+        # Always use the new ABI location
+        # this ABI file will be copied by running /scripts/build_docker.sh
+        self.contract_abi_path = str(Path(__file__).parent.parent / 'contracts' / 'abi' / 'Lottery.abi')
         
         # Load private key from config
         operator_address = config.get('blockchain', {}).get('operator_address')

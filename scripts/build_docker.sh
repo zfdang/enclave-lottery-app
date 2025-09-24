@@ -114,34 +114,29 @@ build_backend() {
     cd "$PROJECT_ROOT"
 }
 
-# Compile smart contracts
 compile_contracts() {
     log "Compiling smart contracts..."
-    
+
     # Check if solc is installed
     if ! command -v solc &> /dev/null; then
         error "Solidity compiler (solc) not found. please run ./scripts/setup_environment.sh to install solc-select"
         exit 1
     fi
-    
+
     # Use the correct contracts directory
     CONTRACTS_DIR="$PROJECT_ROOT/contracts"
-    BUILD_DIR="$PROJECT_ROOT/enclave/src/contracts/compiled"
-    
+    BUILD_DIR="$PROJECT_ROOT/contracts/compiled"
+
     if [[ ! -d "$CONTRACTS_DIR" ]]; then
         warning "Contracts directory not found at $CONTRACTS_DIR"
         return
     fi
-    
+
     cd "$CONTRACTS_DIR"
 
-    # list all files in current directory
-    # log "Found Solidity files:"
-    # ls -1 *.sol || { warning "No Solidity files found."; return; }
-    
     # Create build directory
     mkdir -p "$BUILD_DIR"
-    
+
     # Compile contracts
     for contract in *.sol; do
         if [[ -f "$contract" ]]; then
@@ -149,9 +144,22 @@ compile_contracts() {
             solc --bin --abi --optimize "$contract" -o "$BUILD_DIR" --overwrite
         fi
     done
-    
+
     log "Smart contract compilation completed ✅"
     cd "$PROJECT_ROOT"
+
+    # Copy ABI to /enclave/src/abi
+    ABI_SRC_DIR="$BUILD_DIR"
+    ABI_DST_DIR1="$PROJECT_ROOT/enclave/src/contracts/abi"
+    mkdir -p "$ABI_DST_DIR1"
+    cp "$ABI_SRC_DIR"/*.abi "$ABI_DST_DIR1/"
+    log "ABI copied to /enclave/src/contracts/abi ✅"
+
+    # Copy ABI to /enclave/src/frontend/public/abi
+    ABI_DST_DIR2="$PROJECT_ROOT/enclave/src/frontend/public/contracts/abi"
+    mkdir -p "$ABI_DST_DIR2"
+    cp "$ABI_SRC_DIR"/*.abi "$ABI_DST_DIR2/"
+    log "ABI copied to /enclave/src/frontend/public/contracts/abi ✅"
 }
 
 # Build Docker image

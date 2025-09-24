@@ -36,7 +36,9 @@ const BettingPanel: React.FC = () => {
     // Load betting limits from contract
     const loadBettingLimits = async () => {
       try {
-        const limits = await contractService.getBettingLimits()
+  // If contractService loads ABI, ensure it uses /abi/Lottery.abi
+  // Example: await contractService.loadAbi('/abi/Lottery.abi')
+  const limits = await contractService.getBettingLimits()
         setBettingLimits(limits)
       } catch (error) {
         console.error('Failed to load betting limits:', error)

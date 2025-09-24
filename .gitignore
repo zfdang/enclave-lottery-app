@@ -73,7 +73,8 @@ lottery.eif
 
 # Contracts build
 contracts/compiled/
-enclave/src/contracts/compiled/
+enclave/src/contracts/abi/
+enclave/src/frontend/public/contracts/abi/
 
 # contract configuration and deployment records
 # Role-specific configurations (contain private keys)
@@ -83,7 +84,6 @@ contract-tools/deployments/
 
 # Enclave configuration (may contain sensitive keys)
 enclave/config/enclave.conf
-enclave/config/operator.conf
 
 # Virtual environments
 enclave/venv/

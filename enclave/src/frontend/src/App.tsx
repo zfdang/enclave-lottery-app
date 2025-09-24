@@ -102,7 +102,8 @@ function App() {
 
   // Contract info state (moved from ActivityFeed)
   const [contractAddress, setContractAddress] = useState<string | null>(null)
-  const [rpcUrl, setRpcUrl] = useState<string | null>(null)
+  const rpcUrl = `${import.meta.env.VITE_RPC_URL}${import.meta.env.VITE_RPC_PORT ? ':' + import.meta.env.VITE_RPC_PORT : ''}`
+  const chainId = import.meta.env.VITE_CHAIN_ID
   const [contractLoading, setContractLoading] = useState<boolean>(false)
   const [contractError, setContractError] = useState<string | null>(null)
 
@@ -155,7 +156,6 @@ function App() {
     try {
       const data = await getLotteryContract()
       setContractAddress(data.contract_address || null)
-      setRpcUrl(data.network || null)
     } catch (e: any) {
       setContractError(e.message || 'Unable to load contract info')
       setContractAddress(null)
@@ -175,17 +175,17 @@ function App() {
     setConfigError(null)
     setContractConfig(null)
     try {
-      // Try to load ABI from static mount; on dev fallback to public path
-      let abiRes = await fetch('/static/contracts/compiled/Lottery.abi')
-      if (!abiRes.ok) {
-        abiRes = await fetch('/contracts/compiled/Lottery.abi')
-      }
+      // Load ABI from new public location
+      // this ABI file will be copied by running /scripts/build_docker.sh
+      const abiRes = await fetch('/contracts/abi/Lottery.abi')
       if (!abiRes.ok) throw new Error('Failed to fetch ABI')
       const abiText = await abiRes.text()
       const abi = JSON.parse(abiText)
 
-      const url = rpcUrl && rpcUrl !== 'unknown' ? rpcUrl : 'http://localhost:8545'
-      const provider = new ethers.JsonRpcProvider(url)
+      const url = rpcUrl
+      // print url to console
+      console.log("RPC URL:", url)
+      const provider = new ethers.JsonRpcProvider(url, chainId ? Number(chainId) : undefined)
       const contract = new ethers.Contract(contractAddress, abi, provider)
       const cfg = await contract.getConfig()
 
