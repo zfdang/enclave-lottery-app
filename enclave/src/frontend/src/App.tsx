@@ -245,18 +245,17 @@ function App() {
               variant="outlined"
               sx={{
                 mr: 2,
-                fontWeight: 700,
+                fontWeight: 600,
                 fontSize: '1rem',
                 px: 2,
                 py: 1,
-                borderWidth: 2,
+                borderWidth: 1.5,
                 borderStyle: 'solid',
-                borderColor: backendOnline ? '#4caf50' : '#f44336',
-                background: backendOnline ? 'rgba(76, 175, 80, 0.15)' : 'rgba(244, 67, 54, 0.15)',
-                color: backendOnline ? '#388e3c' : '#b71c1c',
-                boxShadow: backendOnline
-                  ? '0 0 8px 2px rgba(76,175,80,0.3)'
-                  : '0 0 8px 2px rgba(244,67,54,0.3)',
+                borderColor: backendOnline ? 'rgba(102,126,234,0.7)' : 'rgba(244,67,54,0.5)',
+                background: backendOnline ? 'linear-gradient(90deg, rgba(102,126,234,0.10) 0%, rgba(118,75,162,0.10) 100%)' : 'rgba(244,67,54,0.08)',
+                color: backendOnline ? '#3a4ca2' : '#b71c1c',
+                borderRadius: 2,
+                boxShadow: '0 1px 6px 0 rgba(102,126,234,0.08)',
                 cursor: backendOnline ? 'pointer' : 'not-allowed',
                 opacity: backendOnline ? 1 : 0.7,
                 transition: 'all 0.2s',
@@ -370,16 +369,17 @@ function App() {
                     color="primary"
                     variant="outlined"
                     sx={{
-                      fontWeight: 700,
+                      fontWeight: 600,
                       fontSize: '1rem',
                       px: 2,
                       py: 1,
-                      borderWidth: 2,
+                      borderWidth: 1.5,
                       borderStyle: 'solid',
-                      borderColor: '#1976d2',
-                      background: 'rgba(33,150,243,0.15)',
-                      color: '#0d47a1',
-                      boxShadow: '0 0 8px 2px rgba(33,150,243,0.25)',
+                      borderColor: 'rgba(102,126,234,0.7)',
+                      background: 'linear-gradient(90deg, rgba(102,126,234,0.10) 0%, rgba(118,75,162,0.10) 100%)',
+                      color: '#3a4ca2',
+                      borderRadius: 2,
+                      boxShadow: '0 1px 6px 0 rgba(102,126,234,0.08)',
                       cursor: 'pointer',
                       transition: 'all 0.2s',
                     }}
