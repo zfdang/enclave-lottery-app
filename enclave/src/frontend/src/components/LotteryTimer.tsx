@@ -17,7 +17,7 @@ interface TimeRemaining {
 }
 
 const LotteryTimer: React.FC = () => {
-  const { currentDraw } = useLotteryStore()
+  const { currentDraw, loading, error } = useLotteryStore()
   const [timeRemaining, setTimeRemaining] = useState<TimeRemaining>({ hours: 0, minutes: 0, seconds: 0 })
   const [bettingTimeRemaining, setBettingTimeRemaining] = useState<TimeRemaining>({ hours: 0, minutes: 0, seconds: 0 })
 
@@ -63,7 +63,15 @@ const LotteryTimer: React.FC = () => {
   if (!currentDraw) {
     return (
       <Box sx={{ p: 2, textAlign: 'center', color: 'white' }}>
-  <Typography variant="body1">Loading lottery information...</Typography>
+        {loading ? (
+          <Typography variant="body1">Loading lottery information...</Typography>
+        ) : error ? (
+          <Typography variant="body1" sx={{ color: 'rgba(255, 193, 7, 0.9)' }}>
+            Backend offline - Unable to load lottery data
+          </Typography>
+        ) : (
+          <Typography variant="body1">No lottery data available</Typography>
+        )}
       </Box>
     )
   }

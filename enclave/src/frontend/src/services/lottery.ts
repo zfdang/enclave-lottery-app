@@ -33,12 +33,14 @@ export const useLotteryStore = create<LotteryState>((set, get) => ({
     
     try {
       const data = await getCurrentDraw()
-      set({ currentDraw: data, loading: false })
+      set({ currentDraw: data, loading: false, error: null })
     } catch (error: any) {
+      console.warn('Backend connection failed:', error.message)
       set({ 
         error: error.message || 'Failed to fetch current draw',
         loading: false 
       })
+      // Don't throw error to prevent component crashes
     }
   },
 

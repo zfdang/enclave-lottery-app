@@ -47,8 +47,8 @@ class ContractService {
   private contractAddress: string = ''
 
   constructor() {
-    // Get contract address from environment or config
-    this.contractAddress = process.env.REACT_APP_LOTTERY_CONTRACT_ADDRESS || ''
+    // Get contract address from environment or config (Vite uses import.meta.env)
+    this.contractAddress = import.meta.env.VITE_LOTTERY_CONTRACT_ADDRESS || ''
   }
 
   private getContract(): ethers.Contract {

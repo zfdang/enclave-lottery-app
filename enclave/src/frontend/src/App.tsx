@@ -10,20 +10,20 @@ import {
   Toolbar,
   Chip,
 } from '@mui/material'
-import { Security, VerifiedUser } from '@mui/icons-material'
+import { Security, VerifiedUser, ErrorOutline } from '@mui/icons-material'
 
 import LotteryTimer from './components/LotteryTimer'
 import BettingPanel from './components/BettingPanel'
 import UserList from './components/UserList'
 import HistoryPanel from './components/HistoryPanel'
 import ActivityFeed from './components/ActivityFeed'
-import WalletConnection from './components/WalletConnection'
 
 import { useWebSocket } from './services/websocket'
 import { useWalletStore } from './services/wallet'
 import { useLotteryStore } from './services/lottery'
 
 function App() {
+  const [backendOnline, setBackendOnline] = useState(true)
   const [snackbar, setSnackbar] = useState<{
     open: boolean
     message: string
@@ -35,11 +35,12 @@ function App() {
   })
 
   const { isConnected } = useWalletStore()
-  const { currentDraw, fetchCurrentDraw } = useLotteryStore()
+  const { currentDraw, fetchCurrentDraw, error: lotteryError } = useLotteryStore()
   
   // WebSocket connection for real-time updates
   useWebSocket('ws://localhost:8080/ws/lottery', {
     onMessage: (data) => {
+      setBackendOnline(true)
       if (data.type === 'bet_placed') {
         setSnackbar({
           open: true,
@@ -57,12 +58,30 @@ function App() {
         })
         fetchCurrentDraw()
       }
+    },
+    onError: () => {
+      setBackendOnline(false)
+    },
+    onClose: () => {
+      setBackendOnline(false)
     }
   })
 
   useEffect(() => {
-    fetchCurrentDraw()
+    // Check backend status when fetching current draw
+    fetchCurrentDraw().then(() => {
+      setBackendOnline(true)
+    }).catch(() => {
+      setBackendOnline(false)
+    })
   }, [fetchCurrentDraw])
+
+  // Monitor lottery error state for backend connectivity
+  useEffect(() => {
+    if (lotteryError) {
+      setBackendOnline(false)
+    }
+  }, [lotteryError])
 
   const handleCloseSnackbar = () => {
     setSnackbar({ ...snackbar, open: false })
@@ -84,6 +103,7 @@ function App() {
             <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
               Lottery Enclave
             </Typography>
+
             <Chip
               icon={<VerifiedUser />}
               label="Nitro Enclave Verified"
@@ -91,7 +111,18 @@ function App() {
               variant="outlined"
               sx={{ mr: 2 }}
             />
-            <WalletConnection />
+            
+            {/* Backend status indicator */}
+            {!backendOnline && (
+              <Chip
+                icon={<ErrorOutline />}
+                label="Backend Offline"
+                color="error"
+                variant="outlined"
+                sx={{ mr: 2, color: '#f44336', borderColor: '#f44336' }}
+              />
+            )}
+            
           </Toolbar>
         </AppBar>
       </Box>
@@ -170,30 +201,8 @@ function App() {
             display: 'flex',
             flexDirection: 'column'
           }}>
-            <Typography variant="h6" sx={{ 
-              p: 2, 
-              borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
-              color: 'white',
-              textAlign: 'center'
-            }}>
-              User Actions
-            </Typography>
-            <Box sx={{ flex: 1, overflow: 'auto', p: 1 }}>
+
               <BettingPanel />
-              {!isConnected && (
-                <Alert 
-                  severity="warning" 
-                  sx={{ 
-                    mt: 1,
-                    backdropFilter: 'blur(10px)',
-                    backgroundColor: 'rgba(255, 193, 7, 0.1)',
-                    border: '1px solid rgba(255, 193, 7, 0.2)'
-                  }}
-                >
-                  Please connect your wallet to participate
-                </Alert>
-              )}
-            </Box>
           </Box>
         </Box>
 
