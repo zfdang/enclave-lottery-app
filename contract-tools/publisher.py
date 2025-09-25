@@ -90,7 +90,7 @@ class PublisherManager(LotteryContractBase):
 
         # Get configuration from contract
         config = contract.functions.getConfig().call()
-        publisher_addr, sparsity_addr, operator_addr, publisher_commission, sparsity_commission, min_bet, betting_dur, min_draw_delay, max_draw_delay, min_end_time_ext, min_part, sparsity_is_set = config
+        publisher_addr, sparsity_addr, operator_addr, publisher_commission, sparsity_commission, min_bet, betting_dur, min_draw_delay, max_draw_delay, min_end_time_ext, min_part = config
 
         # Verify parameters
         assert publisher_addr.lower() == self.account.address.lower(), "Publisher address mismatch"
@@ -101,9 +101,6 @@ class PublisherManager(LotteryContractBase):
 
         assert publisher_commission == expected_params['publisher_commission_rate'], "Publisher commission rate mismatch"
         assert sparsity_commission == expected_params['sparsity_commission_rate'], "Sparsity commission rate mismatch"
-
-        # Sparsity flag should be false immediately after deployment
-        assert not sparsity_is_set, "Sparsity flag should be false during deployment"
 
         print("✅ Contract configuration verified")
 
@@ -147,10 +144,13 @@ class PublisherManager(LotteryContractBase):
             deployment = info['deployment']
             
             # Check if current user is publisher and sparsity not set
+            sparsity_addr = status.get('sparsity', '')
+            sparsity_is_set = sparsity_addr and sparsity_addr != '0x0000000000000000000000000000000000000000'
+            
             if (status['is_accessible'] and 
                 status['publisher'] and 
                 status['publisher'].lower() == self.account.address.lower() and
-                not status['sparsity_set']):
+                not sparsity_is_set):
                 publisher_contracts.append(info)
         
         if not publisher_contracts:

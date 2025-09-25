@@ -1,45 +1,113 @@
 import { ethers } from 'ethers'
 import { useWalletStore } from './wallet'
 
-// Lottery contract ABI (minimal interface for betting)
+// Lottery contract ABI based on the actual Lottery.sol contract
 const LOTTERY_ABI = [
   // Events
-  'event DrawCreated(string indexed drawId, uint256 startTime, uint256 endTime, uint256 drawTime)',
-  'event BetPlaced(string indexed drawId, address indexed user, uint256 amount, uint256 timestamp, uint256 betIndex)',
-  'event DrawCompleted(string indexed drawId, address indexed winner, uint256 winningNumber, uint256 totalPot, uint256 timestamp)',
+  'event RoundCreated(uint256 indexed roundId, uint256 startTime, uint256 endTime, uint256 minDrawTime, uint256 maxDrawTime)',
+  'event BetPlaced(uint256 indexed roundId, address indexed player, uint256 amount, uint256 newTotal, uint256 timestamp)',
+  'event EndTimeExtended(uint256 indexed roundId, uint256 oldEndTime, uint256 newEndTime)',
+  'event RoundStateChanged(uint256 indexed roundId, uint8 oldState, uint8 newState)',
+  'event RoundCompleted(uint256 indexed roundId, address indexed winner, uint256 totalPot, uint256 winnerPrize, uint256 publisherCommission, uint256 sparsityCommission, uint256 randomSeed)',
+  'event RoundRefunded(uint256 indexed roundId, uint256 totalRefunded, uint256 participantCount, string reason)',
+  'event MinBetAmountUpdated(uint256 oldAmount, uint256 newAmount)',
+  'event SparsitySet(address indexed sparsity)',
+  'event OperatorUpdated(address indexed oldOperator, address indexed newOperator)',
   
-  // Functions
-  'function placeBet(string memory drawId) external payable',
-  'function getDraw(string memory drawId) external view returns (string memory, uint256, uint256, uint256, uint256, bool, bool, address, uint256)',
-  'function getDrawBets(string memory drawId) external view returns (address[] memory, uint256[] memory, uint256[] memory)',
-  'function getUserBets(string memory drawId, address user) external view returns (uint256[] memory, uint256[] memory, uint256[] memory)',
-  'function getActiveDraws() external view returns (string[] memory)',
-  'function getDrawCount() external view returns (uint256)',
-  'function getDrawBetCount(string memory drawId) external view returns (uint256)',
-  'function getContractBalance() external view returns (uint256)',
-  'function minimumBet() external view returns (uint256)',
-  'function maximumBet() external view returns (uint256)',
-  'function maxBetsPerUser() external view returns (uint256)',
-  'function userBetCount(string memory drawId, address user) external view returns (uint256)'
+  // Public state variables (automatically generate getters)
+  'function publisher() external view returns (address)',
+  'function sparsity() external view returns (address)',
+  'function operator() external view returns (address)',
+  'function publisherCommissionRate() external view returns (uint256)',
+  'function sparsityCommissionRate() external view returns (uint256)',
+  'function minBetAmount() external view returns (uint256)',
+  'function bettingDuration() external view returns (uint256)',
+  'function minDrawDelayAfterEnd() external view returns (uint256)',
+  'function maxDrawDelayAfterEnd() external view returns (uint256)',
+  'function minEndTimeExtension() external view returns (uint256)',
+  'function minParticipants() external view returns (uint256)',
+  
+  // Struct getter
+  'function round() external view returns (uint256 roundId, uint256 startTime, uint256 endTime, uint256 minDrawTime, uint256 maxDrawTime, uint256 totalPot, uint256 participantCount, address winner, uint256 publisherCommission, uint256 sparsityCommission, uint256 winnerPrize, uint8 state)',
+  
+  // Mappings and arrays
+  'function bets(address player) external view returns (uint256)',
+  'function participants(uint256 index) external view returns (address)',
+  
+  // Player functions
+  'function placeBet() external payable',
+  
+  // Publisher functions
+  'function setSparsity(address _sparsity) external',
+  
+  // Sparsity functions
+  'function updateOperator(address _operator) external',
+  
+  // Operator functions
+  'function updateMinBetAmount(uint256 _newMinBetAmount) external',
+  'function startNewRound() external',
+  'function extendBettingTime(uint256 _newEndTime) external',
+  'function refundRound() external',
+  'function drawWinner() external',
+  
+  // Public functions
+  'function refundExpiredRound() external',
+  
+  // View functions
+  'function getRound() external view returns (tuple(uint256 roundId, uint256 startTime, uint256 endTime, uint256 minDrawTime, uint256 maxDrawTime, uint256 totalPot, uint256 participantCount, address winner, uint256 publisherCommission, uint256 sparsityCommission, uint256 winnerPrize, uint8 state))',
+  'function getState() external view returns (uint8)',
+  'function getParticipants() external view returns (address[] memory)',
+  'function getPlayerBet(address player) external view returns (uint256)',
+  'function canDraw() external view returns (bool)',
+  'function canRefund() external view returns (bool)',
+  'function getRoundTiming() external view returns (uint256 startTime, uint256 endTime, uint256 minDrawTime, uint256 maxDrawTime, uint256 currentTime)',
+  'function getConfig() external view returns (address publisherAddr, address sparsityAddr, address operatorAddr, uint256 publisherCommission, uint256 sparsityCommission, uint256 minBet, uint256 bettingDur, uint256 minDrawDelay, uint256 maxDrawDelay, uint256 minEndTimeExt, uint256 minPart)'
 ]
 
-interface Draw {
-  drawId: string
-  startTime: number
-  endTime: number
-  drawTime: number
-  totalPot: string
-  isActive: boolean
-  isCompleted: boolean
-  winner: string
-  winningNumber: number
+// RoundState enum mapping (uppercase to match contract)
+export enum RoundState {
+  WAITING = 0,
+  BETTING = 1,
+  DRAWING = 2,
+  COMPLETED = 3,
+  REFUNDED = 4
 }
 
-interface Bet {
-  user: string
-  amount: string
-  timestamp: number
-  index: number
+export interface LotteryRound {
+  roundId: number
+  startTime: number
+  endTime: number
+  minDrawTime: number
+  maxDrawTime: number
+  totalPot: string
+  participantCount: number
+  winner: string
+  publisherCommission: string
+  sparsityCommission: string
+  winnerPrize: string
+  state: RoundState
+}
+
+export interface ContractConfig {
+  publisherAddr: string
+  sparsityAddr: string
+  operatorAddr: string
+  publisherCommission: string
+  sparsityCommission: string
+  minBet: string
+  bettingDur: string
+  minDrawDelay: string
+  maxDrawDelay: string
+  minEndTimeExt: string
+  minParticipants: string
+}
+
+export interface RoundTiming {
+  startTime: number
+  endTime: number
+  minDrawTime: number
+  maxDrawTime: number
+  currentTime: number
 }
 
 class ContractService {
@@ -51,31 +119,28 @@ class ContractService {
     this.contractAddress = import.meta.env.VITE_LOTTERY_CONTRACT_ADDRESS || ''
   }
 
-  private getContract(): ethers.Contract {
+  private getContract(contractAddress?: string): ethers.Contract {
     const { provider, signer } = useWalletStore.getState()
     
     if (!provider) {
       throw new Error('Wallet not connected')
     }
 
-    if (!this.contractAddress) {
+    const address = contractAddress || this.contractAddress
+    if (!address) {
       throw new Error('Contract address not configured')
     }
 
     // Use signer for write operations, provider for read operations
     const signerOrProvider = signer || provider
     
-    if (!this.contract) {
-      this.contract = new ethers.Contract(this.contractAddress, LOTTERY_ABI, signerOrProvider)
-    }
-
-    return this.contract
+    return new ethers.Contract(address, LOTTERY_ABI, signerOrProvider)
   }
 
   /**
-   * Place a bet on a specific draw
+   * Place a bet on the current lottery round
    */
-  async placeBet(drawId: string, betAmount: string): Promise<string> {
+  async placeBet(betAmount: string): Promise<string> {
     const contract = this.getContract()
     const { signer } = useWalletStore.getState()
 
@@ -84,32 +149,16 @@ class ContractService {
     }
 
     try {
-      // Validate bet amount against contract limits
-      const minBet = await contract.minimumBet()
-      const maxBet = await contract.maximumBet()
+      // Validate bet amount against contract minimum
+      const minBet = await contract.minBetAmount()
       const betAmountWei = ethers.parseEther(betAmount)
 
       if (betAmountWei < minBet) {
         throw new Error(`Bet amount must be at least ${ethers.formatEther(minBet)} ETH`)
       }
 
-      if (betAmountWei > maxBet) {
-        throw new Error(`Bet amount cannot exceed ${ethers.formatEther(maxBet)} ETH`)
-      }
-
-      // Check user's bet count for this draw
-      const { address } = useWalletStore.getState()
-      if (address) {
-        const userBets = await contract.userBetCount(drawId, address)
-        const maxBets = await contract.maxBetsPerUser()
-        
-        if (userBets >= maxBets) {
-          throw new Error(`You can only place up to ${maxBets} bets per draw`)
-        }
-      }
-
       // Place the bet
-      const tx = await contract.placeBet(drawId, { value: betAmountWei })
+      const tx = await contract.placeBet({ value: betAmountWei })
       const receipt = await tx.wait()
 
       // Update wallet balance
@@ -130,152 +179,196 @@ class ContractService {
   }
 
   /**
-   * Get draw information
+   * Get current round information
    */
-  async getDraw(drawId: string): Promise<Draw> {
+  async getRound(): Promise<LotteryRound> {
     const contract = this.getContract()
 
     try {
-      const result = await contract.getDraw(drawId)
+      const result = await contract.getRound()
       
       return {
-        drawId: result[0],
-        startTime: Number(result[1]),
-        endTime: Number(result[2]),
-        drawTime: Number(result[3]),
-        totalPot: ethers.formatEther(result[4]),
-        isActive: result[5],
-        isCompleted: result[6],
-        winner: result[7],
-        winningNumber: Number(result[8])
+        roundId: Number(result.roundId),
+        startTime: Number(result.startTime),
+        endTime: Number(result.endTime),
+        minDrawTime: Number(result.minDrawTime),
+        maxDrawTime: Number(result.maxDrawTime),
+        totalPot: ethers.formatEther(result.totalPot),
+        participantCount: Number(result.participantCount),
+        winner: result.winner,
+        publisherCommission: ethers.formatEther(result.publisherCommission),
+        sparsityCommission: ethers.formatEther(result.sparsityCommission),
+        winnerPrize: ethers.formatEther(result.winnerPrize),
+        state: result.state as RoundState
       }
     } catch (error: any) {
-      throw new Error('Failed to get draw information: ' + (error.message || 'Unknown error'))
+      throw new Error('Failed to get round information: ' + (error.message || 'Unknown error'))
     }
   }
 
   /**
-   * Get all bets for a draw
+   * Get current lottery state
    */
-  async getDrawBets(drawId: string): Promise<Bet[]> {
+  async getState(): Promise<RoundState> {
     const contract = this.getContract()
 
     try {
-      const result = await contract.getDrawBets(drawId)
-      const [users, amounts, timestamps] = result
-
-      return users.map((user: string, index: number) => ({
-        user,
-        amount: ethers.formatEther(amounts[index]),
-        timestamp: Number(timestamps[index]),
-        index
-      }))
+      const state = await contract.getState()
+      return state as RoundState
     } catch (error: any) {
-      throw new Error('Failed to get draw bets: ' + (error.message || 'Unknown error'))
+      throw new Error('Failed to get lottery state: ' + (error.message || 'Unknown error'))
     }
   }
 
   /**
-   * Get user's bets for a specific draw
+   * Get current round participants
    */
-  async getUserBets(drawId: string, userAddress?: string): Promise<Bet[]> {
+  async getParticipants(): Promise<string[]> {
     const contract = this.getContract()
-    const address = userAddress || useWalletStore.getState().address
+
+    try {
+      return await contract.getParticipants()
+    } catch (error: any) {
+      throw new Error('Failed to get participants: ' + (error.message || 'Unknown error'))
+    }
+  }
+
+  /**
+   * Get player's bet amount for current round
+   */
+  async getPlayerBet(playerAddress?: string): Promise<string> {
+    const contract = this.getContract()
+    const address = playerAddress || useWalletStore.getState().address
 
     if (!address) {
-      throw new Error('No user address provided')
+      throw new Error('No player address provided')
     }
 
     try {
-      const result = await contract.getUserBets(drawId, address)
-      const [amounts, timestamps, indices] = result
-
-      return amounts.map((amount: bigint, index: number) => ({
-        user: address,
-        amount: ethers.formatEther(amount),
-        timestamp: Number(timestamps[index]),
-        index: Number(indices[index])
-      }))
+      const betAmount = await contract.getPlayerBet(address)
+      return ethers.formatEther(betAmount)
     } catch (error: any) {
-      throw new Error('Failed to get user bets: ' + (error.message || 'Unknown error'))
+      throw new Error('Failed to get player bet: ' + (error.message || 'Unknown error'))
     }
   }
 
   /**
-   * Get active draws
+   * Get player's bet amount for current round using mapping
    */
-  async getActiveDraws(): Promise<string[]> {
+  async getBets(playerAddress?: string): Promise<string> {
     const contract = this.getContract()
+    const address = playerAddress || useWalletStore.getState().address
+
+    if (!address) {
+      throw new Error('No player address provided')
+    }
 
     try {
-      return await contract.getActiveDraws()
+      const betAmount = await contract.bets(address)
+      return ethers.formatEther(betAmount)
     } catch (error: any) {
-      throw new Error('Failed to get active draws: ' + (error.message || 'Unknown error'))
+      throw new Error('Failed to get player bets: ' + (error.message || 'Unknown error'))
     }
   }
 
   /**
-   * Get total draw count
+   * Check if current round can be drawn
    */
-  async getDrawCount(): Promise<number> {
+  async canDraw(): Promise<boolean> {
     const contract = this.getContract()
 
     try {
-      const count = await contract.getDrawCount()
-      return Number(count)
+      return await contract.canDraw()
     } catch (error: any) {
-      throw new Error('Failed to get draw count: ' + (error.message || 'Unknown error'))
+      throw new Error('Failed to check draw status: ' + (error.message || 'Unknown error'))
     }
   }
 
   /**
-   * Get bet count for a specific draw
+   * Check if current round can be refunded
    */
-  async getDrawBetCount(drawId: string): Promise<number> {
+  async canRefund(): Promise<boolean> {
     const contract = this.getContract()
 
     try {
-      const count = await contract.getDrawBetCount(drawId)
-      return Number(count)
+      return await contract.canRefund()
     } catch (error: any) {
-      throw new Error('Failed to get draw bet count: ' + (error.message || 'Unknown error'))
+      throw new Error('Failed to check refund status: ' + (error.message || 'Unknown error'))
     }
   }
 
   /**
-   * Get contract balance
+   * Get current round timing information
    */
-  async getContractBalance(): Promise<string> {
+  async getRoundTiming(): Promise<RoundTiming> {
     const contract = this.getContract()
 
     try {
-      const balance = await contract.getContractBalance()
-      return ethers.formatEther(balance)
-    } catch (error: any) {
-      throw new Error('Failed to get contract balance: ' + (error.message || 'Unknown error'))
-    }
-  }
-
-  /**
-   * Get contract betting limits
-   */
-  async getBettingLimits(): Promise<{ min: string; max: string; maxBetsPerUser: number }> {
-    const contract = this.getContract()
-
-    try {
-      const [minBet, maxBet, maxBetsPerUser] = await Promise.all([
-        contract.minimumBet(),
-        contract.maximumBet(),
-        contract.maxBetsPerUser()
-      ])
-
+      const result = await contract.getRoundTiming()
       return {
-        min: ethers.formatEther(minBet),
-        max: ethers.formatEther(maxBet),
-        maxBetsPerUser: Number(maxBetsPerUser)
+        startTime: Number(result.startTime),
+        endTime: Number(result.endTime),
+        minDrawTime: Number(result.minDrawTime),
+        maxDrawTime: Number(result.maxDrawTime),
+        currentTime: Number(result.currentTime)
       }
     } catch (error: any) {
-      throw new Error('Failed to get betting limits: ' + (error.message || 'Unknown error'))
+      throw new Error('Failed to get round timing: ' + (error.message || 'Unknown error'))
+    }
+  }
+
+  /**
+   * Get current round ID
+   */
+  async getCurrentRoundId(): Promise<number> {
+    const contract = this.getContract()
+
+    try {
+      const round = await contract.getRound()
+      return Number(round.roundId)
+    } catch (error: any) {
+      throw new Error('Failed to get current round ID: ' + (error.message || 'Unknown error'))
+    }
+  }
+
+  /**
+   * Get minimum bet amount
+   */
+  async getMinBetAmount(): Promise<string> {
+    const contract = this.getContract()
+
+    try {
+      const minBet = await contract.minBetAmount()
+      return ethers.formatEther(minBet)
+    } catch (error: any) {
+      throw new Error('Failed to get minimum bet amount: ' + (error.message || 'Unknown error'))
+    }
+  }
+
+  /**
+   * Refund expired round (public function)
+   */
+  async refundExpiredRound(): Promise<string> {
+    const contract = this.getContract()
+    const { signer } = useWalletStore.getState()
+
+    if (!signer) {
+      throw new Error('Wallet not connected')
+    }
+
+    try {
+      const tx = await contract.refundExpiredRound()
+      const receipt = await tx.wait()
+      return receipt.hash
+    } catch (error: any) {
+      if (error.code === 4001) {
+        throw new Error('Transaction was rejected by user')
+      } else if (error.message.includes('revert')) {
+        const reason = error.message.match(/revert (.+)/)?.[1] || 'Transaction failed'
+        throw new Error(reason)
+      } else {
+        throw new Error('Transaction failed: ' + (error.message || 'Unknown error'))
+      }
     }
   }
 
@@ -308,14 +401,17 @@ class ContractService {
       const contract = new ethers.Contract(contractAddress, abi, provider)
       const cfg = await contract.getConfig()
 
-      // getConfig() returns 12 values in this order:
+      // getConfig() returns 11 values in this order:
       // 0 publisherAddr, 1 sparsityAddr, 2 operatorAddr,
       // 3 publisherCommission, 4 sparsityCommission,
       // 5 minBet, 6 bettingDur, 7 minDrawDelay, 8 maxDrawDelay,
-      // 9 minEndTimeExt, 10 minPart, 11 sparsityIsSet
+      // 9 minEndTimeExt, 10 minPart (sparsityIsSet removed)
+      const sparsityAddr = cfg.sparsityAddr ?? cfg[1]
+      const sparsityIsSet = sparsityAddr !== "0x0000000000000000000000000000000000000000"
+      
       return {
         publisherAddr: cfg.publisherAddr ?? cfg[0],
-        sparsityAddr: cfg.sparsityAddr ?? cfg[1],
+        sparsityAddr: sparsityAddr,
         operatorAddr: cfg.operatorAddr ?? cfg[2],
         publisherCommission: cfg.publisherCommission?.toString?.() ?? String(cfg[3]),
         sparsityCommission: cfg.sparsityCommission?.toString?.() ?? String(cfg[4]),
@@ -325,7 +421,7 @@ class ContractService {
         maxDrawDelay: cfg.maxDrawDelay?.toString?.() ?? String(cfg[8]),
         minEndTimeExt: cfg.minEndTimeExt?.toString?.() ?? String(cfg[9]),
         minPart: cfg.minPart?.toString?.() ?? String(cfg[10]),
-        sparsityIsSet: Boolean(cfg.sparsityIsSet ?? cfg[11])
+        sparsityIsSet: sparsityIsSet
       }
     } catch (error: any) {
       throw new Error('Failed to load contract config: ' + (error.message || 'Unknown error'))
@@ -336,27 +432,77 @@ class ContractService {
    * Subscribe to contract events
    */
   subscribeToEvents(callbacks: {
-    onDrawCreated?: (drawId: string, startTime: number, endTime: number, drawTime: number) => void
-    onBetPlaced?: (drawId: string, user: string, amount: string, timestamp: number, betIndex: number) => void
-    onDrawCompleted?: (drawId: string, winner: string, winningNumber: number, totalPot: string, timestamp: number) => void
-  }) {
-    const contract = this.getContract()
+    onRoundCreated?: (roundId: number, startTime: number, endTime: number, minDrawTime: number, maxDrawTime: number) => void
+    onBetPlaced?: (roundId: number, player: string, amount: string, newTotal: string, timestamp: number) => void
+    onEndTimeExtended?: (roundId: number, oldEndTime: number, newEndTime: number) => void
+    onRoundStateChanged?: (roundId: number, oldState: RoundState, newState: RoundState) => void
+    onRoundCompleted?: (roundId: number, winner: string, totalPot: string, winnerPrize: string, publisherCommission: string, sparsityCommission: string, randomSeed: string) => void
+    onRoundRefunded?: (roundId: number, totalRefunded: string, participantCount: number, reason: string) => void
+    onMinBetAmountUpdated?: (oldAmount: string, newAmount: string) => void
+    onSparsitySet?: (sparsity: string) => void
+    onOperatorUpdated?: (oldOperator: string, newOperator: string) => void
+  }, contractAddress?: string) {
+    const contract = this.getContract(contractAddress)
 
-    if (callbacks.onDrawCreated) {
-      contract.on('DrawCreated', (drawId, startTime, endTime, drawTime) => {
-        callbacks.onDrawCreated!(drawId, Number(startTime), Number(endTime), Number(drawTime))
+    if (callbacks.onRoundCreated) {
+      contract.on('RoundCreated', (roundId, startTime, endTime, minDrawTime, maxDrawTime) => {
+        callbacks.onRoundCreated!(Number(roundId), Number(startTime), Number(endTime), Number(minDrawTime), Number(maxDrawTime))
       })
     }
 
     if (callbacks.onBetPlaced) {
-      contract.on('BetPlaced', (drawId, user, amount, timestamp, betIndex) => {
-        callbacks.onBetPlaced!(drawId, user, ethers.formatEther(amount), Number(timestamp), Number(betIndex))
+      contract.on('BetPlaced', (roundId, player, amount, newTotal, timestamp) => {
+        callbacks.onBetPlaced!(Number(roundId), player, ethers.formatEther(amount), ethers.formatEther(newTotal), Number(timestamp))
       })
     }
 
-    if (callbacks.onDrawCompleted) {
-      contract.on('DrawCompleted', (drawId, winner, winningNumber, totalPot, timestamp) => {
-        callbacks.onDrawCompleted!(drawId, winner, Number(winningNumber), ethers.formatEther(totalPot), Number(timestamp))
+    if (callbacks.onEndTimeExtended) {
+      contract.on('EndTimeExtended', (roundId, oldEndTime, newEndTime) => {
+        callbacks.onEndTimeExtended!(Number(roundId), Number(oldEndTime), Number(newEndTime))
+      })
+    }
+
+    if (callbacks.onRoundStateChanged) {
+      contract.on('RoundStateChanged', (roundId, oldState, newState) => {
+        callbacks.onRoundStateChanged!(Number(roundId), oldState as RoundState, newState as RoundState)
+      })
+    }
+
+    if (callbacks.onRoundCompleted) {
+      contract.on('RoundCompleted', (roundId, winner, totalPot, winnerPrize, publisherCommission, sparsityCommission, randomSeed) => {
+        callbacks.onRoundCompleted!(
+          Number(roundId),
+          winner,
+          ethers.formatEther(totalPot),
+          ethers.formatEther(winnerPrize),
+          ethers.formatEther(publisherCommission),
+          ethers.formatEther(sparsityCommission),
+          randomSeed.toString()
+        )
+      })
+    }
+
+    if (callbacks.onRoundRefunded) {
+      contract.on('RoundRefunded', (roundId, totalRefunded, participantCount, reason) => {
+        callbacks.onRoundRefunded!(Number(roundId), ethers.formatEther(totalRefunded), Number(participantCount), reason)
+      })
+    }
+
+    if (callbacks.onMinBetAmountUpdated) {
+      contract.on('MinBetAmountUpdated', (oldAmount, newAmount) => {
+        callbacks.onMinBetAmountUpdated!(ethers.formatEther(oldAmount), ethers.formatEther(newAmount))
+      })
+    }
+
+    if (callbacks.onSparsitySet) {
+      contract.on('SparsitySet', (sparsity) => {
+        callbacks.onSparsitySet!(sparsity)
+      })
+    }
+
+    if (callbacks.onOperatorUpdated) {
+      contract.on('OperatorUpdated', (oldOperator, newOperator) => {
+        callbacks.onOperatorUpdated!(oldOperator, newOperator)
       })
     }
 
@@ -368,4 +514,3 @@ class ContractService {
 }
 
 export const contractService = new ContractService()
-export type { Draw, Bet }

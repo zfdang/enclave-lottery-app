@@ -92,10 +92,14 @@ class LotteryEngine:
                 logger.info("Contract configuration loaded:")
                 logger.info(f"  Admin: {self.contract_config.get('admin')}")
                 logger.info(f"  Operator: {self.contract_config.get('operator')}")
-                logger.info(f"  Commission Rate: {self.contract_config.get('commission_rate', 0) / 100}%")
+                pub = self.contract_config.get('publisher_commission_rate', 0)
+                spar = self.contract_config.get('sparsity_commission_rate', 0)
+                logger.info(f"  Publisher Commission: {pub / 100}%")
+                logger.info(f"  Sparsity Commission: {spar / 100}%")
                 logger.info(f"  Min Bet: {self.blockchain_client.wei_to_eth(self.contract_config.get('min_bet_amount', 0))} ETH")
                 logger.info(f"  Betting Duration: {self.contract_config.get('betting_duration', 0)} seconds")
-                logger.info(f"  Draw Delay: {self.contract_config.get('draw_delay', 0)} seconds")
+                logger.info(f"  Min Draw Delay: {self.contract_config.get('min_draw_delay', 0)} seconds")
+                logger.info(f"  Max Draw Delay: {self.contract_config.get('max_draw_delay', 0)} seconds")
             
             # Load current round state
             await self._load_current_round()

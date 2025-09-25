@@ -1,7 +1,23 @@
 #!/usr/bin/env python3
 """
-Automated Lottery Operator Application
-Main entry point for the enclave-based lottery operator system
+Enhanced Automated Lottery Operator Application
+
+Main entry point for the fully automated single-round lottery operator system.
+Uses memory-based event storage and automated round management.
+"""
+
+import asyncio
+import logging
+import signal
+import sys
+from pathlib import Path
+
+#!/usr/bin/env python3
+"""
+Enhanced Automated Lottery Operator Application
+
+Main entry point for the fully automated single-round lottery operator system.
+Uses memory-based event storage and automated round management.
 """
 
 import asyncio
@@ -20,11 +36,12 @@ except ImportError:
     # python-dotenv not installed, skip auto-loading
     pass
 
-# Add src directory to path
+# Ensure package imports work when running this file directly
 sys.path.insert(0, str(Path(__file__).parent))
 
 from web_server import LotteryWebServer
-from lottery.engine import LotteryEngine
+from lottery.operator import AutomatedOperator
+from lottery.event_manager import memory_store
 from blockchain.client import BlockchainClient
 from utils.config import load_config
 from utils.crypto import EnclaveAttestation
@@ -37,396 +54,256 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class LotteryOperatorApp:
-    """Automated lottery operator application"""
-    
+class EnhancedLotteryOperatorApp:
+    """Enhanced automated lottery operator application.
+
+    Responsible for initializing and orchestrating the blockchain client,
+    automated operator, and the FastAPI web server. Handles graceful shutdown
+    and provides a lightweight startup summary for diagnostics.
+    """
+
     def __init__(self):
         self.config = load_config()
         self.web_server = None
-        self.lottery_engine = None
+        self.automated_operator = None
         self.blockchain_client = None
         self.running = True
-        
-        # Setup graceful shutdown
+
+        # Register basic signal handlers
         self._setup_signal_handlers()
-        
+
+        logger.info("🎲 Enhanced Lottery Operator Application initialized")
+
     def _setup_signal_handlers(self):
-        """Setup signal handlers for graceful shutdown"""
-        def signal_handler(signum, frame):
-            logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+        def _handler(signum, frame):
+            logger.info(f"📡 Received signal {signum}, initiating graceful shutdown...")
             self.running = False
-            
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
-        
+
+        signal.signal(signal.SIGINT, _handler)
+        signal.signal(signal.SIGTERM, _handler)
+
+    def _display_config_summary(self):
+        """Display key configuration options for diagnostics."""
+        logger.info("=" * 60)
+        logger.info("📋 CONFIGURATION SUMMARY")
+        logger.info("=" * 60)
+
+        blockchain_config = self.config.get('blockchain', {})
+        logger.info(f"🔗 RPC URL: {blockchain_config.get('rpc_url', 'Not configured')}")
+        logger.info(f"🆔 Chain ID: {blockchain_config.get('chain_id', 'Not configured')}")
+        logger.info(f"📄 Contract: {blockchain_config.get('contract_address', 'Not configured')}")
+        logger.info(f"👤 Operator: {blockchain_config.get('operator_address', 'Auto-generated')}")
+
+        operator_config = self.config.get('operator', {})
+        logger.info(f"🤖 Auto Create Rounds: {operator_config.get('auto_create_rounds', True)}")
+        logger.info(f"⏱️  Check Interval: {operator_config.get('check_interval', 30)}s")
+
+        server_config = self.config.get('server', {})
+        logger.info(f"🌍 Server Host: {server_config.get('host', '0.0.0.0')}")
+        logger.info(f"🔌 Server Port: {server_config.get('port', 6080)}")
+
+        logger.info("=" * 60)
+
     async def initialize(self):
-        """Initialize all components"""
-        logger.info("🎲 Initializing Lottery Operator Application")
-        
-        # Check if we have operator configuration
-        if not self.config.get('blockchain', {}).get('contract_address'):
-            logger.info("📍 Contract address not configured")
-            logger.info(" We need to get this address from registry node later")
-        else:
-            logger.info(f"📍 Using contract address: {self.config['blockchain']['contract_address']}")
-        
-        # Initialize blockchain client with operator role
-        try:
-            logger.info("🔗 Initializing blockchain client...")
-            self.blockchain_client = BlockchainClient(self.config)
-            await self.blockchain_client.initialize()
-            
-            # Verify operator role
-            if self.blockchain_client.role != 'operator':
-                logger.warning(f"⚠️  Expected operator role, but got: {self.blockchain_client.role}")
-                
-            logger.info(f"✅ Blockchain client initialized as {self.blockchain_client.role}")
-            logger.info(f"📍 Operator address: {self.blockchain_client.account.address}")
-            logger.info(f"📄 Contract address: {self.blockchain_client.contract_address}")
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize blockchain client: {e}")
-            raise
-        
-        # Initialize lottery engine (automated operator)
-        try:
-            logger.info("🎯 Initializing lottery engine...")
-            self.lottery_engine = LotteryEngine(self.blockchain_client, self.config)
-            await self.lottery_engine.initialize()
-            logger.info("✅ Lottery engine initialized in operator mode")
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize lottery engine: {e}")
-            raise
-        
-        # Initialize web server for player interface and status monitoring
-        try:
-            logger.info("🌐 Initializing web server...")
-            self.web_server = LotteryWebServer(
-                self.config, 
-                self.lottery_engine, 
-                self.blockchain_client
-            )
-            logger.info("✅ Web server initialized")
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize web server: {e}")
-            raise
-        
-        logger.info("🎉 Application initialization completed")
-        
+        """Initialize blockchain client, operator, and web server instances."""
+        logger.info("🚀 Initializing Enhanced Lottery Operator Application")
+
+        # Show configuration summary
+        self._display_config_summary()
+
+        # Blockchain client
+        logger.info("🔗 Initializing blockchain client...")
+        self.blockchain_client = BlockchainClient(self.config)
+        await self.blockchain_client.initialize()
+
+        # Automated operator
+        logger.info("🎯 Initializing automated operator service...")
+        self.automated_operator = AutomatedOperator(self.blockchain_client, self.config)
+        await self.automated_operator.initialize()
+
+        # Web server
+        logger.info("🌐 Initializing enhanced web server...")
+        self.web_server = LotteryWebServer(self.config, self.automated_operator, self.blockchain_client)
+
+        logger.info("🎉 Enhanced application initialization completed")
+
     async def start(self):
-        """Start the lottery operator application"""
+        """Start services and run until a shutdown signal is received."""
         try:
             await self.initialize()
-            
-            # Generate enclave attestation if enabled
+
+            # Optional attestation
             if self.config.get('enclave', {}).get('attestation_enabled', False):
                 try:
                     logger.info("🔐 Generating enclave attestation...")
-                    attestation = EnclaveAttestation()
-                    attestation_doc = attestation.generate_attestation()
-                    logger.info(f"✅ Enclave attestation generated: {attestation_doc[:50]}...")
+                    att = EnclaveAttestation()
+                    _ = att.generate_attestation()
+                    logger.info("✅ Enclave attestation generated")
                 except Exception as e:
                     logger.warning(f"⚠️  Failed to generate enclave attestation: {e}")
-            else:
-                logger.info("ℹ️  Enclave attestation disabled")
-            
-            tasks = []
-            
-            # Start lottery engine (automated operator)
-            if self.lottery_engine:
-                logger.info("🚀 Starting automated lottery operator...")
-                engine_task = asyncio.create_task(self.lottery_engine.start())
-                tasks.append(engine_task)
-                logger.info("✅ Lottery operator started")
-            else:
-                raise RuntimeError("Lottery engine is required but failed to initialize")
-            
-            # Start web server for player interface
-            if self.web_server:
-                server_host = self.config.get('server', {}).get('host', '0.0.0.0')
-                server_port = int(self.config.get('server', {}).get('port', 6080))
-                
-                logger.info(f"🌍 Starting web server on {server_host}:{server_port}...")
-                server_task = asyncio.create_task(
-                    self.web_server.start(host=server_host, port=server_port)
-                )
-                tasks.append(server_task)
-                logger.info(f"✅ Web server started at http://{server_host}:{server_port}")
-            else:
-                raise RuntimeError("Web server is required but failed to initialize")
-            
-            # Display startup summary
+
+            # Start operator
+            if not self.automated_operator:
+                raise RuntimeError("Automated operator failed to initialize")
+
+            logger.info("🤖 Starting automated operator service...")
+            operator_task = asyncio.create_task(self.automated_operator.start())
+
+            # Start web server
+            if not self.web_server:
+                raise RuntimeError("Web server failed to initialize")
+
+            server_host = self.config.get('server', {}).get('host', '0.0.0.0')
+            server_port = int(self.config.get('server', {}).get('port', 6080))
+
+            logger.info(f"🌍 Starting enhanced web server on {server_host}:{server_port}...")
+            try:
+                server_task = asyncio.create_task(self.web_server.start(host=server_host, port=server_port))
+                # Give the server a moment to attempt bind; if it fails synchronously the task will be done
+                await asyncio.sleep(0.2)
+                if server_task.done():
+                    exc = server_task.exception()
+                    if exc:
+                        logger.error(f"Web server task failed during startup: {exc}")
+                        await self.stop()
+                        raise exc
+            except Exception as e:
+                logger.error(f"Web server failed to start: {e}")
+                await self.stop()
+                raise
+
+            # Display summary
             self._display_startup_summary()
-            
-            # Wait for shutdown signal
+
+            # Run until signal
             while self.running:
                 await asyncio.sleep(1)
-            
+
             logger.info("🛑 Shutdown signal received, stopping application...")
-            
-        except Exception as e:
-            logger.error(f"❌ Error starting application: {e}")
+
+        except Exception:
+            # Ensure stop is always attempted on any startup error
+            await self.stop()
             raise
+
         finally:
             await self.stop()
-            
+
     async def stop(self):
-        """Stop the lottery operator application"""
-        logger.info("🛑 Stopping Lottery Operator Application")
+        """Stop all services and cleanup resources."""
+        if not self.running:
+            # Allow multiple calls safely
+            pass
+
+        logger.info("🛑 Stopping Enhanced Lottery Operator Application")
         self.running = False
-        
-        # Stop lottery engine
-        if self.lottery_engine:
+
+        # Stop operator
+        if getattr(self, 'automated_operator', None):
             try:
-                await self.lottery_engine.stop()
-                logger.info("✅ Lottery engine stopped")
+                await self.automated_operator.stop()
+                logger.info("✅ Automated operator service stopped")
             except Exception as e:
-                logger.error(f"❌ Error stopping lottery engine: {e}")
-        
+                logger.error(f"❌ Error stopping automated operator: {e}")
+
         # Stop web server
-        if self.web_server:
+        if getattr(self, 'web_server', None):
             try:
                 await self.web_server.stop()
-                logger.info("✅ Web server stopped")
+                logger.info("✅ Enhanced web server stopped")
             except Exception as e:
                 logger.error(f"❌ Error stopping web server: {e}")
-        
-        logger.info("🎲 Lottery Operator Application stopped successfully")
-    
-    def _display_startup_summary(self):
-        """Display startup summary"""
-        logger.info("=" * 60)
-        logger.info("🎲 LOTTERY OPERATOR APPLICATION STARTED")
-        logger.info("=" * 60)
-        
-        # Get operator status
-        if self.lottery_engine:
-            status = self.lottery_engine.get_operator_status()
-            current_round = status.get('current_round')
-            
-            logger.info(f"🎯 Operator Mode: {status.get('mode', 'unknown')}")
-            logger.info(f"🔄 Auto Start Rounds: {status.get('auto_start_rounds', False)}")
-            logger.info(f"📍 Operator Address: {status.get('operator_address', 'unknown')}")
-            logger.info(f"📄 Contract Address: {status.get('contract_address', 'unknown')}")
-            
-            if current_round:
-                logger.info(f"🎲 Current Round: #{current_round['round_id']}")
-                logger.info(f"💰 Total Pot: {current_round['total_pot']} ETH")
-                logger.info(f"👥 Participants: {current_round['participant_count']}")
-                
-                if current_round['can_bet']:
-                    logger.info(f"⏰ Betting ends in: {current_round['time_until_end']} seconds")
-                elif current_round['completed']:
-                    logger.info(f"🏆 Round completed. Winner: {current_round.get('winner', 'N/A')}")
-                else:
-                    logger.info(f"⏱️  Draw in: {current_round['time_until_draw']} seconds")
-            else:
-                logger.info("🎲 No active round - will start automatically")
-        
-        # Get contract configuration
-        if self.blockchain_client and hasattr(self.blockchain_client, 'contract_config'):
-            config = self.blockchain_client.contract_config
-            if config:
-                logger.info("📋 Contract Configuration:")
-                logger.info(f"   💵 Min Bet: {self.blockchain_client.wei_to_eth(config.get('min_bet_amount', 0))} ETH")
-                logger.info(f"   💰 Commission: {config.get('commission_rate', 0) / 100}%")
-                logger.info(f"   ⏱️  Betting Duration: {config.get('betting_duration', 0)} seconds")
-                logger.info(f"   ⏰ Draw Delay: {config.get('draw_delay', 0)} seconds")
-        
-        logger.info("=" * 60)
-        logger.info("🌍 Web Interface: Player betting and operator status available")
-        logger.info("🔄 Automated Operation: Rounds will be managed automatically")
-        logger.info("🛑 To stop: Send SIGINT (Ctrl+C) or SIGTERM")
-        logger.info("=" * 60)
 
-
-async def main():
-    """Main entry point"""
-    app = LotteryOperatorApp()
-    
-    try:
-        await app.start()
-    except KeyboardInterrupt:
-        logger.info("🛑 Application interrupted by user")
-    except Exception as e:
-        logger.error(f"❌ Application failed: {e}")
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
-
-import asyncio
-import logging
-import signal
-import sys
-from pathlib import Path
-
-# Load environment variables from .env file if it exists
-try:
-    from dotenv import load_dotenv
-    # Load .env from project root (3 levels up from this file)
-    env_path = Path(__file__).parent.parent.parent / '.env'
-    load_dotenv(env_path)
-except ImportError:
-    # python-dotenv not installed, skip auto-loading
-    pass
-
-# Add src directory to path
-sys.path.insert(0, str(Path(__file__).parent))
-
-from web_server import LotteryWebServer
-from lottery.scheduler import LotteryScheduler
-from blockchain.client import BlockchainClient
-from utils.config import load_config
-from utils.crypto import EnclaveAttestation
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-
-class LotteryEnclaveApp:
-    """Main lottery enclave application"""
-    
-    def __init__(self):
-        self.config = load_config()
-        self.web_server = None
-        self.scheduler = None
-        self.blockchain_client = None
-        self.running = True
-        
-    async def initialize(self):
-        """Initialize all components"""
-        logger.info("Initializing Lottery Enclave Application")
-        
-        # Initialize blockchain client with error handling
-        try:
-            self.blockchain_client = BlockchainClient(self.config)
-            await self.blockchain_client.initialize()
-            logger.info("Blockchain client initialized successfully")
-        except Exception as e:
-            logger.warning(f"Failed to initialize blockchain client: {e}")
-            logger.info("Application will continue without blockchain functionality")
-            self.blockchain_client = None
-        
-        # Initialize lottery scheduler (may work in offline mode)
-        try:
-            self.scheduler = LotteryScheduler(self.config, self.blockchain_client)
-            logger.info("Lottery scheduler initialized")
-        except Exception as e:
-            logger.warning(f"Failed to initialize lottery scheduler: {e}")
-            self.scheduler = None
-        
-        # Initialize web server (should work even without blockchain)
-        try:
-            self.web_server = LotteryWebServer(
-                self.config, 
-                self.scheduler, 
-                self.blockchain_client
-            )
-            logger.info("Web server initialized")
-        except Exception as e:
-            logger.error(f"Failed to initialize web server: {e}")
-            raise  # Web server is critical, so we still raise this error
-        
-        logger.info("Application initialization completed")
-        
-    async def start(self):
-        """Start the lottery application"""
-        try:
-            await self.initialize()
-            
-            # Generate enclave attestation
+        # Close blockchain client
+        if getattr(self, 'blockchain_client', None):
             try:
-                attestation = EnclaveAttestation()
-                attestation_doc = attestation.generate_attestation()
-                logger.info(f"Enclave attestation generated: {attestation_doc[:50]}...")
+                await self.blockchain_client.close()
+                logger.info("✅ Blockchain client connections closed")
             except Exception as e:
-                logger.warning(f"Failed to generate enclave attestation: {e}")
-            
-            tasks = []
-            
-            # Start scheduler if available
-            if self.scheduler:
-                scheduler_task = asyncio.create_task(self.scheduler.start())
-                tasks.append(scheduler_task)
-                logger.info("Lottery scheduler started")
-            else:
-                logger.warning("Scheduler not available, running in limited mode")
-            
-            # Start web server (required)
-            if self.web_server:
-                server_task = asyncio.create_task(
-                    self.web_server.start(
-                        host=self.config.get('server', {}).get('host', '0.0.0.0'),
-                        port=self.config.get('server', {}).get('port', 6080)
-                    )
-                )
-                tasks.append(server_task)
-                logger.info("Web server started")
-            else:
-                raise RuntimeError("Web server is required but failed to initialize")
-            
-            logger.info("Lottery Enclave Application started successfully")
-            
-            # Wait for all available tasks
-            if tasks:
-                await asyncio.gather(*tasks)
-            else:
-                logger.error("No tasks to run, application will exit")
-            
+                logger.error(f"❌ Error closing blockchain client: {e}")
+
+        # Clear memory store
+        try:
+            if hasattr(memory_store, 'clear_all_data'):
+                memory_store.clear_all_data()
+            elif hasattr(memory_store, 'clear'):
+                memory_store.clear()
+            logger.info("✅ Memory store cleared")
         except Exception as e:
-            logger.error(f"Error starting application: {e}")
-            raise
-            
-    async def stop(self):
-        """Stop the lottery application"""
-        logger.info("Stopping Lottery Enclave Application")
+            logger.error(f"❌ Error clearing memory store: {e}")
+
+        logger.info("🟢 Enhanced Lottery Operator Application stopped successfully")
+
+    def _display_startup_summary(self):
+        logger.info("=" * 60)
+        logger.info("🔰 ENHANCED LOTTERY OPERATOR APPLICATION STARTED")
+        logger.info("=" * 60)
+
+        # Operator status
+        try:
+            status = self.automated_operator.get_status() if self.automated_operator else {}
+            logger.info(f"🤖 Operator Status: {status.get('status')}")
+            logger.info(f"🔄 Auto Create Rounds: {status.get('auto_create_enabled')}")
+            logger.info(f"📍 Operator Address: {status.get('operator_address')}")
+            current_round_id = status.get('current_round_id') or 0
+            if current_round_id > 0:
+                logger.info(f"🎲 Current Round: #{current_round_id}")
+            else:
+                logger.info("🎲 No active round - will create automatically")
+        except Exception as e:
+            logger.warning(f"⚠️  Could not get operator status: {e}")
+
+        # Contract config
+        try:
+            if self.blockchain_client:
+                logger.info(f"💰 Contract Address: {self.blockchain_client.contract_address}")
+                logger.info(f"📍 Operator Address: {self.blockchain_client.account.address if self.blockchain_client.account else 'N/A'}")
+        except Exception as e:
+            logger.warning(f"⚠️  Could not get contract config: {e}")
+
+        # Memory store stats
+        try:
+            event_count = len(memory_store.events)
+            round_count = len(memory_store.rounds)
+            bet_count = len(memory_store.bets)
+            logger.info(f"💾 Memory Store: {event_count} events, {round_count} rounds, {bet_count} bets")
+        except Exception as e:
+            logger.warning(f"⚠️  Could not get memory store status: {e}")
+
+        server_config = self.config.get('server', {})
+        host = server_config.get('host', '0.0.0.0')
+        port = server_config.get('port', 6080)
+
+        logger.info("=" * 60)
+        logger.info("🌐 SERVER ACCESS")
+        logger.info("=" * 60)
+        logger.info(f"🏠 Main Interface: http://{host}:{port}")
+        logger.info(f"📡 WebSocket API: ws://{host}:{port}/ws/lottery")
+        logger.info(f"🔧 API Endpoints: http://{host}:{port}/api/")
+        logger.info("=" * 60)
+
+    def _handle_signal(self, signum, frame):
+        logger.info(f"📡 Received signal {signum}, initiating graceful shutdown...")
         self.running = False
-        
-        if self.web_server:
-            await self.web_server.stop()
-            
-        if self.scheduler:
-            await self.scheduler.stop()
-            
-        if self.blockchain_client:
-            await self.blockchain_client.close()
-            
-        logger.info("Application stopped successfully")
-
-
-def signal_handler(signum, frame):
-    """Handle shutdown signals"""
-    logger.info(f"Received signal {signum}, shutting down...")
-    asyncio.create_task(app.stop())
 
 
 async def main():
-    """Main entry point"""
-    global app
-    
-    # Setup signal handlers
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-    
-    app = LotteryEnclaveApp()
-    
+    """Main entry point for Enhanced Lottery Operator Application"""
+    app = EnhancedLotteryOperatorApp()
+
+    # Set up signal handlers for graceful shutdown
+    signal.signal(signal.SIGINT, app._handle_signal)
+    signal.signal(signal.SIGTERM, app._handle_signal)
+
     try:
         await app.start()
     except KeyboardInterrupt:
-        logger.info("Keyboard interrupt received")
+        logger.info("🛑 Enhanced application interrupted by user")
     except Exception as e:
-        logger.error(f"Application error: {e}")
+        logger.error(f"❌ Enhanced application failed: {e}")
+        import traceback
+        logger.error(f"🔍 Error details: {traceback.format_exc()}")
         sys.exit(1)
-    finally:
-        await app.stop()
 
 
 if __name__ == "__main__":

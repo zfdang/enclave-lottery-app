@@ -24,7 +24,7 @@ const BettingPanel: React.FC = () => {
   const [isPlacingBet, setIsPlacingBet] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-  const [bettingLimits, setBettingLimits] = useState({ min: '0.01', max: '10', maxBetsPerUser: 10 })
+  const [minBetAmount, setMinBetAmount] = useState('0.01')
   const [userBetAmount, setUserBetAmount] = useState(0)
   
   // Betting multipliers
@@ -33,20 +33,18 @@ const BettingPanel: React.FC = () => {
   const [hundreds, setHundreds] = useState(0)
 
   useEffect(() => {
-    // Load betting limits from contract
-    const loadBettingLimits = async () => {
+    // Load minimum bet amount from contract
+    const loadMinBetAmount = async () => {
       try {
-  // If contractService loads ABI, ensure it uses /abi/Lottery.abi
-  // Example: await contractService.loadAbi('/abi/Lottery.abi')
-  const limits = await contractService.getBettingLimits()
-        setBettingLimits(limits)
+        const minBet = await contractService.getMinBetAmount()
+        setMinBetAmount(minBet)
       } catch (error) {
-        console.error('Failed to load betting limits:', error)
+        console.error('Failed to load minimum bet amount:', error)
       }
     }
 
     if (isConnected) {
-      loadBettingLimits()
+      loadMinBetAmount()
     }
   }, [isConnected])
 
@@ -55,9 +53,8 @@ const BettingPanel: React.FC = () => {
     const loadUserBetAmount = async () => {
       if (currentDraw && address) {
         try {
-          const userBets = await contractService.getUserBets(currentDraw.draw_id, address)
-          const totalAmount = userBets.reduce((sum: number, bet: any) => sum + parseFloat(bet.amount), 0)
-          setUserBetAmount(totalAmount)
+          const userBetAmount = await contractService.getPlayerBet(address)
+          setUserBetAmount(parseFloat(userBetAmount))
         } catch (error) {
           console.error('Failed to load user bet amount:', error)
         }
@@ -72,14 +69,14 @@ const BettingPanel: React.FC = () => {
   }
 
   const getTotalBetAmount = (): number => {
-    return parseFloat(bettingLimits.min) * getTotalMultiplier()
+    return parseFloat(minBetAmount) * getTotalMultiplier()
   }
 
   const calculateWinRate = (): number => {
     if (!currentDraw || !isConnected || userBetAmount === 0) return 0
     const totalPot = parseFloat(currentDraw.total_pot?.toString() || '0')
-    const userTickets = userBetAmount / parseFloat(bettingLimits.min)
-    const totalTickets = totalPot / parseFloat(bettingLimits.min)
+    const userTickets = userBetAmount / parseFloat(minBetAmount)
+    const totalTickets = totalPot / parseFloat(minBetAmount)
     return totalTickets > 0 ? (userTickets / totalTickets) * 100 : 0
   }
 
@@ -114,12 +111,12 @@ const BettingPanel: React.FC = () => {
 
     try {
       // Place bet directly via smart contract
-      if (!currentDraw) throw new Error('No current draw')
-      const transactionHash = await contractService.placeBet(currentDraw.draw_id, betAmount.toString())
+      const transactionHash = await contractService.placeBet(betAmount.toString())
 
       // Optimistically update UI
       setSuccess(`Bet placed successfully! Transaction: ${transactionHash.slice(0, 10)}...`)
       setUserBetAmount(prev => prev + betAmount)
+      
       // Notify backend for verification (optional)
       try {
         await api.post('/api/verify-bet', {
@@ -249,7 +246,7 @@ const BettingPanel: React.FC = () => {
                 Base Bet
               </Typography>
               <Typography variant="body2" sx={{ color: 'white', fontWeight: 'bold' }}>
-                {bettingLimits.min} ETH
+                {minBetAmount} ETH
               </Typography>
             </Box>
 

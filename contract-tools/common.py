@@ -126,9 +126,9 @@ class LotteryContractBase:
             
             # Get configuration
             config = contract.functions.getConfig().call()
-            # getConfig returns 12 values
-            publisher_addr, sparsity_addr, operator_addr, publisher_commission, sparsity_commission, min_bet, betting_dur, min_draw_delay, max_draw_delay, min_end_time_ext, min_part, sparsity_is_set = config
-
+            # getConfig returns 11 values
+            publisher_addr, sparsity_addr, operator_addr, publisher_commission, sparsity_commission, min_bet, betting_dur, min_draw_delay, max_draw_delay, min_end_time_ext, min_part = config
+            
             # Get current round info (use getRound which returns the LotteryRound struct)
             try:
                 current_round_raw = contract.functions.getRound().call()
@@ -153,7 +153,6 @@ class LotteryContractBase:
                 'publisher': publisher_addr,
                 'sparsity': sparsity_addr if sparsity_addr != "0x0000000000000000000000000000000000000000" else None,
                 'operator': operator_addr if operator_addr != "0x0000000000000000000000000000000000000000" else None,
-                'sparsity_set': sparsity_is_set,
                 'publisher_commission_rate': publisher_commission,
                 'sparsity_commission_rate': sparsity_commission,
                 'min_bet_wei': min_bet,
@@ -172,8 +171,7 @@ class LotteryContractBase:
                 'error': str(e),
                 'publisher': None,
                 'sparsity': None,
-                'operator': None,
-                'sparsity_set': False
+                'operator': None
             }
 
     def query_all_contracts(self) -> List[Dict[str, Any]]:
@@ -300,8 +298,11 @@ def display_contracts_table(contracts_info: List[Dict[str, Any]], w3: Web3, role
                 deployer_addr = (deployment.get('deployer') or '').lower()
                 if pub_addr != deployer_addr:
                     continue
-            elif role_filter == 'sparsity' and not status.get('sparsity_set', False):
-                continue
+            elif role_filter == 'sparsity':
+                sparsity_addr = status.get('sparsity', '')
+                sparsity_is_set = sparsity_addr and sparsity_addr != '0x0000000000000000000000000000000000000000'
+                if not sparsity_is_set:
+                    continue
         
         print(f"\n{i}. Contract: {deployment['contract_address']}")
         print(f"   📁 File: {info['file_path']}")
