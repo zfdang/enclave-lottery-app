@@ -29,41 +29,39 @@ class LotteryRound:
     Lottery round data structure matching the Solidity LotteryRound struct.
     
     This mirrors the contract's struct exactly:
-    - round_id: Unique identifier for the round
-    - state: Current state of the round
+    - round_id: Unique identifier for the round (roundId)
+    - start_time: When betting started (startTime)
+    - end_time: When betting ends (endTime)
+    - min_draw_time: Minimum time for drawing (minDrawTime = endTime + minDrawDelayAfterEnd)
+    - max_draw_time: Maximum time for drawing (maxDrawTime = endTime + maxDrawDelayAfterEnd)
     - total_pot: Total amount bet in wei
-    - commission_amount: Commission taken in wei  
-    - participants: List of participant addresses
+    - participant_count: Number of participants
     - winner: Winner address (if completed)
-    - created_at: Block timestamp when round was created
-    - betting_start_time: When betting started
-    - betting_end_time: When betting ends
-    - draw_time: When draw will occur
-    - winner_ticket: Winning ticket number (if completed)
-    - random_seed: Random seed used for drawing (if completed)
+    - publisher_commission: Commission for publisher in wei
+    - sparsity_commission: Commission for sparsity provider in wei
+    - winner_prize: Prize amount for winner in wei
+    - state: Current state of the round
     """
     round_id: int
+    start_time: int
+    end_time: int
+    min_draw_time: int
+    max_draw_time: int
+    total_pot: int
+    participant_count: int
+    winner: Optional[str]
+    publisher_commission: int
+    sparsity_commission: int
+    winner_prize: int
     state: RoundState
-    total_pot: int = 0
-    commission_amount: int = 0
+    
+    # Additional helper field for participants list (not in contract struct)
     participants: List[str] = field(default_factory=list)
-    winner: Optional[str] = None
-    created_at: int = 0
-    betting_start_time: int = 0
-    betting_end_time: int = 0
-    draw_time: int = 0
-    winner_ticket: int = 0
-    random_seed: int = 0
     
     def __post_init__(self):
         """Ensure participants is a list"""
         if self.participants is None:
             self.participants = []
-    
-    @property
-    def participant_count(self) -> int:
-        """Get number of participants"""
-        return len(self.participants)
     
     @property
     def is_active(self) -> bool:

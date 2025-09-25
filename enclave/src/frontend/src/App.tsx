@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import {
   Box,
   Container,
@@ -28,11 +28,11 @@ import ActivityFeed from './components/ActivityFeed'
 import { useWebSocket } from './services/websocket'
 import { useWalletStore } from './services/wallet'
 import { useLotteryStore } from './services/lottery'
-import { getLotteryContract } from './services/api'
+import { getLotteryContract, getHealth } from './services/api'
 import { contractService } from './services/contract'
 
 function App() {
-  const [backendOnline, setBackendOnline] = useState(true)
+  const [backendOnline, setBackendOnline] = useState(false)
   const [snackbar, setSnackbar] = useState<{
     open: boolean
     message: string
@@ -46,10 +46,35 @@ function App() {
   const { isConnected } = useWalletStore()
   const { currentDraw, fetchCurrentDraw, error: lotteryError } = useLotteryStore()
   
+  // Health check function
+  const checkBackendHealth = useCallback(async () => {
+    try {
+      const health = await getHealth()
+      const isHealthy = health?.status === 'healthy'
+      setBackendOnline(isHealthy)
+      return isHealthy
+    } catch (error) {
+      setBackendOnline(false)
+      return false
+    }
+  }, [])
+
+  // Periodic health check
+  useEffect(() => {
+    // Initial health check
+    checkBackendHealth()
+    
+    // Set up periodic health checks every 10 seconds
+    const healthCheckInterval = setInterval(checkBackendHealth, 10000)
+    
+    return () => {
+      clearInterval(healthCheckInterval)
+    }
+  }, [checkBackendHealth])
+  
   // WebSocket connection for real-time updates
   useWebSocket('ws://localhost:6080/ws/lottery', {
     onMessage: (data) => {
-      setBackendOnline(true)
       if (data.type === 'bet_placed') {
         setSnackbar({
           open: true,
@@ -68,29 +93,15 @@ function App() {
         fetchCurrentDraw()
       }
     },
-    onError: () => {
-      setBackendOnline(false)
-    },
-    onClose: () => {
-      setBackendOnline(false)
-    }
+    // Remove onError and onClose handlers since we use health checks only
+    onError: () => {},
+    onClose: () => {}
   })
 
   useEffect(() => {
-    // Check backend status when fetching current draw
-    fetchCurrentDraw().then(() => {
-      setBackendOnline(true)
-    }).catch(() => {
-      setBackendOnline(false)
-    })
+    // Fetch current draw on component mount
+    fetchCurrentDraw()
   }, [fetchCurrentDraw])
-
-  // Monitor lottery error state for backend connectivity
-  useEffect(() => {
-    if (lotteryError) {
-      setBackendOnline(false)
-    }
-  }, [lotteryError])
 
   const handleCloseSnackbar = () => {
     setSnackbar({ ...snackbar, open: false })

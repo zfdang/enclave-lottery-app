@@ -163,9 +163,53 @@ class LotteryWebServer:
                 "websocket_connections": len(self.websocket_connections)
             }
         
+        @self.app.get("/api/attestation")
+        async def get_attestation():
+            """Get nitro enclave attestation document (mockup for development)"""
+            import base64
+            import json
+            
+            # Mock attestation document structure
+            mock_attestation = {
+                "module_id": "i-1234567890abcdef0-enc0123456789abcdef",
+                "timestamp": int(datetime.utcnow().timestamp() * 1000),
+                "digest": "SHA384",
+                "pcrs": {
+                    "0": "a" * 96,  # Boot ROM
+                    "1": "b" * 96,  # Kernel and bootstrap
+                    "2": "c" * 96,  # Application
+                    "8": "d" * 96   # Certificate
+                },
+                "certificate": "-----BEGIN CERTIFICATE-----\nMockCertificateData\n-----END CERTIFICATE-----",
+                "cabundle": ["-----BEGIN CERTIFICATE-----\nMockRootCA\n-----END CERTIFICATE-----"],
+                "public_key": None,
+                "user_data": base64.b64encode(json.dumps({
+                    "lottery_contract": self.blockchain_client.contract_address if self.blockchain_client else "0x0000000000000000000000000000000000000000",
+                    "operator_address": self.blockchain_client.account.address if self.blockchain_client and self.blockchain_client.account else "0x0000000000000000000000000000000000000000",
+                    "enclave_version": "2.0.0",
+                    "build_timestamp": "2025-09-25T00:00:00Z"
+                }).encode()).decode(),
+                "nonce": None
+            }
+            
+            # Base64 encode the entire attestation document (as Nitro Enclaves do)
+            attestation_document = base64.b64encode(
+                json.dumps(mock_attestation).encode()
+            ).decode()
+            
+            return {
+                "attestation_document": attestation_document,
+                "attestation_document_b64": attestation_document,  # Alternative field name
+                "pcrs": mock_attestation["pcrs"],
+                "user_data": mock_attestation["user_data"],
+                "timestamp": mock_attestation["timestamp"],
+                "verified": True,  # Mock verification status
+                "note": "This is a mock attestation for development purposes"
+            }
+        
         # =============== LOTTERY ROUND ENDPOINTS ===============
         
-        @self.app.get("/api/round/current")
+        @self.app.get("/api/round/status")
         async def get_current_round():
             """Get current active round information"""
             try:
@@ -178,36 +222,117 @@ class LotteryWebServer:
                         "can_bet": False
                     }
                 
-                # Get additional timing and state information
-                current_time = datetime.now().timestamp()
+                # Get current time for calculations
+                current_time = int(datetime.now().timestamp())
+                
+                # Calculate time remaining for betting
+                betting_time_remaining = 0
+                if current_round.state == RoundState.BETTING and current_round.end_time:
+                    betting_time_remaining = max(0, current_round.end_time - current_time)
+                
+                # Calculate draw window information
+                draw_window_start = max(0, current_round.min_draw_time - current_time) if current_round.min_draw_time else 0
+                draw_window_end = max(0, current_round.max_draw_time - current_time) if current_round.max_draw_time else 0
                 
                 return {
                     "round": {
                         "round_id": current_round.round_id,
                         "state": current_round.state.value,
                         "state_name": current_round.state.name,
+                        "start_time": current_round.start_time,
+                        "end_time": current_round.end_time,
+                        "min_draw_time": current_round.min_draw_time,
+                        "max_draw_time": current_round.max_draw_time,
                         "total_pot": current_round.total_pot,
-                        "commission_amount": current_round.commission_amount,
                         "participant_count": current_round.participant_count,
                         "participants": current_round.participants,
                         "winner": current_round.winner,
-                        "created_at": current_round.created_at,
-                        "betting_start_time": current_round.betting_start_time,
-                        "betting_end_time": current_round.betting_end_time,
-                        "draw_time": current_round.draw_time,
-                        "winner_ticket": current_round.winner_ticket,
-                        "random_seed": current_round.random_seed
+                        "publisher_commission": current_round.publisher_commission,
+                        "sparsity_commission": current_round.sparsity_commission,
+                        "winner_prize": current_round.winner_prize
                     },
                     "can_bet": current_round.can_bet,
                     "can_draw": current_round.can_draw,
                     "is_finished": current_round.is_finished,
-                    "time_remaining": max(0, current_round.betting_end_time - current_time) if current_round.betting_end_time else 0,
+                    "is_active": current_round.is_active,
+                    "betting_time_remaining": betting_time_remaining,
+                    "draw_window_start": draw_window_start,
+                    "draw_window_end": draw_window_end,
                     "current_time": current_time
                 }
                 
             except Exception as e:
                 logger.error(f"Error getting current round: {e}")
                 raise HTTPException(status_code=500, detail="Failed to get round information")
+        
+        @self.app.get("/api/round/participants")
+        async def get_round_participants():
+            """Get all participants and their bets for the current round"""
+            try:
+                current_round = memory_store.get_current_round()
+                
+                if not current_round:
+                    return {
+                        "round_id": None,
+                        "participants": [],
+                        "total_participants": 0,
+                        "total_bets": 0,
+                        "total_bet_amount": 0,
+                        "message": "No active round"
+                    }
+                
+                # Get all bets for the current round
+                round_bets = memory_store.get_round_bets(current_round.round_id)
+                
+                # Group bets by player address
+                participants_data = {}
+                total_bet_amount = 0
+                
+                for bet in round_bets:
+                    player_addr = bet.player_address
+                    
+                    if player_addr not in participants_data:
+                        participants_data[player_addr] = {
+                            "address": player_addr,
+                            "bets": [],
+                            "total_bet_amount": 0,
+                            "bet_count": 0,
+                            "ticket_numbers": []
+                        }
+                    
+                    # Add bet information
+                    bet_info = {
+                        "amount": bet.amount,
+                        "ticket_numbers": bet.ticket_numbers,
+                        "timestamp": bet.timestamp.isoformat()
+                    }
+                    
+                    participants_data[player_addr]["bets"].append(bet_info)
+                    participants_data[player_addr]["total_bet_amount"] += bet.amount
+                    participants_data[player_addr]["bet_count"] += 1
+                    participants_data[player_addr]["ticket_numbers"].extend(bet.ticket_numbers)
+                    
+                    total_bet_amount += bet.amount
+                
+                # Convert to list format
+                participants_list = list(participants_data.values())
+                
+                # Sort by total bet amount (descending)
+                participants_list.sort(key=lambda x: x["total_bet_amount"], reverse=True)
+                
+                return {
+                    "round_id": current_round.round_id,
+                    "round_state": current_round.state.name,
+                    "participants": participants_list,
+                    "total_participants": len(participants_list),
+                    "total_bets": sum(p["bet_count"] for p in participants_list),
+                    "total_bet_amount": total_bet_amount,
+                    "current_time": int(datetime.now().timestamp())
+                }
+                
+            except Exception as e:
+                logger.error(f"Error getting round participants: {e}")
+                raise HTTPException(status_code=500, detail="Failed to get participants information")
         
         @self.app.get("/api/contract/config")
         async def get_contract_config():
@@ -227,6 +352,8 @@ class LotteryWebServer:
             except Exception as e:
                 logger.error(f"Error getting contract config: {e}")
                 raise HTTPException(status_code=500, detail="Failed to get contract configuration")
+        
+        
         
         # =============== WEBSOCKET ENDPOINT ===============
         
