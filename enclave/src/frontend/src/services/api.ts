@@ -38,19 +38,21 @@ export const getAttestation = async () => {
 
 // Current draw information
 export const getCurrentDraw = async () => {
-  const response = await api.get('/api/draw/current')
+  const response = await api.get('/api/round/status')
   return response.data
 }
 
 // Get current participants
 export const getParticipants = async () => {
-  const response = await api.get('/api/draw/participants')
+  const response = await api.get('/api/round/participants')
   return response.data
 }
 
-// Get lottery history
-export const getLotteryHistory = async () => {
-  const response = await api.get('/api/history')
+// Get lottery history with pagination
+export const getLotteryHistory = async (limit: number = 50) => {
+  const response = await api.get('/api/history', {
+    params: { limit }
+  })
   return response.data
 }
 

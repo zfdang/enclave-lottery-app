@@ -1,30 +1,58 @@
 import React, { useEffect, useState } from 'react'
 import { Typography, Box, List, ListItem, ListItemText, ListItemIcon, Chip, Divider, Avatar } from '@mui/material'
-import { History, EmojiEvents, AttachMoney, People } from '@mui/icons-material'
+import { History, EmojiEvents, AttachMoney, People, Undo } from '@mui/icons-material'
 
 import { getLotteryHistory } from '../services/api'
 
 interface HistoryItem {
-  draw_id: string
-  draw_time: string
-  total_pot: string
+  round_id: number
+  final_state: string
+  final_state_value: number
+  start_time: number
+  end_time: number
+  total_pot: number
+  participant_count: number
+  total_bets_placed: number
   winner: string | null
-  winning_number: number | null
-  participants: number
+  winner_prize: number
+  publisher_commission: number
+  sparsity_commission: number
+  total_commission: number
+  is_completed: boolean
+  is_refunded: boolean
+  has_winner: boolean
+}
+
+interface HistoryResponse {
+  rounds: HistoryItem[]
+  summary: {
+    total_rounds: number
+    completed_rounds: number
+    refunded_rounds: number
+    completion_rate: number
+    total_volume: number
+    total_prizes_awarded: number
+    average_pot_size: number
+  }
+  pagination: {
+    limit: number
+    returned_count: number
+  }
+  timestamp: number
 }
 
 const HistoryPanel: React.FC = () => {
-  const [history, setHistory] = useState<HistoryItem[]>([])
+  const [historyData, setHistoryData] = useState<HistoryResponse | null>(null)
   const [loading, setLoading] = useState(false)
 
   const fetchHistory = async () => {
     setLoading(true)
     try {
-      const response = await getLotteryHistory()
-      const list = Array.isArray(response?.history) ? (response.history as HistoryItem[]) : []
-      setHistory(list)
+      const response = await getLotteryHistory(50) // Get last 50 rounds
+      setHistoryData(response)
     } catch (error) {
       console.error('Error fetching history:', error)
+      setHistoryData(null)
     } finally {
       setLoading(false)
     }
@@ -40,9 +68,13 @@ const HistoryPanel: React.FC = () => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`
   }
 
-  const formatDate = (timestamp: string): string => {
-    const date = new Date(timestamp)
+  const formatDate = (timestamp: number): string => {
+    const date = new Date(timestamp * 1000) // Convert from Unix timestamp
     return `${date.toLocaleDateString()} ${date.toLocaleTimeString().slice(0, 5)}`
+  }
+
+  const formatEth = (wei: number): string => {
+    return (wei / 1e18).toFixed(4)
   }
 
   const getAvatarColor = (address: string): string => {
@@ -55,7 +87,7 @@ const HistoryPanel: React.FC = () => {
     return colors[index]
   }
 
-  const safeHistory = Array.isArray(history) ? history : []
+  const safeHistory = historyData?.rounds || []
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', p: 1 }}>
@@ -65,6 +97,15 @@ const HistoryPanel: React.FC = () => {
           History
         </Typography>
       </Box>
+
+      {/* Summary Statistics */}
+      {historyData?.summary && (
+        <Box mb={1} p={1} sx={{ bgcolor: 'rgba(255, 255, 255, 0.1)', borderRadius: 1 }}>
+          <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.8)' }}>
+            {historyData.summary.total_rounds} rounds • {historyData.summary.completion_rate.toFixed(1)}% completed
+          </Typography>
+        </Box>
+      )}
 
       {loading && safeHistory.length === 0 ? (
         <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)', textAlign: 'center' }}>Loading...</Typography>
@@ -89,18 +130,29 @@ const HistoryPanel: React.FC = () => {
         <Box flex={1} overflow="hidden">
           <List sx={{ overflow: 'auto', maxHeight: '100%', p: 0 }}>
             {safeHistory.map((item, index) => (
-              <React.Fragment key={item.draw_id}>
+              <React.Fragment key={item.round_id}>
                 <ListItem sx={{ px: 1, py: 0.5 }}>
                   <ListItemIcon sx={{ minWidth: 35 }}>
-                    {item.winner ? (
+                    {item.has_winner ? (
                       <Avatar 
                         sx={{ 
-                          bgcolor: getAvatarColor(item.winner),
+                          bgcolor: getAvatarColor(item.winner!),
                           width: 28, 
                           height: 28,
                         }}
                       >
                         <EmojiEvents sx={{ fontSize: '0.9rem' }} />
+                      </Avatar>
+                    ) : item.is_refunded ? (
+                      <Avatar 
+                        sx={{ 
+                          bgcolor: 'rgba(255, 152, 0, 0.5)',
+                          width: 28, 
+                          height: 28,
+                          color: 'white'
+                        }}
+                      >
+                        <Undo sx={{ fontSize: '0.9rem' }} />
                       </Avatar>
                     ) : (
                       <Avatar 
@@ -118,13 +170,17 @@ const HistoryPanel: React.FC = () => {
                   <ListItemText
                     primary={
                       <Box>
-                        {item.winner ? (
+                        {item.has_winner ? (
                           <Typography variant="body2" sx={{ color: 'white', fontWeight: 'bold' }}>
-                            Winner: {formatAddress(item.winner)}
+                            Winner: {formatAddress(item.winner!)}
+                          </Typography>
+                        ) : item.is_refunded ? (
+                          <Typography variant="body2" sx={{ color: 'rgba(255, 152, 0, 0.8)' }}>
+                            Refunded
                           </Typography>
                         ) : (
                           <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.8)' }}>
-                            No winner
+                            {item.final_state}
                           </Typography>
                         )}
                       </Box>
@@ -134,18 +190,18 @@ const HistoryPanel: React.FC = () => {
                         <Box display="flex" alignItems="center" gap={0.5} mt={0.5} flexWrap="wrap">
                           <Chip
                             icon={<AttachMoney sx={{ fontSize: '0.7rem !important' }} />}
-                            label={`${item.total_pot} ETH`}
+                            label={`${formatEth(item.total_pot)} ETH`}
                             size="small"
                             sx={{ 
                               height: 18, 
                               fontSize: '0.65rem',
-                              bgcolor: item.winner ? 'rgba(76, 175, 80, 0.3)' : 'rgba(255, 255, 255, 0.2)',
+                              bgcolor: item.has_winner ? 'rgba(76, 175, 80, 0.3)' : item.is_refunded ? 'rgba(255, 152, 0, 0.3)' : 'rgba(255, 255, 255, 0.2)',
                               color: 'white'
                             }}
                           />
                           <Chip
                             icon={<People sx={{ fontSize: '0.7rem !important' }} />}
-                            label={`${item.participants} users`}
+                            label={`${item.participant_count} users`}
                             size="small"
                             sx={{ 
                               height: 18, 
@@ -155,14 +211,14 @@ const HistoryPanel: React.FC = () => {
                             }}
                           />
                         </Box>
-                        {item.winning_number != null && (
+                        {item.has_winner && (
                           <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
-                            Winning number: #{item.winning_number}
+                            Prize: {formatEth(item.winner_prize)} ETH
                           </Typography>
                         )}
                         <br />
                         <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.6)' }}>
-                          {formatDate(item.draw_time)}
+                          Round #{item.round_id} • {formatDate(item.end_time)}
                         </Typography>
                       </Box>
                     }
@@ -180,7 +236,7 @@ const HistoryPanel: React.FC = () => {
       {safeHistory.length > 0 && (
         <Box mt={1} pt={1} sx={{ borderTop: '1px solid rgba(255, 255, 255, 0.2)' }}>
           <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.8)' }} textAlign="center">
-            Last {safeHistory.length} draws
+            Last {safeHistory.length} rounds
           </Typography>
         </Box>
       )}

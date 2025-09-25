@@ -334,6 +334,83 @@ class LotteryWebServer:
                 logger.error(f"Error getting round participants: {e}")
                 raise HTTPException(status_code=500, detail="Failed to get participants information")
         
+        @self.app.get("/api/history")
+        async def get_round_history(limit: int = 50):
+            """Get historical rounds with final states, winners, and prizes"""
+            try:
+                # Validate limit parameter
+                if limit <= 0:
+                    limit = 50
+                elif limit > 200:  # Cap maximum limit
+                    limit = 200
+                
+                # Get round history from memory store
+                historical_rounds = memory_store.get_round_history(limit=limit)
+                
+                # Process each round to extract relevant historical data
+                history_data = []
+                
+                for round_data in historical_rounds:
+                    # Calculate derived values
+                    total_commission = round_data.publisher_commission + round_data.sparsity_commission
+                    
+                    # Get bet count for this round
+                    round_bets = memory_store.get_round_bets(round_data.round_id)
+                    total_bets_placed = len(round_bets)
+                    
+                    # Format round data for history view
+                    round_info = {
+                        "round_id": round_data.round_id,
+                        "final_state": round_data.state.name,
+                        "final_state_value": round_data.state.value,
+                        "start_time": round_data.start_time,
+                        "end_time": round_data.end_time,
+                        "min_draw_time": round_data.min_draw_time,
+                        "max_draw_time": round_data.max_draw_time,
+                        "total_pot": round_data.total_pot,
+                        "participant_count": round_data.participant_count,
+                        "total_bets_placed": total_bets_placed,
+                        "winner": round_data.winner,
+                        "winner_prize": round_data.winner_prize,
+                        "publisher_commission": round_data.publisher_commission,
+                        "sparsity_commission": round_data.sparsity_commission,
+                        "total_commission": total_commission,
+                        "is_completed": round_data.state == RoundState.COMPLETED,
+                        "is_refunded": round_data.state == RoundState.REFUNDED,
+                        "has_winner": round_data.winner is not None
+                    }
+                    
+                    history_data.append(round_info)
+                
+                # Calculate summary statistics
+                total_rounds = len(history_data)
+                completed_rounds = len([r for r in history_data if r["is_completed"]])
+                refunded_rounds = len([r for r in history_data if r["is_refunded"]])
+                total_volume = sum(r["total_pot"] for r in history_data)
+                total_prizes_awarded = sum(r["winner_prize"] for r in history_data if r["has_winner"])
+                
+                return {
+                    "rounds": history_data,
+                    "summary": {
+                        "total_rounds": total_rounds,
+                        "completed_rounds": completed_rounds,
+                        "refunded_rounds": refunded_rounds,
+                        "completion_rate": (completed_rounds / total_rounds * 100) if total_rounds > 0 else 0,
+                        "total_volume": total_volume,
+                        "total_prizes_awarded": total_prizes_awarded,
+                        "average_pot_size": (total_volume / total_rounds) if total_rounds > 0 else 0
+                    },
+                    "pagination": {
+                        "limit": limit,
+                        "returned_count": len(history_data)
+                    },
+                    "timestamp": int(datetime.now().timestamp())
+                }
+                
+            except Exception as e:
+                logger.error(f"Error getting round history: {e}")
+                raise HTTPException(status_code=500, detail="Failed to get round history")
+        
         @self.app.get("/api/contract/config")
         async def get_contract_config():
             """Get lottery contract configuration"""

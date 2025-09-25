@@ -44,7 +44,7 @@ function App() {
   })
 
   const { isConnected } = useWalletStore()
-  const { currentDraw, fetchCurrentDraw, error: lotteryError } = useLotteryStore()
+  const { currentRound, fetchCurrentDraw, error: lotteryError } = useLotteryStore()
   
   // Health check function
   const checkBackendHealth = useCallback(async () => {
