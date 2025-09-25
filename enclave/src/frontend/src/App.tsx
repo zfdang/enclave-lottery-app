@@ -119,7 +119,9 @@ function App() {
     sparsityCommission: string
     minBet: string
     bettingDur: string
-    drawDelay: string
+    minDrawDelay: string
+    maxDrawDelay: string
+    minEndTimeExt: string
     minPart: string
     sparsityIsSet: boolean
   }>(null)
@@ -189,17 +191,24 @@ function App() {
       const contract = new ethers.Contract(contractAddress, abi, provider)
       const cfg = await contract.getConfig()
 
+      // getConfig() returns 12 values in this order:
+      // 0 publisherAddr, 1 sparsityAddr, 2 operatorAddr,
+      // 3 publisherCommission, 4 sparsityCommission,
+      // 5 minBet, 6 bettingDur, 7 minDrawDelay, 8 maxDrawDelay,
+      // 9 minEndTimeExt, 10 minPart, 11 sparsityIsSet
       const normalized = {
-        publisherAddr: cfg.publisherAddr,
-        sparsityAddr: cfg.sparsityAddr,
-        operatorAddr: cfg.operatorAddr,
+        publisherAddr: cfg.publisherAddr ?? cfg[0],
+        sparsityAddr: cfg.sparsityAddr ?? cfg[1],
+        operatorAddr: cfg.operatorAddr ?? cfg[2],
         publisherCommission: cfg.publisherCommission?.toString?.() ?? String(cfg[3]),
         sparsityCommission: cfg.sparsityCommission?.toString?.() ?? String(cfg[4]),
         minBet: cfg.minBet?.toString?.() ?? String(cfg[5]),
         bettingDur: cfg.bettingDur?.toString?.() ?? String(cfg[6]),
-        drawDelay: cfg.drawDelay?.toString?.() ?? String(cfg[7]),
-        minPart: cfg.minPart?.toString?.() ?? String(cfg[8]),
-        sparsityIsSet: Boolean(cfg.sparsityIsSet ?? cfg[9])
+        minDrawDelay: cfg.minDrawDelay?.toString?.() ?? String(cfg[7]),
+        maxDrawDelay: cfg.maxDrawDelay?.toString?.() ?? String(cfg[8]),
+        minEndTimeExt: cfg.minEndTimeExt?.toString?.() ?? String(cfg[9]),
+        minPart: cfg.minPart?.toString?.() ?? String(cfg[10]),
+        sparsityIsSet: Boolean(cfg.sparsityIsSet ?? cfg[11])
       }
       setContractConfig(normalized)
     } catch (e: any) {
@@ -552,7 +561,9 @@ function App() {
                 <Typography variant="body2"><strong>Sparsity Commission:</strong> {contractConfig.sparsityCommission}</Typography>
                 <Typography variant="body2"><strong>Min Bet (wei):</strong> {contractConfig.minBet}</Typography>
                 <Typography variant="body2"><strong>Betting Duration (s):</strong> {contractConfig.bettingDur}</Typography>
-                <Typography variant="body2"><strong>Draw Delay (s):</strong> {contractConfig.drawDelay}</Typography>
+                <Typography variant="body2"><strong>Min Draw Delay (s):</strong> {contractConfig.minDrawDelay}</Typography>
+                <Typography variant="body2"><strong>Max Draw Delay (s):</strong> {contractConfig.maxDrawDelay}</Typography>
+                <Typography variant="body2"><strong>Min End Time Extension (s):</strong> {contractConfig.minEndTimeExt}</Typography>
                 <Typography variant="body2"><strong>Min Participants:</strong> {contractConfig.minPart}</Typography>
                 <Typography variant="body2"><strong>Sparsity Set:</strong> {contractConfig.sparsityIsSet ? 'Yes' : 'No'}</Typography>
               </Box>
