@@ -221,7 +221,6 @@ class LotteryWebServer:
                 return {
                     "config": config,
                     "contract_address": self.blockchain_client.contract_address,
-                    "operator_address": self.blockchain_client.account.address,
                     "timestamp": datetime.utcnow().isoformat()
                 }
                 
