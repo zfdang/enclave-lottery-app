@@ -280,6 +280,59 @@ class ContractService {
   }
 
   /**
+   * Get contract configuration using getConfig()
+   */
+  async getContractConfig(contractAddress: string, rpcUrl: string, chainId?: number): Promise<{
+    publisherAddr: string
+    sparsityAddr: string
+    operatorAddr: string
+    publisherCommission: string
+    sparsityCommission: string
+    minBet: string
+    bettingDur: string
+    minDrawDelay: string
+    maxDrawDelay: string
+    minEndTimeExt: string
+    minPart: string
+    sparsityIsSet: boolean
+  }> {
+    try {
+      // Load ABI from new public location
+      const abiRes = await fetch('/contracts/abi/Lottery.abi')
+      if (!abiRes.ok) throw new Error('Failed to fetch ABI')
+      const abiText = await abiRes.text()
+      const abi = JSON.parse(abiText)
+
+      // Create read-only provider for this call
+      const provider = new ethers.JsonRpcProvider(rpcUrl, chainId ? Number(chainId) : undefined)
+      const contract = new ethers.Contract(contractAddress, abi, provider)
+      const cfg = await contract.getConfig()
+
+      // getConfig() returns 12 values in this order:
+      // 0 publisherAddr, 1 sparsityAddr, 2 operatorAddr,
+      // 3 publisherCommission, 4 sparsityCommission,
+      // 5 minBet, 6 bettingDur, 7 minDrawDelay, 8 maxDrawDelay,
+      // 9 minEndTimeExt, 10 minPart, 11 sparsityIsSet
+      return {
+        publisherAddr: cfg.publisherAddr ?? cfg[0],
+        sparsityAddr: cfg.sparsityAddr ?? cfg[1],
+        operatorAddr: cfg.operatorAddr ?? cfg[2],
+        publisherCommission: cfg.publisherCommission?.toString?.() ?? String(cfg[3]),
+        sparsityCommission: cfg.sparsityCommission?.toString?.() ?? String(cfg[4]),
+        minBet: cfg.minBet?.toString?.() ?? String(cfg[5]),
+        bettingDur: cfg.bettingDur?.toString?.() ?? String(cfg[6]),
+        minDrawDelay: cfg.minDrawDelay?.toString?.() ?? String(cfg[7]),
+        maxDrawDelay: cfg.maxDrawDelay?.toString?.() ?? String(cfg[8]),
+        minEndTimeExt: cfg.minEndTimeExt?.toString?.() ?? String(cfg[9]),
+        minPart: cfg.minPart?.toString?.() ?? String(cfg[10]),
+        sparsityIsSet: Boolean(cfg.sparsityIsSet ?? cfg[11])
+      }
+    } catch (error: any) {
+      throw new Error('Failed to load contract config: ' + (error.message || 'Unknown error'))
+    }
+  }
+
+  /**
    * Subscribe to contract events
    */
   subscribeToEvents(callbacks: {
