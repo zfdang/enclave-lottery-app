@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { getCurrentDraw } from './api'
 
-interface CurrentRound {
+interface RoundStatus {
   round_id: number
   state: number
   state_name: string
@@ -18,38 +18,27 @@ interface CurrentRound {
   winner_prize: number
 }
 
-interface RoundStatusResponse {
-  round: CurrentRound | null
-  message?: string
-  can_bet: boolean
-  can_draw: boolean
-  is_finished: boolean
-  is_active: boolean
-  betting_time_remaining: number
-  draw_window_start: number
-  draw_window_end: number
-  current_time: number
-}
+
 
 interface LotteryState {
-  currentRound: RoundStatusResponse | null
+  roundStatus: RoundStatus | null
   loading: boolean
   error: string | null
-  fetchCurrentDraw: () => Promise<void>
-  setCurrentRound: (round: RoundStatusResponse | null) => void
+  fetchRoundStatus: () => Promise<void>
+  setRoundStatus: (round: RoundStatus | null) => void
 }
 
 export const useLotteryStore = create<LotteryState>((set, get) => ({
-  currentRound: null,
+  roundStatus: null,
   loading: false,
   error: null,
 
-  fetchCurrentDraw: async () => {
+  fetchRoundStatus: async () => {
     set({ loading: true, error: null })
     
     try {
       const data = await getCurrentDraw()
-      set({ currentRound: data, loading: false, error: null })
+      set({ roundStatus: data, loading: false, error: null })
     } catch (error: any) {
       console.warn('Backend connection failed:', error.message)
       set({ 
@@ -60,14 +49,14 @@ export const useLotteryStore = create<LotteryState>((set, get) => ({
     }
   },
 
-  setCurrentRound: (round: RoundStatusResponse | null) => {
-    set({ currentRound: round })
+  setRoundStatus: (round: RoundStatus | null) => {
+    set({ roundStatus: round })
   },
 }))
 
 // Auto-fetch current draw every 30 seconds
 if (typeof window !== 'undefined') {
   setInterval(() => {
-    useLotteryStore.getState().fetchCurrentDraw()
+    useLotteryStore.getState().fetchRoundStatus()
   }, 30000)
 }

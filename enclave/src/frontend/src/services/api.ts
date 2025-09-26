@@ -63,8 +63,14 @@ export const getActivities = async () => {
 }
 
 // Get lottery contract configuration and address
-export const getLotteryContract = async () => {
+export const getContractConfig = async () => {
   const response = await api.get('/api/contract/config')
+  return response.data
+}
+
+// Get only the configured lottery contract address
+export const getContractAddress = async () => {
+  const response = await api.get('/api/contract/address')
   return response.data
 }
 

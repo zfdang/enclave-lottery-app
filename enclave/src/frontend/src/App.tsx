@@ -28,7 +28,7 @@ import ActivityFeed from './components/ActivityFeed'
 import { useWebSocket } from './services/websocket'
 import { useWalletStore } from './services/wallet'
 import { useLotteryStore } from './services/lottery'
-import { getLotteryContract, getHealth } from './services/api'
+import { getContractAddress, getHealth } from './services/api'
 import { contractService } from './services/contract'
 
 function App() {
@@ -44,7 +44,7 @@ function App() {
   })
 
   const { isConnected } = useWalletStore()
-  const { currentRound, fetchCurrentDraw, error: lotteryError } = useLotteryStore()
+  const { roundStatus, fetchRoundStatus, error: lotteryError } = useLotteryStore()
   
   // Health check function
   const checkBackendHealth = useCallback(async () => {
@@ -81,7 +81,7 @@ function App() {
           message: `New bet placed by ${data.data.user.slice(0, 8)}...`,
           severity: 'info'
         })
-        fetchCurrentDraw()
+        fetchRoundStatus()
       } else if (data.type === 'draw_completed') {
         setSnackbar({
           open: true,
@@ -90,7 +90,7 @@ function App() {
             'Draw completed with no participants',
           severity: 'success'
         })
-        fetchCurrentDraw()
+        fetchRoundStatus()
       }
     },
     // Remove onError and onClose handlers since we use health checks only
@@ -100,8 +100,8 @@ function App() {
 
   useEffect(() => {
     // Fetch current draw on component mount
-    fetchCurrentDraw()
-  }, [fetchCurrentDraw])
+    fetchRoundStatus()
+  }, [fetchRoundStatus])
 
   const handleCloseSnackbar = () => {
     setSnackbar({ ...snackbar, open: false })
@@ -163,23 +163,27 @@ function App() {
     setAttestationError('');
   };
 
-  // Fetch contract address from backend
-  const fetchContractAddress = async () => {
-    setContractLoading(true)
-    setContractError(null)
-    try {
-      const data = await getLotteryContract()
-      setContractAddress(data.contract_address || null)
-    } catch (e: any) {
-      setContractError(e.message || 'Unable to load contract info')
-      setContractAddress(null)
-    } finally {
-      setContractLoading(false)
-    }
-  }
-
+  // Fetch contract address from backend (simplified)
   useEffect(() => {
-    fetchContractAddress()
+    let mounted = true
+    ;(async () => {
+      setContractLoading(true)
+      setContractError(null)
+      try {
+        const data = await getContractAddress()
+        if (!mounted) return
+        setContractAddress(data?.contract_address ?? null)
+      } catch (e: any) {
+        if (!mounted) return
+        setContractError(e.message || 'Unable to load contract info')
+        setContractAddress(null)
+      } finally {
+        if (!mounted) return
+        setContractLoading(false)
+      }
+    })()
+
+    return () => { mounted = false }
   }, [])
 
   // Fetch contract config using centralized contract service

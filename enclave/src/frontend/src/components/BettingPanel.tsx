@@ -13,17 +13,21 @@ import { Casino, Add, Remove } from '@mui/icons-material'
 import { useWalletStore } from '../services/wallet'
 import { useLotteryStore } from '../services/lottery'
 import { contractService } from '../services/contract'
-import api from '../services/api'
+import api, { getContractAddress } from '../services/api'
+import { isAddress } from 'ethers'
 import WalletConnection from './WalletConnection'
 
 const BettingPanel: React.FC = () => {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [unmetConditions, setUnmetConditions] = useState<string[]>([])
   const { isConnected, address } = useWalletStore()
-  const { currentDraw, fetchCurrentDraw } = useLotteryStore()
+  const { roundStatus, fetchRoundStatus } = useLotteryStore()
   const [isPlacingBet, setIsPlacingBet] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
+  const [notificationOpen, setNotificationOpen] = useState(false)
+  const [notificationMessage, setNotificationMessage] = useState('')
+  const [notificationSeverity, setNotificationSeverity] = useState<'success' | 'error' | 'info' | 'warning'>('info')
+  const [contractAddress, setContractAddress] = useState('')
+  const [contractAddressValid, setContractAddressValid] = useState(false)
   const [minBetAmount, setMinBetAmount] = useState('0.01')
   const [userBetAmount, setUserBetAmount] = useState(0)
   
@@ -48,10 +52,38 @@ const BettingPanel: React.FC = () => {
     }
   }, [isConnected])
 
+  // Preload configured contract address and validity (from backend API)
+  // Preload configured contract address and validity (from backend API)
+  useEffect(() => {
+    const loadContractAddress = async () => {
+      try {
+        const result = await getContractAddress()
+        const addr = result?.contract_address ?? ""
+        setContractAddress(addr)
+        console.log('Loaded contract address from API:', addr)
+
+        // set contract address for contractService
+        contractService.setContractAddress(addr)
+        
+        // Validate with ethers.isAddress and reject zero address
+        const zeroAddress = '0x0000000000000000000000000000000000000000'
+        const valid = isAddress(addr) && addr.toLowerCase() !== zeroAddress
+        console.log('Contract address validity:', valid)
+        setContractAddressValid(valid)
+      } catch (e) {
+        console.warn('Failed to load contract address from API:', e)
+        setContractAddress('')
+        setContractAddressValid(false)
+      }
+    }
+
+    loadContractAddress()
+  }, [])
+
   useEffect(() => {
     // Load user's bet amount for current draw
     const loadUserBetAmount = async () => {
-      if (currentDraw && address) {
+      if (roundStatus && address) {
         try {
           const userBetAmount = await contractService.getPlayerBet(address)
           setUserBetAmount(parseFloat(userBetAmount))
@@ -62,7 +94,7 @@ const BettingPanel: React.FC = () => {
     }
 
     loadUserBetAmount()
-  }, [currentDraw, address])
+  }, [roundStatus, address])
 
   const getTotalMultiplier = (): number => {
     return ones + tens * 10 + hundreds * 100
@@ -73,8 +105,8 @@ const BettingPanel: React.FC = () => {
   }
 
   const calculateWinRate = (): number => {
-    if (!currentDraw || !isConnected || userBetAmount === 0) return 0
-    const totalPot = parseFloat(currentDraw.total_pot?.toString() || '0')
+    if (!roundStatus || !isConnected || userBetAmount === 0) return 0
+    const totalPot = parseFloat(roundStatus.total_pot?.toString() || '0')
     const userTickets = userBetAmount / parseFloat(minBetAmount)
     const totalTickets = totalPot / parseFloat(minBetAmount)
     return totalTickets > 0 ? (userTickets / totalTickets) * 100 : 0
@@ -86,9 +118,9 @@ const BettingPanel: React.FC = () => {
     if (!isConnected || !address) {
       unmet.push('Wallet is not connected.')
     }
-    if (!currentDraw || currentDraw.status !== 'betting') {
-      unmet.push('Betting is not available right now.')
-    }
+    // if (!roundStatus || roundStatus.state_name !== 'betting') {
+    //   unmet.push('Betting is not available right now.')
+    // }
     if (getTotalMultiplier() <= 0) {
       unmet.push('Please select at least one bet multiplier.')
     }
@@ -99,22 +131,32 @@ const BettingPanel: React.FC = () => {
     if (betAmount <= 0) {
       unmet.push('Please set a valid bet amount.')
     }
+    // Check contract address validity as part of unmet conditions
+    if (!contractAddressValid) {
+      unmet.push('No valid Lottery contract address')
+    }
+
     if (unmet.length > 0) {
       setUnmetConditions(unmet)
       setDialogOpen(true)
       return false
     }
 
-    setIsPlacingBet(true)
-    setError('')
-    setSuccess('')
+  setIsPlacingBet(true)
+  // clear any existing notification
+  setNotificationOpen(false)
+  setNotificationMessage('')
+  setNotificationSeverity('info')
 
     try {
       // Place bet directly via smart contract
       const transactionHash = await contractService.placeBet(betAmount.toString())
 
-      // Optimistically update UI
-      setSuccess(`Bet placed successfully! Transaction: ${transactionHash.slice(0, 10)}...`)
+  // Optimistically update UI and show success dialog
+  const successMsg = `Bet placed successfully! Transaction: ${transactionHash.slice(0, 10)}...`
+  setNotificationMessage(successMsg)
+  setNotificationSeverity('success')
+  setNotificationOpen(true)
       setUserBetAmount(prev => prev + betAmount)
       
       // Notify backend for verification (optional)
@@ -122,15 +164,18 @@ const BettingPanel: React.FC = () => {
         await api.post('/api/verify-bet', {
           user_address: address,
           transaction_hash: transactionHash,
-          draw_id: currentDraw ? currentDraw.draw_id : ''
+          draw_id: roundStatus ? roundStatus.round_id : ''
         })
       } catch (err) {
         console.warn('Backend verification failed:', err)
       }
       // Refresh current draw
-      fetchCurrentDraw()
+      fetchRoundStatus()
     } catch (err: any) {
-      setError(err.message || 'Bet failed')
+      const msg = err?.message || 'Bet failed'
+      setNotificationMessage(msg)
+      setNotificationSeverity('error')
+      setNotificationOpen(true)
     } finally {
       setIsPlacingBet(false)
     }
@@ -295,18 +340,14 @@ const BettingPanel: React.FC = () => {
         </Box>
       </Box>
 
-      {/* Error and Success Messages */}
-      {error && (
-        <Alert severity="error" sx={{ fontSize: '0.8rem' }}>
-          {error}
-        </Alert>
-      )}
-
-      {success && (
-        <Alert severity="success" sx={{ fontSize: '0.8rem' }}>
-          {success}
-        </Alert>
-      )}
+      {/* Notification Dialog (replaces inline alerts) */}
+      <Dialog open={notificationOpen} onClose={() => setNotificationOpen(false)}>
+        <Box sx={{ p: 2, minWidth: 320 }}>
+          <Alert severity={notificationSeverity} onClose={() => setNotificationOpen(false)}>
+            {notificationMessage}
+          </Alert>
+        </Box>
+      </Dialog>
 
       {/* Unmet Conditions Dialog */}
       <Box>

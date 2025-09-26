@@ -217,48 +217,23 @@ class LotteryWebServer:
                 
                 if not current_round:
                     return {
-                        "round": None,
-                        "message": "No active round",
-                        "can_bet": False
+                        "round_id": 0
                     }
                 
-                # Get current time for calculations
-                current_time = int(datetime.now().timestamp())
-                
-                # Calculate time remaining for betting
-                betting_time_remaining = 0
-                if current_round.state == RoundState.BETTING and current_round.end_time:
-                    betting_time_remaining = max(0, current_round.end_time - current_time)
-                
-                # Calculate draw window information
-                draw_window_start = max(0, current_round.min_draw_time - current_time) if current_round.min_draw_time else 0
-                draw_window_end = max(0, current_round.max_draw_time - current_time) if current_round.max_draw_time else 0
-                
                 return {
-                    "round": {
-                        "round_id": current_round.round_id,
-                        "state": current_round.state.value,
-                        "state_name": current_round.state.name,
-                        "start_time": current_round.start_time,
-                        "end_time": current_round.end_time,
-                        "min_draw_time": current_round.min_draw_time,
-                        "max_draw_time": current_round.max_draw_time,
-                        "total_pot": current_round.total_pot,
-                        "participant_count": current_round.participant_count,
-                        "participants": current_round.participants,
-                        "winner": current_round.winner,
-                        "publisher_commission": current_round.publisher_commission,
-                        "sparsity_commission": current_round.sparsity_commission,
-                        "winner_prize": current_round.winner_prize
-                    },
-                    "can_bet": current_round.can_bet,
-                    "can_draw": current_round.can_draw,
-                    "is_finished": current_round.is_finished,
-                    "is_active": current_round.is_active,
-                    "betting_time_remaining": betting_time_remaining,
-                    "draw_window_start": draw_window_start,
-                    "draw_window_end": draw_window_end,
-                    "current_time": current_time
+                    "round_id": current_round.round_id,
+                    "state": current_round.state.value,
+                    "state_name": current_round.state.name,
+                    "start_time": current_round.start_time,
+                    "end_time": current_round.end_time,
+                    "min_draw_time": current_round.min_draw_time,
+                    "max_draw_time": current_round.max_draw_time,
+                    "total_pot": current_round.total_pot,
+                    "participant_count": current_round.participant_count,
+                    "winner": current_round.winner,
+                    "publisher_commission": current_round.publisher_commission,
+                    "sparsity_commission": current_round.sparsity_commission,
+                    "winner_prize": current_round.winner_prize
                 }
                 
             except Exception as e:
@@ -430,6 +405,22 @@ class LotteryWebServer:
                 logger.error(f"Error getting contract config: {e}")
                 raise HTTPException(status_code=500, detail="Failed to get contract configuration")
         
+        @self.app.get("/api/contract/address")
+        async def get_contract_address():
+            """Return only the configured lottery contract address."""
+            try:
+                if not self.blockchain_client:
+                    raise HTTPException(status_code=503, detail="Blockchain service unavailable")
+
+                return {
+                    "contract_address": self.blockchain_client.contract_address,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"Error getting contract address: {e}")
+                raise HTTPException(status_code=500, detail="Failed to get contract address")
         
         
         # =============== WEBSOCKET ENDPOINT ===============

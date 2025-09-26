@@ -1,4 +1,4 @@
-import { ethers } from 'ethers'
+import { ethers, isAddress } from 'ethers'
 import { useWalletStore } from './wallet'
 
 // Lottery contract ABI based on the actual Lottery.sol contract
@@ -119,6 +119,23 @@ class ContractService {
     this.contractAddress = import.meta.env.VITE_LOTTERY_CONTRACT_ADDRESS || ''
   }
 
+  /**
+   * Set or update the configured contract address used by this service.
+   * Validates the address and clears any cached contract instance so subsequent
+   * calls use the new address.
+   */
+  setContractAddress(address: string) {
+    if (!address || typeof address !== 'string') {
+      throw new Error('Invalid contract address')
+    }
+    if (!isAddress(address)) {
+      throw new Error('Invalid Ethereum address')
+    }
+    this.contractAddress = address
+    // Clear cached contract so it will be recreated with the new address
+    this.contract = null
+  }
+
   private getContract(contractAddress?: string): ethers.Contract {
     const { provider, signer } = useWalletStore.getState()
     
@@ -136,6 +153,7 @@ class ContractService {
     
     return new ethers.Contract(address, LOTTERY_ABI, signerOrProvider)
   }
+
 
   /**
    * Place a bet on the current lottery round

@@ -26,21 +26,8 @@ class RoundState(IntEnum):
 @dataclass
 class LotteryRound:
     """
-    Lottery round data structure matching the Solidity LotteryRound struct.
-    
-    This mirrors the contract's struct exactly:
-    - round_id: Unique identifier for the round (roundId)
-    - start_time: When betting started (startTime)
-    - end_time: When betting ends (endTime)
-    - min_draw_time: Minimum time for drawing (minDrawTime = endTime + minDrawDelayAfterEnd)
-    - max_draw_time: Maximum time for drawing (maxDrawTime = endTime + maxDrawDelayAfterEnd)
-    - total_pot: Total amount bet in wei
-    - participant_count: Number of participants
-    - winner: Winner address (if completed)
-    - publisher_commission: Commission for publisher in wei
-    - sparsity_commission: Commission for sparsity provider in wei
-    - winner_prize: Prize amount for winner in wei
-    - state: Current state of the round
+    Lottery round data structure matching the Solidity LotteryRound struct exactly.
+    Only the fields present in the contract struct are included.
     """
     round_id: int
     start_time: int
@@ -54,34 +41,6 @@ class LotteryRound:
     sparsity_commission: int
     winner_prize: int
     state: RoundState
-    
-    # Additional helper field for participants list (not in contract struct)
-    participants: List[str] = field(default_factory=list)
-    
-    def __post_init__(self):
-        """Ensure participants is a list"""
-        if self.participants is None:
-            self.participants = []
-    
-    @property
-    def is_active(self) -> bool:
-        """Check if round is in an active state"""
-        return self.state in [RoundState.WAITING, RoundState.BETTING, RoundState.DRAWING]
-    
-    @property
-    def can_bet(self) -> bool:
-        """Check if betting is currently allowed"""
-        return self.state == RoundState.BETTING
-    
-    @property
-    def can_draw(self) -> bool:
-        """Check if round can be drawn"""
-        return self.state == RoundState.DRAWING
-    
-    @property
-    def is_finished(self) -> bool:
-        """Check if round is finished (completed or refunded)"""
-        return self.state in [RoundState.COMPLETED, RoundState.REFUNDED]
 
 
 @dataclass 
