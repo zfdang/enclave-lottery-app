@@ -59,3 +59,31 @@ def load_sparsity_config() -> Dict[str, Any]:
         print(f"💡 Please check file permissions and format")
         print(f"   Error details: {e}")
         exit(1)
+
+
+def load_init_contract_config() -> Dict[str, Any]:
+    """Load init-contract configuration from init-contract.conf (optional)
+
+    This file is optional; when present it provides defaults for the
+    init-contract script (rpc_url, chain_id, publisher/sparsity/operator info).
+    """
+    config_file = Path(__file__).parent / "init-contract.conf"
+
+    if not config_file.exists():
+        # Not required; return empty dict to allow CLI overrides
+        return {}
+
+    try:
+        with open(config_file, 'r') as f:
+            config = json.load(f)
+        print(f"📝 Loaded init-contract configuration from {config_file}")
+        return config
+    except json.JSONDecodeError as e:
+        print(f"⚠️  Invalid JSON in init-contract configuration file {config_file}")
+        print(f"💡 Please check the JSON syntax in {config_file}")
+        print(f"   Error details: {e}")
+        return {}
+    except Exception as e:
+        print(f"⚠️  Error loading init-contract configuration from {config_file}: {e}")
+        print(f"💡 Please check file permissions and format")
+        return {}

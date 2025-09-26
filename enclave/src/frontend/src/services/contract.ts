@@ -1,7 +1,7 @@
 import { ethers, isAddress } from 'ethers'
 import { useWalletStore } from './wallet'
 
-// Lottery contract ABI based on the actual Lottery.sol contract
+// Lottery contract ABI based on the current Lottery.sol
 const LOTTERY_ABI = [
   // Events
   'event RoundCreated(uint256 indexed roundId, uint256 startTime, uint256 endTime, uint256 minDrawTime, uint256 maxDrawTime)',
@@ -13,55 +13,44 @@ const LOTTERY_ABI = [
   'event MinBetAmountUpdated(uint256 oldAmount, uint256 newAmount)',
   'event SparsitySet(address indexed sparsity)',
   'event OperatorUpdated(address indexed oldOperator, address indexed newOperator)',
-  
-  // Public state variables (automatically generate getters)
-  'function publisher() external view returns (address)',
-  'function sparsity() external view returns (address)',
-  'function operator() external view returns (address)',
-  'function publisherCommissionRate() external view returns (uint256)',
-  'function sparsityCommissionRate() external view returns (uint256)',
-  'function minBetAmount() external view returns (uint256)',
-  'function bettingDuration() external view returns (uint256)',
-  'function minDrawDelayAfterEnd() external view returns (uint256)',
-  'function maxDrawDelayAfterEnd() external view returns (uint256)',
-  'function minEndTimeExtension() external view returns (uint256)',
-  'function minParticipants() external view returns (uint256)',
-  
-  // Struct getter
-  'function round() external view returns (uint256 roundId, uint256 startTime, uint256 endTime, uint256 minDrawTime, uint256 maxDrawTime, uint256 totalPot, uint256 participantCount, address winner, uint256 publisherCommission, uint256 sparsityCommission, uint256 winnerPrize, uint8 state)',
-  
-  // Mappings and arrays
-  'function bets(address player) external view returns (uint256)',
-  'function participants(uint256 index) external view returns (address)',
-  
+
+  // Public state variables
+  'function publisher() view returns (address)',
+  'function sparsity() view returns (address)',
+  'function operator() view returns (address)',
+  'function publisherCommissionRate() view returns (uint256)',
+  'function sparsityCommissionRate() view returns (uint256)',
+  'function minBetAmount() view returns (uint256)',
+  'function bettingDuration() view returns (uint256)',
+  'function minDrawDelayAfterEnd() view returns (uint256)',
+  'function maxDrawDelayAfterEnd() view returns (uint256)',
+  'function minEndTimeExtension() view returns (uint256)',
+  'function minParticipants() view returns (uint256)',
+
+  // Round and helpers
+  'function round() view returns (tuple(uint256 roundId, uint256 startTime, uint256 endTime, uint256 minDrawTime, uint256 maxDrawTime, uint256 totalPot, uint256 participantCount, address winner, uint256 publisherCommission, uint256 sparsityCommission, uint256 winnerPrize, uint8 state))',
+  'function getRound() view returns (tuple(uint256 roundId, uint256 startTime, uint256 endTime, uint256 minDrawTime, uint256 maxDrawTime, uint256 totalPot, uint256 participantCount, address winner, uint256 publisherCommission, uint256 sparsityCommission, uint256 winnerPrize, uint8 state))',
+
+  // Participants and bets
+  'function getParticipants() view returns (address[])',
+  'function getBetAmount(address player) view returns (uint256)',
+  'function bets(address) view returns (uint256)',
+  'function participants(uint256) view returns (address)',
+
   // Player functions
-  'function placeBet() external payable',
-  
-  // Publisher functions
-  'function setSparsity(address _sparsity) external',
-  
-  // Sparsity functions
-  'function updateOperator(address _operator) external',
-  
-  // Operator functions
-  'function updateMinBetAmount(uint256 _newMinBetAmount) external',
-  'function startNewRound() external',
-  'function extendBettingTime(uint256 _newEndTime) external',
-  'function refundRound() external',
-  'function drawWinner() external',
-  
+  'function placeBet() payable',
+
+  // Publisher/Sparsity/Operator functions
+  'function setSparsity(address)',
+  'function updateOperator(address)',
+  'function updateMinBetAmount(uint256)',
+  'function startNewRound()',
+  'function extendBettingTime(uint256)',
+  'function refundRound()',
+  'function drawWinner()',
+
   // Public functions
-  'function refundExpiredRound() external',
-  
-  // View functions
-  'function getRound() external view returns (tuple(uint256 roundId, uint256 startTime, uint256 endTime, uint256 minDrawTime, uint256 maxDrawTime, uint256 totalPot, uint256 participantCount, address winner, uint256 publisherCommission, uint256 sparsityCommission, uint256 winnerPrize, uint8 state))',
-  'function getState() external view returns (uint8)',
-  'function getParticipants() external view returns (address[] memory)',
-  'function getPlayerBet(address player) external view returns (uint256)',
-  'function canDraw() external view returns (bool)',
-  'function canRefund() external view returns (bool)',
-  'function getRoundTiming() external view returns (uint256 startTime, uint256 endTime, uint256 minDrawTime, uint256 maxDrawTime, uint256 currentTime)',
-  'function getConfig() external view returns (address publisherAddr, address sparsityAddr, address operatorAddr, uint256 publisherCommission, uint256 sparsityCommission, uint256 minBet, uint256 bettingDur, uint256 minDrawDelay, uint256 maxDrawDelay, uint256 minEndTimeExt, uint256 minPart)'
+  'function refundExpiredRound()'
 ]
 
 // RoundState enum mapping (uppercase to match contract)
@@ -231,8 +220,8 @@ class ContractService {
     const contract = this.getContract()
 
     try {
-      const state = await contract.getState()
-      return state as RoundState
+      const r = await contract.getRound()
+      return Number(r.state) as RoundState
     } catch (error: any) {
       throw new Error('Failed to get lottery state: ' + (error.message || 'Unknown error'))
     }
@@ -263,7 +252,8 @@ class ContractService {
     }
 
     try {
-      const betAmount = await contract.getPlayerBet(address)
+      // Lottery.sol exposes getBetAmount(address) for player bets
+      const betAmount = await contract.getBetAmount(address)
       return ethers.formatEther(betAmount)
     } catch (error: any) {
       throw new Error('Failed to get player bet: ' + (error.message || 'Unknown error'))
@@ -293,10 +283,21 @@ class ContractService {
    * Check if current round can be drawn
    */
   async canDraw(): Promise<boolean> {
+    // Determine draw eligibility from on-chain round state and timing
     const contract = this.getContract()
-
     try {
-      return await contract.canDraw()
+      const r = await contract.getRound()
+      const provider = useWalletStore.getState().provider
+      if (!provider) throw new Error('Provider not available')
+      const block = await provider.getBlock('latest')
+      if (!block || block.timestamp === undefined) throw new Error('Failed to fetch block timestamp')
+      const now = Number(block.timestamp)
+      const minDraw = Number(r.minDrawTime)
+      const maxDraw = Number(r.maxDrawTime)
+      const hasPot = Number(r.totalPot) > 0
+      const state = Number(r.state)
+      // canDraw if within minDraw..maxDraw and pot > 0 and state is BETTING
+      return state === RoundState.BETTING && now >= minDraw && now <= maxDraw && hasPot
     } catch (error: any) {
       throw new Error('Failed to check draw status: ' + (error.message || 'Unknown error'))
     }
@@ -306,10 +307,19 @@ class ContractService {
    * Check if current round can be refunded
    */
   async canRefund(): Promise<boolean> {
+    // Determine refund eligibility based on round timing and state
     const contract = this.getContract()
-
     try {
-      return await contract.canRefund()
+      const r = await contract.getRound()
+      const provider = useWalletStore.getState().provider
+      if (!provider) throw new Error('Provider not available')
+  const block = await provider.getBlock('latest')
+  if (!block || block.timestamp === undefined) throw new Error('Failed to fetch block timestamp')
+  const now = Number(block.timestamp)
+  const maxDraw = Number(r.maxDrawTime)
+  const state = Number(r.state)
+  // canRefund if now > maxDraw and state is BETTING
+  return state === RoundState.BETTING && now > maxDraw
     } catch (error: any) {
       throw new Error('Failed to check refund status: ' + (error.message || 'Unknown error'))
     }
@@ -322,13 +332,18 @@ class ContractService {
     const contract = this.getContract()
 
     try {
-      const result = await contract.getRoundTiming()
+      const r = await contract.getRound()
+      const provider = useWalletStore.getState().provider
+      if (!provider) throw new Error('Provider not available')
+  const block = await provider.getBlock('latest')
+  if (!block || block.timestamp === undefined) throw new Error('Failed to fetch block timestamp')
+  const now = Number(block.timestamp)
       return {
-        startTime: Number(result.startTime),
-        endTime: Number(result.endTime),
-        minDrawTime: Number(result.minDrawTime),
-        maxDrawTime: Number(result.maxDrawTime),
-        currentTime: Number(result.currentTime)
+        startTime: Number(r.startTime),
+        endTime: Number(r.endTime),
+        minDrawTime: Number(r.minDrawTime),
+        maxDrawTime: Number(r.maxDrawTime),
+        currentTime: now
       }
     } catch (error: any) {
       throw new Error('Failed to get round timing: ' + (error.message || 'Unknown error'))
