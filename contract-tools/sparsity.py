@@ -18,6 +18,7 @@ from common import (
     display_contracts_table,
     validate_ethereum_address
 )
+from common import display_contract_details
 
 
 class SparsityManager(LotteryContractBase):
@@ -332,21 +333,11 @@ def main():
                 for i, info in enumerate(sparsity_contracts, 1):
                     deployment = info['deployment']
                     status = info['status']
-                    
-                    print(f"\n{i}. Contract: {deployment['contract_address']}")
-                    print(f"   📁 File: {info['file_path']}")
-                    print(f"   📍 Publisher: {status['publisher']}")
-                    print(f"   👤 Operator: {status['operator'] or 'Not set'}")
-                    print(f"   💰 Your Commission: {status['sparsity_commission_rate'] / 100}%")
-                    print(f"   💸 Min Bet: {status['min_bet_eth']} ETH")
-                    
-                    if status['current_round']:
-                        round_id, start_time, end_time, draw_time, total_pot, participant_count = status['current_round']
-                        print(f"   🎯 Current Round: #{round_id}")
-                        print(f"   👥 Participants: {participant_count}")
-                        print(f"   💎 Total Pot: {manager.w3.from_wei(total_pot, 'ether')} ETH")
-                    else:
-                        print(f"   🎯 Current Round: No active round")
+                    print(f"\n{i}.")
+                    try:
+                        display_contract_details(deployment, status, manager.w3)
+                    except Exception as e:
+                        print(f"⚠️  Could not display details for {deployment.get('contract_address')}: {e}")
             
         elif args.set_operator or args.update_operator:
             # Operator setting/updating mode

@@ -155,9 +155,21 @@ contract Lottery {
         minEndTimeExtension = 3 minutes;
         minParticipants = 2;
 
-        // start with roundId = 0 and WAITING state
-        round.roundId = 0;
-        round.state = RoundState.WAITING;
+        // start with roundId = 1 and WAITING state
+        round = LotteryRound({
+            roundId: 1,
+            startTime: 0,
+            endTime: 0,
+            minDrawTime: 0,
+            maxDrawTime: 0,
+            totalPot: 0,
+            participantCount: 0,
+            winner: address(0),
+            publisherCommission: 0,
+            sparsityCommission: 0,
+            winnerPrize: 0,
+            state: RoundState.WAITING
+        });
     }
 
     // =============== PUBLISHER FUNCTIONS ===============

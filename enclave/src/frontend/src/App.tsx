@@ -30,6 +30,7 @@ import { useWalletStore } from './services/wallet'
 import { useLotteryStore } from './services/lottery'
 import { getContractAddress, getHealth } from './services/api'
 import { contractService } from './services/contract'
+import { log } from 'console'
 
 function App() {
   const [backendOnline, setBackendOnline] = useState(false)
@@ -239,6 +240,8 @@ function App() {
       try {
         const round = await contractService.getRound()
 
+        console.log('getRound result:', round)
+
         const normalizedRound = round ? {
           roundId: Number(round.roundId),
           startTime: Number(round.startTime),
@@ -253,6 +256,7 @@ function App() {
         setRoundInfo(normalizedRound)
       } catch (err) {
         // leave roundInfo null but keep config
+        console.warn('Failed to fetch round info:', err)
         setRoundInfo(null)
       }
     } catch (e: any) {
@@ -606,6 +610,7 @@ function App() {
                     <Typography variant="body2"><strong>Draw Time:</strong> {new Date(roundInfo.minDrawTime * 1000).toLocaleString()} ~ {new Date(roundInfo.maxDrawTime  * 1000).toLocaleString()}</Typography>
                     <Typography variant="body2"><strong>Total Pot (ETH):</strong> {roundInfo.totalPotEth}</Typography>
                     <Typography variant="body2"><strong>Participants:</strong> {roundInfo.participantCount}</Typography>
+                    <Typography variant="body2"><strong>State:</strong> {roundStateLabel(roundInfo.state)}</Typography>
                   </>
                 ) : null}
                 <>

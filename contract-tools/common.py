@@ -132,16 +132,23 @@ class LotteryContractBase:
             # Get current round info (use getRound which returns the LotteryRound struct)
             try:
                 current_round_raw = contract.functions.getRound().call()
-                # current_round_raw layout: [roundId, startTime, endTime, minDrawTime, maxDrawTime, totalPot, participantCount, winner, pubComm, sparComm, winnerPrize, state]
-                if current_round_raw and len(current_round_raw) >= 7 and current_round_raw[0] > 0:
-                    # Normalize to the 6-tuple expected by display code: (round_id, start_time, end_time, draw_time, total_pot, participant_count)
+                # current_round_raw layout follows LotteryRound struct in the contract:
+                # [roundId, startTime, endTime, minDrawTime, maxDrawTime, totalPot, participantCount, winner, publisherCommission, sparsityCommission, winnerPrize, state]
+                if current_round_raw and len(current_round_raw) >= 12 and current_round_raw[0] > 0:
+                    # Normalize to full tuple matching struct order so display code can access all fields
                     current_round = (
                         current_round_raw[0],  # roundId
                         current_round_raw[1],  # startTime
                         current_round_raw[2],  # endTime
-                        current_round_raw[3],  # minDrawTime (draw_time)
+                        current_round_raw[3],  # minDrawTime
+                        current_round_raw[4],  # maxDrawTime
                         current_round_raw[5],  # totalPot
-                        current_round_raw[6]   # participantCount
+                        current_round_raw[6],  # participantCount
+                        current_round_raw[7],  # winner
+                        current_round_raw[8],  # publisherCommission (wei)
+                        current_round_raw[9],  # sparsityCommission (wei)
+                        current_round_raw[10], # winnerPrize (wei)
+                        int(current_round_raw[11]) # state (enum)
                     )
                 else:
                     current_round = None
@@ -348,8 +355,9 @@ def display_contracts_table(contracts_info: List[Dict[str, Any]], w3: Web3, role
 
             # Current round info (normalized to tuple of 6)
             curr = status.get('current_round')
-            if curr and isinstance(curr, (list, tuple)) and len(curr) >= 6:
-                round_id, start_time, end_time, draw_time, total_pot, participant_count = curr[:6]
+            if curr and isinstance(curr, (list, tuple)) and len(curr) >= 12:
+                (round_id, start_time, end_time, min_draw_time, max_draw_time, total_pot, participant_count,
+                 winner, pub_comm_wei, spar_comm_wei, winner_prize_wei, state) = curr[:12]
                 print(f"   🎯 Current Round: #{round_id}")
                 print(f"   👥 Participants: {participant_count}")
                 try:
@@ -357,7 +365,136 @@ def display_contracts_table(contracts_info: List[Dict[str, Any]], w3: Web3, role
                 except Exception:
                     pot_eth = total_pot
                 print(f"   💎 Total Pot: {pot_eth} ETH")
+                print(f"   🕒 Min Draw Time: {min_draw_time}")
+                print(f"   🕒 Max Draw Time: {max_draw_time}")
+                print(f"   🏆 Winner: {winner or 'None'}")
+                try:
+                    pub_comm_eth = w3.from_wei(pub_comm_wei, 'ether') if pub_comm_wei is not None else '0'
+                except Exception:
+                    pub_comm_eth = pub_comm_wei
+                try:
+                    spar_comm_eth = w3.from_wei(spar_comm_wei, 'ether') if spar_comm_wei is not None else '0'
+                except Exception:
+                    spar_comm_eth = spar_comm_wei
+                try:
+                    winner_prize_eth = w3.from_wei(winner_prize_wei, 'ether') if winner_prize_wei is not None else '0'
+                except Exception:
+                    winner_prize_eth = winner_prize_wei
+                print(f"   💸 Publisher Commission (wei): {pub_comm_wei} ({pub_comm_eth} ETH)")
+                print(f"   💸 Sparsity Commission (wei): {spar_comm_wei} ({spar_comm_eth} ETH)")
+                print(f"   🏅 Winner Prize (wei): {winner_prize_wei} ({winner_prize_eth} ETH)")
+                state_label = {
+                    0: 'WAITING',
+                    1: 'BETTING',
+                    2: 'DRAWING',
+                    3: 'COMPLETED',
+                    4: 'REFUNDED'
+                }.get(int(state), f'UNKNOWN({state})')
+                print(f"   🔁 State: {state_label}")
             else:
                 print(f"   🎯 Current Round: No active round")
         else:
             print(f"   ❌ Status: Inaccessible ({status['error']})")
+
+
+def display_contract_details(deployment: Dict[str, Any], status: Dict[str, Any], w3: Web3):
+    """Display full contract configuration and current round information.
+
+    deployment: the saved deployment record (from deployment file)
+    status: the live status returned by get_contract_status()
+    w3: Web3 instance for wei/ether conversions
+    """
+    print("\n📋 Contract Configuration & Round")
+    print("-" * 50)
+
+    contract_address = deployment.get('contract_address')
+    deployer = deployment.get('deployer')
+    print(f"Contract: {contract_address}")
+    if deployer:
+        print(f"Deployer: {deployer}")
+
+    if not status or not status.get('is_accessible'):
+        print(f"   ❌ Status: Inaccessible ({status.get('error') if status else 'unknown'})")
+        return
+
+    # Config fields
+    print(f"   📍 Publisher: {status.get('publisher')}")
+    print(f"   🔧 Sparsity: {status.get('sparsity') or 'Not set'}")
+    print(f"   👤 Operator: {status.get('operator') or 'Not set'}")
+
+    pub_comm = status.get('publisher_commission_rate')
+    spar_comm = status.get('sparsity_commission_rate')
+    if pub_comm is not None:
+        print(f"   💰 Publisher Commission: {pub_comm / 100}%")
+    if spar_comm is not None:
+        print(f"   💰 Sparsity Commission: {spar_comm / 100}%")
+
+    min_bet_eth = status.get('min_bet_eth')
+    if min_bet_eth is not None:
+        print(f"   💸 Min Bet: {min_bet_eth} ETH")
+    else:
+        print(f"   💸 Min Bet: Unknown")
+
+    betting_duration = status.get('betting_duration')
+    if betting_duration is not None:
+        print(f"   ⏱️  Betting Duration: {betting_duration} seconds ({betting_duration // 60} minutes)")
+
+    min_draw = status.get('draw_delay')
+    max_draw = status.get('max_draw_delay')
+    if min_draw is not None and max_draw is not None:
+        print(f"   ⏳ Draw Delay: {min_draw} - {max_draw} seconds")
+    elif min_draw is not None:
+        print(f"   ⏳ Draw Delay: {min_draw} seconds")
+
+    min_end_ext = status.get('min_end_time_ext')
+    if min_end_ext is not None:
+        print(f"   🔁 Min End Time Extension: {min_end_ext} seconds")
+
+    min_part = status.get('min_participants')
+    if min_part is not None:
+        print(f"   👥 Min Participants: {min_part}")
+
+    # Current round
+    curr = status.get('current_round')
+    if curr and isinstance(curr, (list, tuple)) and len(curr) >= 12:
+        (round_id, start_time, end_time, min_draw_time, max_draw_time, total_pot, participant_count,
+         winner, pub_comm_wei, spar_comm_wei, winner_prize_wei, state) = curr[:12]
+        print(f"\n   🎯 Current Round: #{round_id}")
+        print(f"   🕒 Start Time: {start_time}")
+        print(f"   🕒 End Time: {end_time}")
+        print(f"   ⏲️  Min Draw Time: {min_draw_time}")
+        print(f"   ⏲️  Max Draw Time: {max_draw_time}")
+        try:
+            pot_eth = w3.from_wei(total_pot, 'ether') if total_pot is not None else '0'
+        except Exception:
+            pot_eth = total_pot
+        print(f"   💎 Total Pot: {pot_eth} ETH")
+        print(f"   👥 Participants: {participant_count}")
+        print(f"   🏆 Winner: {winner or 'None'}")
+        try:
+            pub_comm_eth = w3.from_wei(pub_comm_wei, 'ether') if pub_comm_wei is not None else '0'
+        except Exception:
+            pub_comm_eth = pub_comm_wei
+        try:
+            spar_comm_eth = w3.from_wei(spar_comm_wei, 'ether') if spar_comm_wei is not None else '0'
+        except Exception:
+            spar_comm_eth = spar_comm_wei
+        try:
+            winner_prize_eth = w3.from_wei(winner_prize_wei, 'ether') if winner_prize_wei is not None else '0'
+        except Exception:
+            winner_prize_eth = winner_prize_wei
+        print(f"   💸 Publisher Commission (wei): {pub_comm_wei} ({pub_comm_eth} ETH)")
+        print(f"   💸 Sparsity Commission (wei): {spar_comm_wei} ({spar_comm_eth} ETH)")
+        print(f"   🏅 Winner Prize (wei): {winner_prize_wei} ({winner_prize_eth} ETH)")
+        state_label = {
+            0: 'WAITING',
+            1: 'BETTING',
+            2: 'DRAWING',
+            3: 'COMPLETED',
+            4: 'REFUNDED'
+        }.get(int(state), f'UNKNOWN({state})')
+        print(f"   🔁 State: {state_label}")
+    else:
+        print(f"\n   🎯 Current Round: No active round")
+
+    print("-" * 50)

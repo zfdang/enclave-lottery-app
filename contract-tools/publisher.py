@@ -16,7 +16,8 @@ from common import (
     LotteryContractBase, 
     create_argument_parser, 
     display_contracts_table,
-    validate_ethereum_address
+    validate_ethereum_address,
+    display_contract_details,
 )
 
 
@@ -88,51 +89,53 @@ class PublisherManager(LotteryContractBase):
         abi = contract_info['abi']
         contract = self.get_contract_instance(contract_address, abi)
 
-        # Get configuration from contract
-        config = contract.functions.getConfig().call()
-        publisher_addr, sparsity_addr, operator_addr, publisher_commission, sparsity_commission, min_bet, betting_dur, min_draw_delay, max_draw_delay, min_end_time_ext, min_part = config
-
-        # Verify parameters
-        # assert publisher_addr.lower() == self.account.address.lower(), "Publisher address mismatch"
-
-        # Sparsity and operator should not be set during deployment
-        # assert sparsity_addr == "0x0000000000000000000000000000000000000000", "Sparsity should not be set during deployment"
-        # assert operator_addr == "0x0000000000000000000000000000000000000000", "Operator should not be set during deployment"
-
-        # assert publisher_commission == expected_params['publisher_commission_rate'], "Publisher commission rate mismatch"
-        # assert sparsity_commission == expected_params['sparsity_commission_rate'], "Sparsity commission rate mismatch"
-
-        print("✅ Contract configuration verified")
-
-        # Display configuration
-        print("\n📋 Contract Configuration:")
-        print(f"   Publisher: {publisher_addr}")
-        print(f"   Sparsity: {sparsity_addr}")
-        print(f"   Operator: {operator_addr}")
-        print(f"   Publisher Commission: {publisher_commission / 100}%")
-        print(f"   Sparsity Commission: {sparsity_commission / 100}%")
-        print(f"   Min Bet Amount: {self.w3.from_wei(min_bet, 'ether')} ETH (operator-managed)")
-        print(f"   Betting Duration: {betting_dur} seconds ({betting_dur // 60} minutes) (operator-managed)")
-        print(f"   Min Draw Delay: {min_draw_delay} seconds ({min_draw_delay // 60} minutes)")
-        print(f"   Max Draw Delay: {max_draw_delay} seconds ({max_draw_delay // 60} minutes)")
-        print(f"   Min End Time Extension: {min_end_time_ext} seconds ({min_end_time_ext // 60} minutes)")
-        print(f"   Min Participants: {min_part}")
+        # Use the shared helper to fetch a normalized status dict
+        try:
+            status = self.get_contract_status(contract_address, abi)
+            # Pass the deployment record (contract_info) and normalized status to the display helper
+            display_contract_details(contract_info, status, self.w3)
+        except Exception as e:
+            print(f"⚠️  Warning: Could not display contract details: {e}")
 
     def save_deployment(self, contract_info: Dict[str, Any], output_path: str):
         """Save deployment information to file"""
-        timestamp = int(time.time())
-        filename = f"deployment_{timestamp}.json"
-        
-        # Ensure the output directory exists
-        output_dir = Path(output_path).parent if Path(output_path).suffix else Path(output_path)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        filepath = output_dir / filename
-        
-        with open(filepath, 'w') as f:
-            json.dump(contract_info, f, indent=2)
-        
-        print(f"📝 Deployment saved to: {filepath}")
+        """
+        Save deployment information to file.
+
+        Behavior:
+        - If `output_path` is a path that ends with `.json` it will be used as the exact
+          file path (will be created/overwritten).
+        - If `output_path` is a directory (no suffix) a deterministic filename based on
+          the contract address will be used: `deployment_<contract_address>.json` and
+          existing files will be overwritten. This prevents creating many timestamped
+          files when repeatedly deploying/updating the same contract.
+        """
+        # Resolve output path
+        out_path = Path(output_path)
+
+        # If caller provided a JSON filename, use it directly
+        if out_path.suffix == '.json':
+            out_dir = out_path.parent
+            out_dir.mkdir(parents=True, exist_ok=True)
+            filepath = out_path
+        else:
+            # Treat output_path as a directory; ensure it exists
+            out_dir = out_path if out_path.exists() or not out_path.suffix else out_path.parent
+            out_dir.mkdir(parents=True, exist_ok=True)
+            # Use contract address to create deterministic filename
+            contract_address = contract_info.get('contract_address', '')
+            safe_addr = contract_address.lower().replace('0x', '') if contract_address else str(int(time.time()))
+            filename = f"deployment_{safe_addr}.json"
+            filepath = out_dir / filename
+
+        # Write (overwrite) the deployment file
+        try:
+            with open(filepath, 'w') as f:
+                json.dump(contract_info, f, indent=2)
+            print(f"📝 Deployment saved to: {filepath}")
+        except Exception as e:
+            print(f"⚠️  Warning: Could not save deployment file: {e}")
+
         return str(filepath)
 
     def set_sparsity_interactive(self, contracts_info: List[Dict[str, Any]]):

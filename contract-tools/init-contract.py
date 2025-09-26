@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from publisher import PublisherManager
 from sparsity import SparsityManager
-from common import validate_ethereum_address, create_argument_parser
+from common import validate_ethereum_address, create_argument_parser, display_contract_details
 from config import load_publisher_config, load_sparsity_config, load_init_contract_config
 import argparse
 
@@ -132,16 +132,13 @@ def main():
     else:
         print('Skipping operator set; please run sparsity.py --set-operator later using sparsity account')
 
-    # Show contract details
+    # Show contract details (use common display helper)
     print('\nFetching contract details...')
-    pub.verify_deployment(info, expected)
-    # Load contract instance and print getConfig
-    contract = pub.get_contract_instance(info['contract_address'], info['abi'])
-    cfg = contract.functions.getConfig().call()
-    # print contract address
-    print('\nContract address:', info['contract_address'])
-    print('Contract getConfig():')
-    print(cfg)
+    try:
+        status = pub.get_contract_status(info['contract_address'], info['abi'])
+        display_contract_details(info, status, pub.w3)
+    except Exception as e:
+        print(f"⚠️  Could not fetch/display contract details: {e}")
 
     print('\nInitialization complete')
 
