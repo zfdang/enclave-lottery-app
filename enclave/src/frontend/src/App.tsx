@@ -135,10 +135,37 @@ function App() {
     maxDrawDelay: string
     minEndTimeExt: string
     minPart: string
-    sparsityIsSet: boolean
+  }>(null)
+  // Round information fetched from chain
+  const [roundInfo, setRoundInfo] = useState<null | {
+    roundId: number
+    startTime: number
+    endTime: number
+    minDrawTime: number
+    maxDrawTime: number
+    totalPotEth: string
+    participantCount: number
+    state: number
   }>(null)
 
   const formatAddress = (address: string): string => `${address.slice(0, 6)}...${address.slice(-4)}`
+
+  const roundStateLabel = (state: number) => {
+    switch (state) {
+      case 0:
+        return 'WAITING'
+      case 1:
+        return 'BETTING'
+      case 2:
+        return 'DRAWING'
+      case 3:
+        return 'COMPLETED'
+      case 4:
+        return 'REFUNDED'
+      default:
+        return `UNKNOWN(${state})`
+    }
+  }
 
   const handleAttestationClick = async () => {
     setAttestationOpen(true);
@@ -187,23 +214,47 @@ function App() {
   }, [])
 
   // Fetch contract config using centralized contract service
-  const fetchContractConfig = async () => {
+  const fetchContractDetails = async () => {
     if (!contractAddress) return
     setConfigLoading(true)
     setConfigError(null)
     setContractConfig(null)
+    setRoundInfo(null)
     
     try {
       const url = rpcUrl
       console.log("RPC URL:", url)
       
+      // Fetch contract configuration first (RPC-based helper)
       const normalized = await contractService.getContractConfig(
         contractAddress,
         url,
         chainId ? Number(chainId) : undefined
       )
-      
+
+      // Update UI with contract config immediately
       setContractConfig(normalized)
+
+      // Now attempt to fetch round info via contractService (RPC-based helper)
+      try {
+        const round = await contractService.getRound()
+
+        const normalizedRound = round ? {
+          roundId: Number(round.roundId),
+          startTime: Number(round.startTime),
+          endTime: Number(round.endTime),
+          minDrawTime: Number(round.minDrawTime),
+          maxDrawTime: Number(round.maxDrawTime),
+          totalPotEth: String(round.totalPot),
+          participantCount: Number(round.participantCount),
+          state: Number(round.state)
+        } : null
+
+        setRoundInfo(normalizedRound)
+      } catch (err) {
+        // leave roundInfo null but keep config
+        setRoundInfo(null)
+      }
     } catch (e: any) {
       setConfigError(e.message || 'Failed to load contract config')
     } finally {
@@ -385,7 +436,7 @@ function App() {
                       cursor: 'pointer',
                       transition: 'all 0.2s',
                     }}
-                    onClick={() => { setConfigOpen(true); fetchContractConfig(); }}
+                    onClick={() => { setConfigOpen(true); fetchContractDetails(); }}
                   />
                 ) : null}
               </Box>
@@ -515,12 +566,12 @@ function App() {
         <DialogTitle>
           <Box display="flex" alignItems="center">
             <VerifiedUser sx={{ mr: 1 }} />
-            Lottery Contract Configuration
+            Lottery Contract Information
           </Box>
         </DialogTitle>
         <DialogContent>
           {configLoading ? (
-            <Typography>Loading contract configuration...</Typography>
+            <Typography>Loading contract information from blockchain...</Typography>
           ) : configError ? (
             <Alert severity="error">{configError}</Alert>
           ) : contractConfig ? (
@@ -544,21 +595,32 @@ function App() {
                 </Typography>
               </Box>
               <Typography variant="body2" color="text.secondary" paragraph>
-                The following configuration is fetched directly from the contract on-chain. You can verify these values independently.
+                The following infromation is fetched directly from the contract on-chain. You can verify these values independently.
               </Typography>
               <Box sx={{ display: 'grid', gridTemplateColumns: '1fr', gap: 1 }}>
-                <Typography variant="body2"><strong>Publisher:</strong> {contractConfig.publisherAddr}</Typography>
-                <Typography variant="body2"><strong>Sparsity:</strong> {contractConfig.sparsityAddr}</Typography>
-                <Typography variant="body2"><strong>Operator:</strong> {contractConfig.operatorAddr}</Typography>
-                <Typography variant="body2"><strong>Publisher Commission:</strong> {contractConfig.publisherCommission}</Typography>
-                <Typography variant="body2"><strong>Sparsity Commission:</strong> {contractConfig.sparsityCommission}</Typography>
-                <Typography variant="body2"><strong>Min Bet (wei):</strong> {contractConfig.minBet}</Typography>
-                <Typography variant="body2"><strong>Betting Duration (s):</strong> {contractConfig.bettingDur}</Typography>
-                <Typography variant="body2"><strong>Min Draw Delay (s):</strong> {contractConfig.minDrawDelay}</Typography>
-                <Typography variant="body2"><strong>Max Draw Delay (s):</strong> {contractConfig.maxDrawDelay}</Typography>
-                <Typography variant="body2"><strong>Min End Time Extension (s):</strong> {contractConfig.minEndTimeExt}</Typography>
-                <Typography variant="body2"><strong>Min Participants:</strong> {contractConfig.minPart}</Typography>
-                <Typography variant="body2"><strong>Sparsity Set:</strong> {contractConfig.sparsityIsSet ? 'Yes' : 'No'}</Typography>
+                {roundInfo ? (
+                  <>
+                    <Typography variant="h6" sx={{ mt: 2 }}>Current Round</Typography>
+                    <Typography variant="body2"><strong>Round ID:</strong> {roundInfo.roundId}</Typography>
+                    <Typography variant="body2"><strong>Betting Time:</strong> {new Date(roundInfo.startTime * 1000).toLocaleString()} ~ {new Date(roundInfo.endTime * 1000).toLocaleString()}</Typography>
+                    <Typography variant="body2"><strong>Draw Time:</strong> {new Date(roundInfo.minDrawTime * 1000).toLocaleString()} ~ {new Date(roundInfo.maxDrawTime  * 1000).toLocaleString()}</Typography>
+                    <Typography variant="body2"><strong>Total Pot (ETH):</strong> {roundInfo.totalPotEth}</Typography>
+                    <Typography variant="body2"><strong>Participants:</strong> {roundInfo.participantCount}</Typography>
+                  </>
+                ) : null}
+                <>
+                  <Typography variant="h6" sx={{ mt: 2 }}>Overall Config</Typography>
+                  <Typography variant="body2"><strong>Publisher:</strong> {contractConfig.publisherAddr}</Typography>
+                  <Typography variant="body2"><strong>Sparsity:</strong> {contractConfig.sparsityAddr}</Typography>
+                  <Typography variant="body2"><strong>Operator:</strong> {contractConfig.operatorAddr}</Typography>
+                  <Typography variant="body2"><strong>Publisher Commission:</strong> {contractConfig.publisherCommission}</Typography>
+                  <Typography variant="body2"><strong>Sparsity Commission:</strong> {contractConfig.sparsityCommission}</Typography>
+                  <Typography variant="body2"><strong>Min Bet (wei):</strong> {contractConfig.minBet}</Typography>
+                  <Typography variant="body2"><strong>Betting Duration (s):</strong> {contractConfig.bettingDur}</Typography>
+                  <Typography variant="body2"><strong>Min Draw Delay (s):</strong> {contractConfig.minDrawDelay}</Typography>
+                  <Typography variant="body2"><strong>Max Draw Delay (s):</strong> {contractConfig.maxDrawDelay}</Typography>
+                  <Typography variant="body2"><strong>Min Participants:</strong> {contractConfig.minPart}</Typography>
+                </>
               </Box>
             </>
           ) : (
