@@ -111,7 +111,7 @@ const UserList: React.FC = () => {
       )}
 
       {loading && count === 0 ? (
-        <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)', textAlign: 'center' }}>Loading...</Typography>
+        <></>
       ) : count === 0 ? (
         <Box 
           display="flex" 
