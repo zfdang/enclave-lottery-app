@@ -138,7 +138,9 @@ def main():
     # Load contract instance and print getConfig
     contract = pub.get_contract_instance(info['contract_address'], info['abi'])
     cfg = contract.functions.getConfig().call()
-    print('\nContract getConfig():')
+    # print contract address
+    print('\nContract address:', info['contract_address'])
+    print('Contract getConfig():')
     print(cfg)
 
     print('\nInitialization complete')
