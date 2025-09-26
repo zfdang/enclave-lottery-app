@@ -87,3 +87,30 @@ def load_init_contract_config() -> Dict[str, Any]:
         print(f"⚠️  Error loading init-contract configuration from {config_file}: {e}")
         print(f"💡 Please check file permissions and format")
         return {}
+
+
+def load_operator_config() -> Dict[str, Any]:
+    """Load operator configuration from operator.conf (required)"""
+    config_file = Path(__file__).parent / "operator.conf"
+
+    if not config_file.exists():
+        print(f"❌ Operator configuration file not found: {config_file}")
+        print(f"💡 Please create {config_file} based on operator.conf.example")
+        print(f"   Example: cp operator.conf.example operator.conf")
+        exit(1)
+
+    try:
+        with open(config_file, 'r') as f:
+            config = json.load(f)
+        print(f"📝 Loaded operator configuration from {config_file}")
+        return config
+    except json.JSONDecodeError as e:
+        print(f"❌ Invalid JSON in operator configuration file {config_file}")
+        print(f"💡 Please check the JSON syntax in {config_file}")
+        print(f"   Error details: {e}")
+        exit(1)
+    except Exception as e:
+        print(f"❌ Error loading operator configuration from {config_file}")
+        print(f"💡 Please check file permissions and format")
+        print(f"   Error details: {e}")
+        exit(1)

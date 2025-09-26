@@ -105,6 +105,8 @@ contract Lottery {
     );
     
     event MinBetAmountUpdated(uint256 oldAmount, uint256 newAmount);
+    event BettingDurationUpdated(uint256 oldDuration, uint256 newDuration);
+    event MinParticipantsUpdated(uint256 oldMin, uint256 newMin);
     event SparsitySet(address indexed sparsity);
     event OperatorUpdated(address indexed oldOperator, address indexed newOperator);
     
@@ -157,7 +159,7 @@ contract Lottery {
 
         // start with roundId = 1 and WAITING state
         round = LotteryRound({
-            roundId: 1,
+            roundId: 0,
             startTime: 0,
             endTime: 0,
             minDrawTime: 0,
@@ -221,6 +223,41 @@ contract Lottery {
         minBetAmount = _newMinBetAmount;
         
         emit MinBetAmountUpdated(oldAmount, _newMinBetAmount);
+    }
+
+    /**
+     * @dev Return the configured minimum bet amount (in wei)
+     */
+    function getMinBetAmount() external view returns (uint256) {
+        return minBetAmount;
+    }
+
+    /**
+     * @dev Update the betting duration (only in waiting state)
+     * @param _newDuration New betting duration in seconds
+     */
+    function updateBettingDuration(uint256 _newDuration) external onlyOperator {
+        require(round.state == RoundState.WAITING, "Can only update betting duration in waiting state");
+        require(_newDuration > 0, "Betting duration must be positive");
+
+        uint256 oldDuration = bettingDuration;
+        bettingDuration = _newDuration;
+
+        emit BettingDurationUpdated(oldDuration, _newDuration);
+    }
+
+    /**
+     * @dev Update the minimum number of participants required (only in waiting state)
+     * @param _newMinParticipants New minimum participants (must be >= 2)
+     */
+    function updateMinParticipants(uint256 _newMinParticipants) external onlyOperator {
+        require(round.state == RoundState.WAITING, "Can only update min participants in waiting state");
+        require(_newMinParticipants >= 2, "Minimum participants must be at least 2");
+
+        uint256 oldMin = minParticipants;
+        minParticipants = _newMinParticipants;
+
+        emit MinParticipantsUpdated(oldMin, _newMinParticipants);
     }
     
     /**
@@ -569,6 +606,8 @@ contract Lottery {
     function getBetAmount(address player) external view returns (uint256) {
         return bets[player];
     }
+
+
 
     /**
      * @dev Get contract configuration

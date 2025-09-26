@@ -26,31 +26,15 @@ const BettingPanel: React.FC = () => {
   const [notificationOpen, setNotificationOpen] = useState(false)
   const [notificationMessage, setNotificationMessage] = useState('')
   const [notificationSeverity, setNotificationSeverity] = useState<'success' | 'error' | 'info' | 'warning'>('info')
-  const [minBetAmount, setMinBetAmount] = useState('0.01')
   const [userBetAmount, setUserBetAmount] = useState(0)
-  
-  // Betting multipliers
+  // default value for BASE_BET
+  const BASE_BET = '0.01' // Fixed base bet amount in ETH
+  const [minBetAmount, setMinBetAmount] = useState<string | null>(null)
   const [ones, setOnes] = useState(1)
   const [tens, setTens] = useState(0)
   const [hundreds, setHundreds] = useState(0)
 
-  useEffect(() => {
-    // Load minimum bet amount from contract
-    const loadMinBetAmount = async () => {
-      try {
-        const minBet = await contractService.getMinBetAmount()
-        setMinBetAmount(minBet)
-      } catch (error) {
-        console.error('Failed to load minimum bet amount:', error)
-      }
-    }
-
-    if (isConnected) {
-      loadMinBetAmount()
-    }
-  }, [isConnected])
-
-
+  
   useEffect(() => {
     // Load user's bet amount for current draw
     const loadUserBetAmount = async () => {
@@ -67,19 +51,36 @@ const BettingPanel: React.FC = () => {
     loadUserBetAmount()
   }, [roundStatus, address])
 
+  // Load min bet amount from contract (RPC getter)
+  useEffect(() => {
+    const loadMinBet = async () => {
+      try {
+        if (!contractService.hasValidContractAddress()) return
+        const mb = await contractService.getMinBetAmount()
+        setMinBetAmount(mb)
+      } catch (err) {
+        console.warn('Failed to load min bet amount:', err)
+      }
+    }
+
+    loadMinBet()
+  }, [isConnected, roundStatus])
+
   const getTotalMultiplier = (): number => {
     return ones + tens * 10 + hundreds * 100
   }
 
   const getTotalBetAmount = (): number => {
-    return parseFloat(minBetAmount) * getTotalMultiplier()
+    const base = minBetAmount ?? BASE_BET
+    return parseFloat(base) * getTotalMultiplier()
   }
 
   const calculateWinRate = (): number => {
     if (!roundStatus || !isConnected || userBetAmount === 0) return 0
     const totalPot = parseFloat(roundStatus.total_pot?.toString() || '0')
-    const userTickets = userBetAmount / parseFloat(minBetAmount)
-    const totalTickets = totalPot / parseFloat(minBetAmount)
+    const base = minBetAmount ?? BASE_BET
+    const userTickets = userBetAmount / parseFloat(base)
+    const totalTickets = totalPot / parseFloat(base)
     return totalTickets > 0 ? (userTickets / totalTickets) * 100 : 0
   }
 
@@ -123,11 +124,11 @@ const BettingPanel: React.FC = () => {
       // Place bet directly via smart contract
       const transactionHash = await contractService.placeBet(betAmount.toString())
 
-  // Optimistically update UI and show success dialog
-  const successMsg = `Bet placed successfully! Transaction: ${transactionHash.slice(0, 10)}...`
-  setNotificationMessage(successMsg)
-  setNotificationSeverity('success')
-  setNotificationOpen(true)
+      // Optimistically update UI and show success dialog
+      const successMsg = `Bet placed successfully! Transaction: ${transactionHash.slice(0, 10)}...`
+      setNotificationMessage(successMsg)
+      setNotificationSeverity('success')
+      setNotificationOpen(true)
       setUserBetAmount(prev => prev + betAmount)
       
       // Notify backend for verification (optional)
@@ -261,9 +262,9 @@ const BettingPanel: React.FC = () => {
               <Typography variant="caption" sx={{ color: 'white' }}>
                 Base Bet
               </Typography>
-              <Typography variant="body2" sx={{ color: 'white', fontWeight: 'bold' }}>
-                {minBetAmount} ETH
-              </Typography>
+                <Typography variant="body2" sx={{ color: 'white', fontWeight: 'bold' }}>
+                  {(minBetAmount ?? BASE_BET)} ETH
+                </Typography>
             </Box>
 
             {/* Multipliers */}

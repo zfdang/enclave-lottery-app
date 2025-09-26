@@ -257,10 +257,14 @@ def create_argument_parser(tool_name: str, description: str, role: str = None):
     import argparse
     
     # Load role-specific configuration using dedicated methods
+    admin_config = {}
     if role == "publisher":
         admin_config = load_publisher_config()
     elif role == "sparsity":
         admin_config = load_sparsity_config()
+    elif role == "operator":
+        from config import load_operator_config
+        admin_config = load_operator_config()
     
     parser = argparse.ArgumentParser(
         description=description,
@@ -277,9 +281,14 @@ Examples:
     print("=" * 40)
     
     # Blockchain configuration
-    parser.add_argument("--rpc-url", default=admin_config['blockchain']['rpc_url'], help="Blockchain RPC URL")
-    parser.add_argument("--private-key", default=admin_config['blockchain']['private_key'], help="Private key")
-    parser.add_argument("--chain-id", type=int, default=admin_config['blockchain']['chain_id'], help="Chain ID (default: 31337)")
+    # Use safe defaults if admin_config is missing keys
+    rpc_default = admin_config.get('blockchain', {}).get('rpc_url') if admin_config else None
+    pk_default = admin_config.get('blockchain', {}).get('private_key') if admin_config else None
+    chain_id_default = admin_config.get('blockchain', {}).get('chain_id') if admin_config else 31337
+
+    parser.add_argument("--rpc-url", default=rpc_default, help="Blockchain RPC URL")
+    parser.add_argument("--private-key", default=pk_default, help="Private key")
+    parser.add_argument("--chain-id", type=int, default=chain_id_default, help="Chain ID (default: 31337)")
     
     return parser, admin_config
 

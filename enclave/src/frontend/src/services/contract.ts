@@ -1,57 +1,7 @@
 import { ethers, isAddress } from 'ethers'
 import { useWalletStore } from './wallet'
 
-// Lottery contract ABI based on the current Lottery.sol
-const LOTTERY_ABI = [
-  // Events
-  'event RoundCreated(uint256 indexed roundId, uint256 startTime, uint256 endTime, uint256 minDrawTime, uint256 maxDrawTime)',
-  'event BetPlaced(uint256 indexed roundId, address indexed player, uint256 amount, uint256 newTotal, uint256 timestamp)',
-  'event EndTimeExtended(uint256 indexed roundId, uint256 oldEndTime, uint256 newEndTime)',
-  'event RoundStateChanged(uint256 indexed roundId, uint8 oldState, uint8 newState)',
-  'event RoundCompleted(uint256 indexed roundId, address indexed winner, uint256 totalPot, uint256 winnerPrize, uint256 publisherCommission, uint256 sparsityCommission, uint256 randomSeed)',
-  'event RoundRefunded(uint256 indexed roundId, uint256 totalRefunded, uint256 participantCount, string reason)',
-  'event MinBetAmountUpdated(uint256 oldAmount, uint256 newAmount)',
-  'event SparsitySet(address indexed sparsity)',
-  'event OperatorUpdated(address indexed oldOperator, address indexed newOperator)',
-
-  // Public state variables
-  'function publisher() view returns (address)',
-  'function sparsity() view returns (address)',
-  'function operator() view returns (address)',
-  'function publisherCommissionRate() view returns (uint256)',
-  'function sparsityCommissionRate() view returns (uint256)',
-  'function minBetAmount() view returns (uint256)',
-  'function bettingDuration() view returns (uint256)',
-  'function minDrawDelayAfterEnd() view returns (uint256)',
-  'function maxDrawDelayAfterEnd() view returns (uint256)',
-  'function minEndTimeExtension() view returns (uint256)',
-  'function minParticipants() view returns (uint256)',
-
-  // Round and helpers
-  'function round() view returns (tuple(uint256 roundId, uint256 startTime, uint256 endTime, uint256 minDrawTime, uint256 maxDrawTime, uint256 totalPot, uint256 participantCount, address winner, uint256 publisherCommission, uint256 sparsityCommission, uint256 winnerPrize, uint8 state))',
-  'function getRound() view returns (tuple(uint256 roundId, uint256 startTime, uint256 endTime, uint256 minDrawTime, uint256 maxDrawTime, uint256 totalPot, uint256 participantCount, address winner, uint256 publisherCommission, uint256 sparsityCommission, uint256 winnerPrize, uint8 state))',
-
-  // Participants and bets
-  'function getParticipants() view returns (address[])',
-  'function getBetAmount(address player) view returns (uint256)',
-  'function bets(address) view returns (uint256)',
-  'function participants(uint256) view returns (address)',
-
-  // Player functions
-  'function placeBet() payable',
-
-  // Publisher/Sparsity/Operator functions
-  'function setSparsity(address)',
-  'function updateOperator(address)',
-  'function updateMinBetAmount(uint256)',
-  'function startNewRound()',
-  'function extendBettingTime(uint256)',
-  'function refundRound()',
-  'function drawWinner()',
-
-  // Public functions
-  'function refundExpiredRound()'
-]
+// ABI is loaded via `loadAbi()`; do not embed a fallback ABI here.
 
 // RoundState enum mapping (uppercase to match contract)
 export enum RoundState {
@@ -100,11 +50,11 @@ export interface RoundTiming {
 }
 
 class ContractService {
-  private contract: ethers.Contract | null = null
   private contractAddress: string = ''
   private cachedAbi: any | null = null
-  rpcUrl: string
-  chainId: number | undefined
+  private rpcUrl: string
+  private chainId: number | undefined
+  minBetAmount: number | undefined //  minimum bet amount in gwei
 
   constructor() {
     // Get contract address from environment or config (Vite uses import.meta.env)
@@ -121,7 +71,6 @@ class ContractService {
   setContractAddress(address: string | null) {
     if (!address) {
       this.contractAddress = ''
-      this.contract = null
       return
     }
 
@@ -130,8 +79,6 @@ class ContractService {
     }
 
     this.contractAddress = address
-    // Clear cached contract so it will be recreated with the new address
-    this.contract = null
   }
 
   /**
@@ -154,48 +101,27 @@ class ContractService {
     return this.cachedAbi
   }
 
-
-  private getContract(contractAddress?: string): ethers.Contract {
-    const { provider, signer } = useWalletStore.getState()
-    
-    if (!provider) {
-      throw new Error('Wallet not connected')
-    }
-
-    const address = contractAddress || this.contractAddress
-    if (!address) {
-      throw new Error('Contract address not configured')
-    }
-
-    // Use signer for write operations, provider for read operations
-    const signerOrProvider = signer || provider
-    
-    return new ethers.Contract(address, LOTTERY_ABI, signerOrProvider)
-  }
-
-
   /**
    * Place a bet on the current lottery round
    */
   async placeBet(betAmount: string): Promise<string> {
-    const contract = this.getContract()
     const { signer } = useWalletStore.getState()
 
     if (!signer) {
       throw new Error('Wallet not connected')
     }
 
+    if (!this.contractAddress) {
+      throw new Error('Contract address not configured')
+    }
+
     try {
-      // Validate bet amount against contract minimum
-      const minBet = await contract.minBetAmount()
       const betAmountWei = ethers.parseEther(betAmount)
 
-      if (betAmountWei < minBet) {
-        throw new Error(`Bet amount must be at least ${ethers.formatEther(minBet)} ETH`)
-      }
-
-      // Place the bet
-      const tx = await contract.placeBet({ value: betAmountWei })
+      // Use cached ABI and the wallet signer to send the transaction
+      const abi = await this.loadAbi()
+      const signedContract = new ethers.Contract(this.contractAddress, abi, signer)
+      const tx = await signedContract.placeBet({ value: betAmountWei })
       const receipt = await tx.wait()
 
       // Update wallet balance
@@ -205,218 +131,85 @@ class ContractService {
     } catch (error: any) {
       if (error.code === 4001) {
         throw new Error('Transaction was rejected by user')
-      } else if (error.message.includes('revert')) {
+      } else if (error.message && error.message.includes('revert')) {
         // Extract revert reason
         const reason = error.message.match(/revert (.+)/)?.[1] || 'Transaction failed'
         throw new Error(reason)
       } else {
-        throw new Error('Transaction failed: ' + (error.message || 'Unknown error'))
+        throw new Error('Transaction failed: ' + (error?.message || 'Unknown error'))
       }
     }
   }
 
-  
-
-  /**
-   * Get current lottery state
-   */
-  async getState(): Promise<RoundState> {
-    const contract = this.getContract()
-
-    try {
-      const r = await contract.getRound()
-      return Number(r.state) as RoundState
-    } catch (error: any) {
-      throw new Error('Failed to get lottery state: ' + (error.message || 'Unknown error'))
-    }
-  }
-
-  /**
-   * Get current round participants
-   */
-  async getParticipants(): Promise<string[]> {
-    const contract = this.getContract()
-
-    try {
-      return await contract.getParticipants()
-    } catch (error: any) {
-      throw new Error('Failed to get participants: ' + (error.message || 'Unknown error'))
-    }
-  }
-
-  /**
-   * Get player's bet amount for current round
-   */
-  async getPlayerBet(playerAddress?: string): Promise<string> {
-    const contract = this.getContract()
-    const address = playerAddress || useWalletStore.getState().address
-
-    if (!address) {
-      throw new Error('No player address provided')
-    }
-
-    try {
-      // Lottery.sol exposes getBetAmount(address) for player bets
-      const betAmount = await contract.getBetAmount(address)
-      return ethers.formatEther(betAmount)
-    } catch (error: any) {
-      throw new Error('Failed to get player bet: ' + (error.message || 'Unknown error'))
-    }
-  }
-
-  /**
-   * Get player's bet amount for current round using mapping
-   */
-  async getBets(playerAddress?: string): Promise<string> {
-    const contract = this.getContract()
-    const address = playerAddress || useWalletStore.getState().address
-
-    if (!address) {
-      throw new Error('No player address provided')
-    }
-
-    try {
-      const betAmount = await contract.bets(address)
-      return ethers.formatEther(betAmount)
-    } catch (error: any) {
-      throw new Error('Failed to get player bets: ' + (error.message || 'Unknown error'))
-    }
-  }
-
-  /**
-   * Check if current round can be drawn
-   */
-  async canDraw(): Promise<boolean> {
-    // Determine draw eligibility from on-chain round state and timing
-    const contract = this.getContract()
-    try {
-      const r = await contract.getRound()
-      const provider = useWalletStore.getState().provider
-      if (!provider) throw new Error('Provider not available')
-      const block = await provider.getBlock('latest')
-      if (!block || block.timestamp === undefined) throw new Error('Failed to fetch block timestamp')
-      const now = Number(block.timestamp)
-      const minDraw = Number(r.minDrawTime)
-      const maxDraw = Number(r.maxDrawTime)
-      const hasPot = Number(r.totalPot) > 0
-      const state = Number(r.state)
-      // canDraw if within minDraw..maxDraw and pot > 0 and state is BETTING
-      return state === RoundState.BETTING && now >= minDraw && now <= maxDraw && hasPot
-    } catch (error: any) {
-      throw new Error('Failed to check draw status: ' + (error.message || 'Unknown error'))
-    }
-  }
-
-  /**
-   * Check if current round can be refunded
-   */
-  async canRefund(): Promise<boolean> {
-    // Determine refund eligibility based on round timing and state
-    const contract = this.getContract()
-    try {
-      const r = await contract.getRound()
-      const provider = useWalletStore.getState().provider
-      if (!provider) throw new Error('Provider not available')
-  const block = await provider.getBlock('latest')
-  if (!block || block.timestamp === undefined) throw new Error('Failed to fetch block timestamp')
-  const now = Number(block.timestamp)
-  const maxDraw = Number(r.maxDrawTime)
-  const state = Number(r.state)
-  // canRefund if now > maxDraw and state is BETTING
-  return state === RoundState.BETTING && now > maxDraw
-    } catch (error: any) {
-      throw new Error('Failed to check refund status: ' + (error.message || 'Unknown error'))
-    }
-  }
-
-  /**
-   * Get current round timing information
-   */
-  async getRoundTiming(): Promise<RoundTiming> {
-    const contract = this.getContract()
-
-    try {
-      const r = await contract.getRound()
-      const provider = useWalletStore.getState().provider
-      if (!provider) throw new Error('Provider not available')
-  const block = await provider.getBlock('latest')
-  if (!block || block.timestamp === undefined) throw new Error('Failed to fetch block timestamp')
-  const now = Number(block.timestamp)
-      return {
-        startTime: Number(r.startTime),
-        endTime: Number(r.endTime),
-        minDrawTime: Number(r.minDrawTime),
-        maxDrawTime: Number(r.maxDrawTime),
-        currentTime: now
-      }
-    } catch (error: any) {
-      throw new Error('Failed to get round timing: ' + (error.message || 'Unknown error'))
-    }
-  }
-
-  /**
-   * Get current round ID
-   */
-  async getCurrentRoundId(): Promise<number> {
-    const contract = this.getContract()
-
-    try {
-      const round = await contract.getRound()
-      return Number(round.roundId)
-    } catch (error: any) {
-      throw new Error('Failed to get current round ID: ' + (error.message || 'Unknown error'))
-    }
-  }
-
-  /**
+    /**
    * Get minimum bet amount
    */
   async getMinBetAmount(): Promise<string> {
-    const contract = this.getContract()
+    // Return cached value if available
+    if (this.minBetAmount !== undefined) {
+      return String(this.minBetAmount)
+    }
+    const contractAddress = this.contractAddress
+    const rpcUrl = this.rpcUrl
+    const chainId = this.chainId
+
+    if (!contractAddress) throw new Error('Contract address not configured for getMinBetAmount')
+    if (!rpcUrl) throw new Error('RPC URL not configured for getMinBetAmount')
 
     try {
-      const minBet = await contract.minBetAmount()
-      return ethers.formatEther(minBet)
+      const abi = await this.loadAbi()
+      const provider = new ethers.JsonRpcProvider(rpcUrl, chainId ? Number(chainId) : undefined)
+      const contract = new ethers.Contract(contractAddress, abi, provider)
+
+      // Use the new dedicated getter on-chain for the minimum bet amount
+      const minBetVal = await contract.getMinBetAmount()
+      let minBetStr: string
+      try {
+        minBetStr = ethers.formatEther(minBetVal)
+      } catch (e) {
+        minBetStr = String(minBetVal)
+      }
+
+      // cache numeric value in ETH
+      try { this.minBetAmount = Number(minBetStr) } catch (e) { /* ignore */ }
+      return minBetStr
     } catch (error: any) {
       throw new Error('Failed to get minimum bet amount: ' + (error.message || 'Unknown error'))
     }
   }
 
   /**
-   * Refund expired round (public function)
+   * Get a player's bet amount for the current round (returns ETH string)
    */
-  async refundExpiredRound(): Promise<string> {
-    const contract = this.getContract()
-    const { signer } = useWalletStore.getState()
+  async getPlayerBet(player: string): Promise<string> {
+    if (!isAddress(player)) throw new Error('Invalid player address')
 
-    if (!signer) {
-      throw new Error('Wallet not connected')
-    }
+    const contractAddress = this.contractAddress
+    const rpcUrl = this.rpcUrl
+    const chainId = this.chainId
 
     try {
-      const tx = await contract.refundExpiredRound()
-      const receipt = await tx.wait()
-      return receipt.hash
-    } catch (error: any) {
-      if (error.code === 4001) {
-        throw new Error('Transaction was rejected by user')
-      } else if (error.message.includes('revert')) {
-        const reason = error.message.match(/revert (.+)/)?.[1] || 'Transaction failed'
-        throw new Error(reason)
-      } else {
-        throw new Error('Transaction failed: ' + (error.message || 'Unknown error'))
+      const abi = await this.loadAbi()
+
+      if (contractAddress && rpcUrl) {
+        const provider = new ethers.JsonRpcProvider(rpcUrl, chainId ? Number(chainId) : undefined)
+        const rpcContract = new ethers.Contract(contractAddress, abi, provider)
+        const amt = await rpcContract.getBetAmount(player)
+        return ethers.formatEther(amt)
       }
+      throw new Error('Contract address or RPC URL not configured for getPlayerBet')
+    } catch (error: any) {
+      throw new Error('Failed to get player bet: ' + (error.message || 'Unknown error'))
     }
   }
-/**
-   * Get current round information
-   */
+
+
+  
   /**
    * Get current round information.
    *
    * If `contractAddress` and `rpcUrl` are provided, this will perform a read-only
    * RPC call (like `getContractConfig`) so it doesn't require a connected wallet.
-   * Otherwise it falls back to using the wallet/provider via `getContract()`.
    */
   async getRound(): Promise<LotteryRound> {
     const contractAddress = this.contractAddress
@@ -490,6 +283,22 @@ class ContractService {
       const sparsityAddr = cfg.sparsityAddr ?? cfg[1]
       const sparsityIsSet = sparsityAddr !== "0x0000000000000000000000000000000000000000"
       
+      const minBetVal = cfg.minBet ?? cfg[5]
+      let minBetStr: string
+      try {
+        // If minBetVal is a BigNumber-like, format it
+        minBetStr = ethers.formatEther(minBetVal)
+      } catch (e) {
+        minBetStr = String(minBetVal)
+      }
+
+      // Cache numeric min bet in ETH
+      try {
+        this.minBetAmount = Number(minBetStr)
+      } catch (e) {
+        // ignore parse errors
+      }
+
       return {
         publisherAddr: cfg.publisherAddr ?? cfg[0],
         sparsityAddr: sparsityAddr,
@@ -508,92 +317,7 @@ class ContractService {
       throw new Error('Failed to load contract config: ' + (error.message || 'Unknown error'))
     }
   }
-
-  /**
-   * Subscribe to contract events
-   */
-  subscribeToEvents(callbacks: {
-    onRoundCreated?: (roundId: number, startTime: number, endTime: number, minDrawTime: number, maxDrawTime: number) => void
-    onBetPlaced?: (roundId: number, player: string, amount: string, newTotal: string, timestamp: number) => void
-    onEndTimeExtended?: (roundId: number, oldEndTime: number, newEndTime: number) => void
-    onRoundStateChanged?: (roundId: number, oldState: RoundState, newState: RoundState) => void
-    onRoundCompleted?: (roundId: number, winner: string, totalPot: string, winnerPrize: string, publisherCommission: string, sparsityCommission: string, randomSeed: string) => void
-    onRoundRefunded?: (roundId: number, totalRefunded: string, participantCount: number, reason: string) => void
-    onMinBetAmountUpdated?: (oldAmount: string, newAmount: string) => void
-    onSparsitySet?: (sparsity: string) => void
-    onOperatorUpdated?: (oldOperator: string, newOperator: string) => void
-  }, contractAddress?: string) {
-    const contract = this.getContract(contractAddress)
-
-    if (callbacks.onRoundCreated) {
-      contract.on('RoundCreated', (roundId, startTime, endTime, minDrawTime, maxDrawTime) => {
-        callbacks.onRoundCreated!(Number(roundId), Number(startTime), Number(endTime), Number(minDrawTime), Number(maxDrawTime))
-      })
-    }
-
-    if (callbacks.onBetPlaced) {
-      contract.on('BetPlaced', (roundId, player, amount, newTotal, timestamp) => {
-        callbacks.onBetPlaced!(Number(roundId), player, ethers.formatEther(amount), ethers.formatEther(newTotal), Number(timestamp))
-      })
-    }
-
-    if (callbacks.onEndTimeExtended) {
-      contract.on('EndTimeExtended', (roundId, oldEndTime, newEndTime) => {
-        callbacks.onEndTimeExtended!(Number(roundId), Number(oldEndTime), Number(newEndTime))
-      })
-    }
-
-    if (callbacks.onRoundStateChanged) {
-      contract.on('RoundStateChanged', (roundId, oldState, newState) => {
-        callbacks.onRoundStateChanged!(Number(roundId), oldState as RoundState, newState as RoundState)
-      })
-    }
-
-    if (callbacks.onRoundCompleted) {
-      contract.on('RoundCompleted', (roundId, winner, totalPot, winnerPrize, publisherCommission, sparsityCommission, randomSeed) => {
-        callbacks.onRoundCompleted!(
-          Number(roundId),
-          winner,
-          ethers.formatEther(totalPot),
-          ethers.formatEther(winnerPrize),
-          ethers.formatEther(publisherCommission),
-          ethers.formatEther(sparsityCommission),
-          randomSeed.toString()
-        )
-      })
-    }
-
-    if (callbacks.onRoundRefunded) {
-      contract.on('RoundRefunded', (roundId, totalRefunded, participantCount, reason) => {
-        callbacks.onRoundRefunded!(Number(roundId), ethers.formatEther(totalRefunded), Number(participantCount), reason)
-      })
-    }
-
-    if (callbacks.onMinBetAmountUpdated) {
-      contract.on('MinBetAmountUpdated', (oldAmount, newAmount) => {
-        callbacks.onMinBetAmountUpdated!(ethers.formatEther(oldAmount), ethers.formatEther(newAmount))
-      })
-    }
-
-    if (callbacks.onSparsitySet) {
-      contract.on('SparsitySet', (sparsity) => {
-        callbacks.onSparsitySet!(sparsity)
-      })
-    }
-
-    if (callbacks.onOperatorUpdated) {
-      contract.on('OperatorUpdated', (oldOperator, newOperator) => {
-        callbacks.onOperatorUpdated!(oldOperator, newOperator)
-      })
-    }
-
-    // Return cleanup function
-    return () => {
-      contract.removeAllListeners()
-    }
-  }
 }
-
 export const contractService = new ContractService()
 
 // Convenience wrapper to allow importing the setter directly
