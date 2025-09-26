@@ -13,7 +13,7 @@ import { Casino, Add, Remove } from '@mui/icons-material'
 import { useWalletStore } from '../services/wallet'
 import { useLotteryStore } from '../services/lottery'
 import { contractService } from '../services/contract'
-import api, { getContractAddress } from '../services/api'
+import api from '../services/api'
 import { isAddress } from 'ethers'
 import WalletConnection from './WalletConnection'
 
@@ -26,8 +26,6 @@ const BettingPanel: React.FC = () => {
   const [notificationOpen, setNotificationOpen] = useState(false)
   const [notificationMessage, setNotificationMessage] = useState('')
   const [notificationSeverity, setNotificationSeverity] = useState<'success' | 'error' | 'info' | 'warning'>('info')
-  const [contractAddress, setContractAddress] = useState('')
-  const [contractAddressValid, setContractAddressValid] = useState(false)
   const [minBetAmount, setMinBetAmount] = useState('0.01')
   const [userBetAmount, setUserBetAmount] = useState(0)
   
@@ -52,33 +50,6 @@ const BettingPanel: React.FC = () => {
     }
   }, [isConnected])
 
-  // Preload configured contract address and validity (from backend API)
-  // Preload configured contract address and validity (from backend API)
-  useEffect(() => {
-    const loadContractAddress = async () => {
-      try {
-        const result = await getContractAddress()
-        const addr = result?.contract_address ?? ""
-        setContractAddress(addr)
-        console.log('Loaded contract address from API:', addr)
-
-        // set contract address for contractService
-        contractService.setContractAddress(addr)
-        
-        // Validate with ethers.isAddress and reject zero address
-        const zeroAddress = '0x0000000000000000000000000000000000000000'
-        const valid = isAddress(addr) && addr.toLowerCase() !== zeroAddress
-        console.log('Contract address validity:', valid)
-        setContractAddressValid(valid)
-      } catch (e) {
-        console.warn('Failed to load contract address from API:', e)
-        setContractAddress('')
-        setContractAddressValid(false)
-      }
-    }
-
-    loadContractAddress()
-  }, [])
 
   useEffect(() => {
     // Load user's bet amount for current draw
@@ -132,7 +103,7 @@ const BettingPanel: React.FC = () => {
       unmet.push('Please set a valid bet amount.')
     }
     // Check contract address validity as part of unmet conditions
-    if (!contractAddressValid) {
+    if (!contractService.hasValidContractAddress()) {
       unmet.push('No valid Lottery contract address')
     }
 

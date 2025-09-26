@@ -102,28 +102,58 @@ export interface RoundTiming {
 class ContractService {
   private contract: ethers.Contract | null = null
   private contractAddress: string = ''
+  private cachedAbi: any | null = null
+  rpcUrl: string
+  chainId: number | undefined
 
   constructor() {
     // Get contract address from environment or config (Vite uses import.meta.env)
     this.contractAddress = import.meta.env.VITE_LOTTERY_CONTRACT_ADDRESS || ''
+    this.rpcUrl = import.meta.env.VITE_RPC_URL || ''
+    this.chainId = import.meta.env.VITE_CHAIN_ID ? Number(import.meta.env.VITE_CHAIN_ID) : undefined
+    console.log('ContractService initialized with address:', this.contractAddress + ', rpcUrl:', this.rpcUrl + ', chainId:', this.chainId)
   }
 
   /**
    * Set or update the configured contract address used by this service.
-   * Validates the address and clears any cached contract instance so subsequent
-   * calls use the new address.
+   * Passing a falsy value (null or empty string) will clear the configured address.
    */
-  setContractAddress(address: string) {
-    if (!address || typeof address !== 'string') {
-      throw new Error('Invalid contract address')
+  setContractAddress(address: string | null) {
+    if (!address) {
+      this.contractAddress = ''
+      this.contract = null
+      return
     }
+
     if (!isAddress(address)) {
       throw new Error('Invalid Ethereum address')
     }
+
     this.contractAddress = address
     // Clear cached contract so it will be recreated with the new address
     this.contract = null
   }
+
+  /**
+   * Return true if a configured contract address looks valid (non-empty and a valid ETH address).
+   */
+  hasValidContractAddress(): boolean {
+    return !!this.contractAddress && isAddress(this.contractAddress)
+  }
+
+  /**
+   * Load the contract ABI from the public location and cache it.
+   */
+  private async loadAbi(): Promise<any> {
+    if (this.cachedAbi) return this.cachedAbi
+
+    const abiRes = await fetch('/contracts/abi/Lottery.abi')
+    if (!abiRes.ok) throw new Error('Failed to fetch ABI')
+    const abiText = await abiRes.text()
+    this.cachedAbi = JSON.parse(abiText)
+    return this.cachedAbi
+  }
+
 
   private getContract(contractAddress?: string): ethers.Contract {
     const { provider, signer } = useWalletStore.getState()
@@ -185,33 +215,7 @@ class ContractService {
     }
   }
 
-  /**
-   * Get current round information
-   */
-  async getRound(): Promise<LotteryRound> {
-    const contract = this.getContract()
-
-    try {
-      const result = await contract.getRound()
-      
-      return {
-        roundId: Number(result.roundId),
-        startTime: Number(result.startTime),
-        endTime: Number(result.endTime),
-        minDrawTime: Number(result.minDrawTime),
-        maxDrawTime: Number(result.maxDrawTime),
-        totalPot: ethers.formatEther(result.totalPot),
-        participantCount: Number(result.participantCount),
-        winner: result.winner,
-        publisherCommission: ethers.formatEther(result.publisherCommission),
-        sparsityCommission: ethers.formatEther(result.sparsityCommission),
-        winnerPrize: ethers.formatEther(result.winnerPrize),
-        state: result.state as RoundState
-      }
-    } catch (error: any) {
-      throw new Error('Failed to get round information: ' + (error.message || 'Unknown error'))
-    }
-  }
+  
 
   /**
    * Get current lottery state
@@ -404,11 +408,53 @@ class ContractService {
       }
     }
   }
+/**
+   * Get current round information
+   */
+  /**
+   * Get current round information.
+   *
+   * If `contractAddress` and `rpcUrl` are provided, this will perform a read-only
+   * RPC call (like `getContractConfig`) so it doesn't require a connected wallet.
+   * Otherwise it falls back to using the wallet/provider via `getContract()`.
+   */
+  async getRound(): Promise<LotteryRound> {
+    const contractAddress = this.contractAddress
+    const rpcUrl = this.rpcUrl
+    const chainId = this.chainId
+
+    if (!contractAddress) throw new Error('Contract address not configured for getRound')
+    if (!rpcUrl) throw new Error('RPC URL not configured for getRound')
+
+    try {
+      const abi = await this.loadAbi()
+      const provider = new ethers.JsonRpcProvider(rpcUrl, chainId ? Number(chainId) : undefined)
+      const contract = new ethers.Contract(contractAddress, abi, provider)
+      const result = await contract.getRound()
+
+      return {
+        roundId: Number(result.roundId),
+        startTime: Number(result.startTime),
+        endTime: Number(result.endTime),
+        minDrawTime: Number(result.minDrawTime),
+        maxDrawTime: Number(result.maxDrawTime),
+        totalPot: ethers.formatEther(result.totalPot),
+        participantCount: Number(result.participantCount),
+        winner: result.winner,
+        publisherCommission: ethers.formatEther(result.publisherCommission),
+        sparsityCommission: ethers.formatEther(result.sparsityCommission),
+        winnerPrize: ethers.formatEther(result.winnerPrize),
+        state: result.state as RoundState
+      }
+    } catch (error: any) {
+      throw new Error('Failed to get round information: ' + (error.message || 'Unknown error'))
+    }
+  }
 
   /**
    * Get contract configuration using getConfig()
    */
-  async getContractConfig(contractAddress: string, rpcUrl: string, chainId?: number): Promise<{
+  async getContractConfig(): Promise<{
     publisherAddr: string
     sparsityAddr: string
     operatorAddr: string
@@ -422,14 +468,16 @@ class ContractService {
     minPart: string
     sparsityIsSet: boolean
   }> {
-    try {
-      // Load ABI from new public location
-      const abiRes = await fetch('/contracts/abi/Lottery.abi')
-      if (!abiRes.ok) throw new Error('Failed to fetch ABI')
-      const abiText = await abiRes.text()
-      const abi = JSON.parse(abiText)
+    const contractAddress = this.contractAddress
+    const rpcUrl = this.rpcUrl
+    const chainId = this.chainId
 
-      // Create read-only provider for this call
+    if (!contractAddress) throw new Error('Contract address not configured for getContractConfig')
+    if (!rpcUrl) throw new Error('RPC URL not configured for getContractConfig')
+
+    try {
+      // Load ABI and create read-only provider for this call
+      const abi = await this.loadAbi()
       const provider = new ethers.JsonRpcProvider(rpcUrl, chainId ? Number(chainId) : undefined)
       const contract = new ethers.Contract(contractAddress, abi, provider)
       const cfg = await contract.getConfig()
@@ -547,3 +595,7 @@ class ContractService {
 }
 
 export const contractService = new ContractService()
+
+// Convenience wrapper to allow importing the setter directly
+export const setContractAddress = (address: string | null) => contractService.setContractAddress(address)
+export const hasValidContractAddress = () => contractService.hasValidContractAddress()

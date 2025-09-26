@@ -115,7 +115,7 @@ function App() {
 
   // Contract info state (moved from ActivityFeed)
   const [contractAddress, setContractAddress] = useState<string | null>(null)
-  const rpcUrl = `${import.meta.env.VITE_RPC_URL}${import.meta.env.VITE_RPC_PORT ? ':' + import.meta.env.VITE_RPC_PORT : ''}`
+  const rpcUrl = import.meta.env.VITE_RPC_URL
   const chainId = import.meta.env.VITE_CHAIN_ID
   const [contractLoading, setContractLoading] = useState<boolean>(false)
   const [contractError, setContractError] = useState<string | null>(null)
@@ -201,6 +201,8 @@ function App() {
         const data = await getContractAddress()
         if (!mounted) return
         setContractAddress(data?.contract_address ?? null)
+        contractService.setContractAddress(data?.contract_address ?? null)
+        console.log('App: Loaded contract address from API:', data?.contract_address ?? null)
       } catch (e: any) {
         if (!mounted) return
         setContractError(e.message || 'Unable to load contract info')
@@ -227,11 +229,7 @@ function App() {
       console.log("RPC URL:", url)
       
       // Fetch contract configuration first (RPC-based helper)
-      const normalized = await contractService.getContractConfig(
-        contractAddress,
-        url,
-        chainId ? Number(chainId) : undefined
-      )
+      const normalized = await contractService.getContractConfig()
 
       // Update UI with contract config immediately
       setContractConfig(normalized)
