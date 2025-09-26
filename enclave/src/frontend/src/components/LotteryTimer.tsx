@@ -124,10 +124,10 @@ const LotteryTimer: React.FC = () => {
           </Typography>
         </Box>
         <Chip 
-          label={getStatusText(roundStatus.status)} 
+          label={getStatusText(roundStatus.state_name)} 
           size="small"
           sx={{ 
-            bgcolor: getStatusColor(roundStatus.status),
+            bgcolor: getStatusColor(roundStatus.state_name),
             color: 'white',
             fontWeight: 'bold'
           }}
