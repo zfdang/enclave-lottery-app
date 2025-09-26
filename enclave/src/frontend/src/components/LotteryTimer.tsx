@@ -17,7 +17,7 @@ interface TimeRemaining {
 }
 
 const LotteryTimer: React.FC = () => {
-  const { currentDraw, loading, error } = useLotteryStore()
+  const { roundStatus, loading, error } = useLotteryStore()
   const [timeRemaining, setTimeRemaining] = useState<TimeRemaining>({ hours: 0, minutes: 0, seconds: 0 })
   const [bettingTimeRemaining, setBettingTimeRemaining] = useState<TimeRemaining>({ hours: 0, minutes: 0, seconds: 0 })
 
@@ -30,12 +30,12 @@ const LotteryTimer: React.FC = () => {
   }
 
   useEffect(() => {
-    if (!currentDraw) return
+    if (!roundStatus) return
 
     const updateTimers = () => {
       const now = Date.now()
-      const drawTime = parseUtcMillis(currentDraw.draw_time)
-      const endTime = parseUtcMillis(currentDraw.end_time)
+      const drawTime = parseUtcMillis(roundStatus.min_draw_time)
+      const endTime = parseUtcMillis(roundStatus.end_time)
 
       // Calculate time remaining until draw
       const drawDiffRaw = drawTime - now
@@ -58,9 +58,9 @@ const LotteryTimer: React.FC = () => {
     const interval = setInterval(updateTimers, 1000)
 
     return () => clearInterval(interval)
-  }, [currentDraw])
+  }, [roundStatus])
 
-  if (!currentDraw) {
+  if (!roundStatus) {
     return (
       <Box sx={{ p: 2, textAlign: 'center', color: 'white' }}>
         {loading ? (
@@ -95,9 +95,9 @@ const LotteryTimer: React.FC = () => {
   }
 
   const getTotalTimeSeconds = () => {
-    if (!currentDraw) return 0
-    const start = parseUtcMillis(currentDraw.start_time)
-    const end = parseUtcMillis(currentDraw.draw_time)
+    if (!roundStatus) return 0
+    const start = parseUtcMillis(roundStatus.start_time)
+    const end = parseUtcMillis(roundStatus.draw_time)
     const diff = end - start
     return Number.isNaN(diff) ? 0 : diff / 1000
   }
@@ -123,10 +123,10 @@ const LotteryTimer: React.FC = () => {
           </Typography>
         </Box>
         <Chip 
-          label={getStatusText(currentDraw.status)} 
+          label={getStatusText(roundStatus.status)} 
           size="small"
           sx={{ 
-            bgcolor: getStatusColor(currentDraw.status),
+            bgcolor: getStatusColor(roundStatus.status),
             color: 'white',
             fontWeight: 'bold'
           }}
@@ -151,7 +151,7 @@ const LotteryTimer: React.FC = () => {
           <Box textAlign="center">
             <AttachMoney sx={{ color: 'white', mb: 0.5, fontSize: '1.2rem' }} />
             <Typography variant="h5" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
-              {currentDraw.total_pot}
+              {roundStatus.total_pot}
             </Typography>
             <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.8)' }}>
               Prize Pool (ETH)
@@ -163,7 +163,7 @@ const LotteryTimer: React.FC = () => {
           <Box textAlign="center">
             <People sx={{ color: 'white', mb: 0.5, fontSize: '1.2rem' }} />
             <Typography variant="h5" sx={{ color: '#2196f3', fontWeight: 'bold' }}>
-              {currentDraw.participants}
+              {roundStatus.participants}
             </Typography>
             <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.8)' }}>
               Participants
@@ -173,8 +173,8 @@ const LotteryTimer: React.FC = () => {
       </Grid>
 
   {/* Betting cutoff reminder: only show when time until draw < minimum_interval_minutes */}
-      {currentDraw.status === 'betting' && (() => {
-        const minMin = (currentDraw as any).minimum_interval_minutes ?? 3
+      {roundStatus.status === 'betting' && (() => {
+        const minMin = (roundStatus as any).minimum_interval_minutes ?? 3
         const secsUntilDraw = timeRemaining.hours * 3600 + timeRemaining.minutes * 60 + timeRemaining.seconds
         return secsUntilDraw > 0 && secsUntilDraw < minMin * 60
       })() && (

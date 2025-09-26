@@ -665,9 +665,10 @@ class BlockchainClient:
                 try:
                     # Get recent events
                     events = await self.get_recent_events()
-                    
+                    logger.info(f"Fetched {len(events)} new events")
                     # Process each event
                     for event in events:
+                        logger.info(f"Event: {event['event']} at block {event['blockNumber']}")
                         if callback:
                             try:
                                 await callback(event)

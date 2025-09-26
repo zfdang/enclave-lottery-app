@@ -191,29 +191,61 @@ function App() {
     setAttestationError('');
   };
 
-  // Fetch contract address from backend (simplified)
+  // Fetch contract address from backend (simplified) and retry every 30 seconds until found
   useEffect(() => {
     let mounted = true
-    ;(async () => {
+    let isFetching = false
+    let intervalId: ReturnType<typeof setInterval> | null = null
+
+    const attemptFetch = async () => {
+      if (!mounted || isFetching) return
+      isFetching = true
       setContractLoading(true)
       setContractError(null)
       try {
         const data = await getContractAddress()
         if (!mounted) return
-        setContractAddress(data?.contract_address ?? null)
-        contractService.setContractAddress(data?.contract_address ?? null)
-        console.log('App: Loaded contract address from API:', data?.contract_address ?? null)
+        const addr = data?.contract_address ?? null
+        if (addr) {
+          setContractAddress(addr)
+          contractService.setContractAddress(addr)
+          console.log('App: Loaded contract address from API:', addr)
+
+          // Found valid address: stop retries
+          if (intervalId) {
+            clearInterval(intervalId)
+            intervalId = null
+          }
+        } else {
+          // No address yet; keep trying
+          setContractAddress(null)
+          setContractError(null)
+          console.log('App: No contract address yet; will retry')
+        }
       } catch (e: any) {
         if (!mounted) return
         setContractError(e.message || 'Unable to load contract info')
         setContractAddress(null)
+        console.warn('App: Error fetching contract address, will retry:', e)
       } finally {
         if (!mounted) return
         setContractLoading(false)
+        isFetching = false
       }
-    })()
+    }
 
-    return () => { mounted = false }
+    // Initial attempt immediately
+    attemptFetch()
+
+    // Retry every 30 seconds until we have a valid address
+    intervalId = setInterval(() => {
+      attemptFetch()
+    }, 30000)
+
+    return () => {
+      mounted = false
+      if (intervalId) clearInterval(intervalId)
+    }
   }, [])
 
   // Fetch contract config using centralized contract service
@@ -390,7 +422,7 @@ function App() {
                 textAlign: 'center',
                 width: 'fit-content',
               }}>
-                Live Feed
+                Lottery Status
               </Box>
               <Box sx={{
                 position: 'absolute',

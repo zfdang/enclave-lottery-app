@@ -33,7 +33,7 @@ const ActivityFeed: React.FC = () => {
   const [activities, setActivities] = useState<Activity[]>([])
   const [loading, setLoading] = useState(false)
   const [systemMessages, setSystemMessages] = useState<Array<{id: string, message: string, timestamp: Date}>>([])
-  const { currentDraw } = useLotteryStore()
+  const { roundStatus } = useLotteryStore()
 
   const fetchActivities = async () => {
     setLoading(true)
@@ -58,7 +58,7 @@ const ActivityFeed: React.FC = () => {
 
   // Add system messages (countdown reminders, etc.)
   useEffect(() => {
-    if (!currentDraw) return
+    if (!roundStatus) return
 
     const addSystemMessage = (message: string) => {
       const newMsg = {
@@ -70,13 +70,13 @@ const ActivityFeed: React.FC = () => {
     }
 
     const checkDrawTime = () => {
-      if (currentDraw.status === 'betting') {
+      if (roundStatus.state_name === 'betting') {
         const now = new Date()
-        const drawTime = new Date(currentDraw.draw_time)
-        const endTime = new Date(currentDraw.end_time)
+        const drawTime = new Date(roundStatus.min_draw_time)
+        const endTime = new Date(roundStatus.end_time)
         const secsUntilDraw = Math.floor((drawTime.getTime() - now.getTime()) / 1000)
         const msUntilClose = endTime.getTime() - now.getTime()
-        const minMin = (currentDraw as any).minimum_interval_minutes ?? 3
+        const minMin = (roundStatus as any).minimum_interval_minutes ?? 3
 
         if (secsUntilDraw > 0 && secsUntilDraw < minMin * 60) {
           // Compose a friendly countdown to betting close (endTime)
@@ -95,7 +95,7 @@ const ActivityFeed: React.FC = () => {
   checkDrawTime() // initial check
 
     return () => clearInterval(systemInterval)
-  }, [currentDraw])
+  }, [roundStatus])
 
   const formatAddress = (address: string): string => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`
@@ -177,14 +177,14 @@ const ActivityFeed: React.FC = () => {
   // Merge system messages (including derived persistent messages) and user activities
   const safeActivities = Array.isArray(activities) ? activities : []
 
-  // Derive persistent system messages from currentDraw so important state
+  // Derive persistent system messages from roundStatus so important state
   // (like betting closed) remains visible after a page refresh.
   const derivedSystemMessages: Array<{id: string, message: string, timestamp: Date}> = []
-  if (currentDraw) {
+  if (roundStatus) {
     try {
-      const endTime = new Date((currentDraw as any).end_time)
+      const endTime = new Date((roundStatus as any).end_time)
       // If the draw is no longer in betting state, show a persistent closed message
-      if ((currentDraw as any).status !== 'betting') {
+      if ((roundStatus as any).status !== 'betting') {
         derivedSystemMessages.push({
           id: 'persistent-betting-closed',
           message: '🔒 Betting closed, awaiting draw...',
