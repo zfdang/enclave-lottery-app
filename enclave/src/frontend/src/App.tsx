@@ -305,12 +305,12 @@ function App() {
       overflow: 'hidden'
     }}>
   {/* Top area - 10% height */}
-      <Box sx={{ height: '10vh', minHeight: '60px' }}>
+      <Box sx={{ height: '8vh', minHeight: '54px' }}>
         <AppBar position="static" sx={{ background: 'rgba(0, 0, 0, 0.2)', height: '100%' }}>
-          <Toolbar sx={{ height: '100%' }}>
+          <Toolbar sx={{ height: '100%', alignItems: 'center', minHeight: '48px' }}>
             <Security sx={{ mr: 2 }} />
             <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-              Lottery Enclave
+              Lottery (Powered by Sparsity)
             </Typography>
 
             
@@ -335,7 +335,7 @@ function App() {
                 fontWeight: 600,
                 fontSize: '1rem',
                 px: 2,
-                py: 1,
+                py: 0.5,
                 borderWidth: 1.5,
                 borderStyle: 'solid',
                 borderColor: backendOnline ? 'rgba(65, 226, 94, 0.7)' : 'rgba(244,67,54,0.5)',
@@ -357,7 +357,7 @@ function App() {
 
   {/* Main content area - 90% height */}
       <Box sx={{ 
-        height: '90vh', 
+        height: '92vh', 
         display: 'flex',
         padding: 2,
         gap: 2
@@ -393,9 +393,9 @@ function App() {
           flexDirection: 'column',
           gap: 2
         }}>
-          {/* Live info area - 70% height */}
+          {/* Live info area - 75% height */}
           <Box sx={{ 
-            height: '70%',
+            height: '75%',
             background: 'rgba(255, 255, 255, 0.1)',
             backdropFilter: 'blur(10px)',
             borderRadius: 2,
@@ -475,15 +475,30 @@ function App() {
                 ) : null}
               </Box>
             </Box>
-            <Box sx={{ flex: 1, overflow: 'auto', p: 1 }}>
-              <LotteryTimer />
-              <ActivityFeed />
+            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: 1 }}>
+              {/* Keep LotteryTimer fixed at top of this area */}
+              <Box sx={{ flex: '0 0 auto' }}>
+                <LotteryTimer />
+              </Box>
+
+              {/* ActivityFeed should scroll independently */}
+              <Box sx={{
+                flex: '1 1 auto',
+                overflowY: 'scroll',
+                overflowX: 'hidden',
+                mt: 1,
+                /* Always show a vertical scrollbar for affordance */
+                '&::-webkit-scrollbar': { width: '10px' },
+                '&::-webkit-scrollbar-thumb': { backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 8 },
+              }}>
+                <ActivityFeed />
+              </Box>
             </Box>
           </Box>
 
-          {/* User actions area - 30% height */}
+          {/* User actions area - 25% height */}
           <Box sx={{ 
-            height: '30%',
+            height: '25%',
             background: 'rgba(255, 255, 255, 0.1)',
             backdropFilter: 'blur(10px)',
             borderRadius: 2,
