@@ -51,7 +51,7 @@ function App() {
   const checkBackendHealth = useCallback(async () => {
     try {
       const health = await getHealth()
-      const isHealthy = health?.status === 'healthy'
+      const isHealthy = health?.status === 'ok'
       setBackendOnline(isHealthy)
       return isHealthy
     } catch (error) {

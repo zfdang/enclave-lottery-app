@@ -1,34 +1,27 @@
-"""
-Lottery System Data Models
+"""Core data models for the passive lottery backend."""
 
-This module defines the core data structures for the automated lottery system,
-matching the Solidity contract structure exactly.
-"""
+from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import IntEnum
-from typing import List, Optional, Dict, Any
 from datetime import datetime
+from enum import IntEnum
+from typing import Dict, Optional
 
 
 class RoundState(IntEnum):
-    """
-    Lottery round states matching the Solidity contract enum.
-    These values must match exactly with the contract's RoundState enum.
-    """
-    WAITING = 0      # Round created, waiting to start betting
-    BETTING = 1      # Betting is active
-    DRAWING = 2      # Betting ended, preparing for draw
-    COMPLETED = 3    # Round completed with winner
-    REFUNDED = 4     # Round refunded to participants
+    """Lottery round states as defined in the current Solidity contract."""
+
+    WAITING = 0
+    BETTING = 1
+    DRAWING = 2
+    COMPLETED = 3
+    REFUNDED = 4
 
 
 @dataclass
 class LotteryRound:
-    """
-    Lottery round data structure matching the Solidity LotteryRound struct exactly.
-    Only the fields present in the contract struct are included.
-    """
+    """Snapshot of the on-chain `LotteryRound` struct."""
+
     round_id: int
     start_time: int
     end_time: int
@@ -43,108 +36,89 @@ class LotteryRound:
     state: RoundState
 
 
-@dataclass 
+@dataclass
 class ContractConfig:
-    """
-    Contract configuration data matching the getConfig() return values.
-    
-    This represents the immutable and mutable configuration from the contract:
-    - min_bet_amount: Minimum bet amount in wei
-    - publisher_commission_rate: Publisher commission rate in basis points
-    - sparsity_commission_rate: Sparsity commission rate in basis points
-    - betting_duration: Duration of betting period in seconds
-    - min_draw_delay: Minimum allowed draw delay
-    - max_draw_delay: Maximum allowed draw delay
-    - min_end_time_extension: Minimum extension when adding time
-    - sparsity_address: Address of the sparsity provider
-    - publisher_address: Address of the publisher
-    - operator_address: Address of the operator
-    - min_participants: Minimum participants required to draw a winner
-    """
-    min_bet_amount: int
-    publisher_commission_rate: int
-    sparsity_commission_rate: int
+    """Normalized result of `Lottery.getConfig()`."""
+
+    publisher_addr: str
+    sparsity_addr: str
+    operator_addr: str
+    publisher_commission: int
+    sparsity_commission: int
+    min_bet: int
     betting_duration: int
     min_draw_delay: int
     max_draw_delay: int
     min_end_time_extension: int
-    sparsity_address: str
-    publisher_address: str
-    operator_address: str
     min_participants: int
 
 
 @dataclass
-class ContractEvent:
-    """
-    Generic contract event structure for memory storage.
-    
-    Stores all relevant event data for processing and history:
-    - event_name: Name of the contract event
-    - block_number: Block number when event occurred
-    - transaction_hash: Transaction hash
-    - timestamp: Event timestamp  
-    - args: Event arguments as dictionary
-    """
-    event_name: str
-    block_number: int
-    transaction_hash: str
-    timestamp: datetime
-    args: Dict[str, Any] = field(default_factory=dict)
-    
-    def __post_init__(self):
-        """Ensure args is a dictionary"""
-        if self.args is None:
-            self.args = {}
+class ParticipantSummary:
+    """Aggregated statistics for a participant in the active round."""
+
+    address: str
+    total_amount: int = 0
+    bet_count: int = 0
+
+    def add_bet(self, amount: int) -> None:
+        self.total_amount += amount
+        self.bet_count += 1
 
 
 @dataclass
-class PlayerBet:
-    """
-    Individual player bet information.
-    
-    Represents a single bet placed by a player:
-    - player_address: Address of the betting player
-    - round_id: Round in which bet was placed
-    - amount: Bet amount in wei
-    - ticket_numbers: List of ticket numbers for this bet
-    - timestamp: When bet was placed
-    """
-    player_address: str
+class RoundSnapshot:
+    """Historical record of a completed or refunded round."""
+
     round_id: int
-    amount: int
-    ticket_numbers: List[int] = field(default_factory=list)
-    timestamp: datetime = field(default_factory=datetime.now)
-    
-    def __post_init__(self):
-        """Ensure ticket_numbers is a list"""
-        if self.ticket_numbers is None:
-            self.ticket_numbers = []
+    start_time: int
+    end_time: int
+    min_draw_time: int
+    max_draw_time: int
+    total_pot: int
+    participant_count: int
+    winner: Optional[str]
+    winner_prize: int
+    publisher_commission: int
+    sparsity_commission: int
+    state: RoundState
+    finished_at: int
+    refund_reason: Optional[str] = None
+
+
+@dataclass
+class LiveFeedItem:
+    """Entry pushed to the frontend activity feed."""
+
+    event_type: str
+    message: str
+    details: Dict[str, int | str]
+    severity: str = "info"
+    created_at: datetime = field(default_factory=datetime.utcnow)
 
 
 @dataclass
 class OperatorStatus:
-    """
-    Current status of the automated operator.
-    
-    Provides comprehensive status information for monitoring:
-    - is_running: Whether operator is actively running
-    - current_round_id: ID of current active round (if any)
-    - auto_create_rounds: Whether operator auto-creates new rounds
-    - last_action_time: Timestamp of last operator action
-    - pending_actions: List of pending actions to perform
-    - error_count: Number of recent errors
-    - total_rounds_managed: Total rounds managed by this operator
-    """
+    """Operational metrics for the passive operator loop."""
+
     is_running: bool = False
     current_round_id: Optional[int] = None
-    auto_create_rounds: bool = True
-    last_action_time: Optional[datetime] = None
-    pending_actions: List[str] = field(default_factory=list)
-    error_count: int = 0
-    total_rounds_managed: int = 0
-    
-    def __post_init__(self):
-        """Ensure pending_actions is a list"""
-        if self.pending_actions is None:
-            self.pending_actions = []
+    last_event_time: Optional[datetime] = None
+    last_draw_attempt: Optional[datetime] = None
+    consecutive_draw_failures: int = 0
+    max_draw_retries: int = 3
+    scheduled_draw_round_id: Optional[int] = None
+    scheduled_draw_due_at: Optional[int] = None
+    watchdog_last_check: Optional[datetime] = None
+
+    def record_event(self) -> None:
+        self.last_event_time = datetime.utcnow()
+
+    def record_draw_attempt(self) -> None:
+        self.last_draw_attempt = datetime.utcnow()
+
+    def reset_draw_failures(self) -> None:
+        self.consecutive_draw_failures = 0
+
+    def increment_draw_failures(self) -> None:
+        self.consecutive_draw_failures += 1

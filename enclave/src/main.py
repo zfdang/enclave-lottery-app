@@ -1,34 +1,23 @@
 #!/usr/bin/env python3
 """
-Enhanced Automated Lottery Operator Application
+Passive Lottery Operator Application
 
-Main entry point for the fully automated single-round lottery operator system.
-Uses memory-based event storage and automated round management.
+Entry point for the enclave lottery backend running in passive mode.
+Coordinates the blockchain client, passive operator, and FastAPI server.
 """
 
 import asyncio
 import logging
 import signal
 import sys
+import traceback
 from pathlib import Path
-
-#!/usr/bin/env python3
-"""
-Enhanced Automated Lottery Operator Application
-
-Main entry point for the fully automated single-round lottery operator system.
-Uses memory-based event storage and automated round management.
-"""
-
-import asyncio
-import logging
-import signal
-import sys
-from pathlib import Path
+from typing import Any, Optional
 
 # Load environment variables from .env file if it exists
 try:
     from dotenv import load_dotenv
+
     # Load .env from project root (3 levels up from this file)
     env_path = Path(__file__).parent.parent.parent / '.env'
     load_dotenv(env_path)
@@ -40,9 +29,9 @@ except ImportError:
 sys.path.insert(0, str(Path(__file__).parent))
 
 from web_server import LotteryWebServer
-from lottery.operator import AutomatedOperator
-from lottery.event_manager import memory_store
 from blockchain.client import BlockchainClient
+from lottery.event_manager import memory_store
+from lottery.operator import PassiveOperator
 from utils.config import load_config
 from utils.crypto import EnclaveAttestation
 
@@ -54,35 +43,32 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class EnhancedLotteryOperatorApp:
-    """Enhanced automated lottery operator application.
+class PassiveLotteryOperatorApp:
+    """Coordinator for the passive lottery backend services.
 
-    Responsible for initializing and orchestrating the blockchain client,
-    automated operator, and the FastAPI web server. Handles graceful shutdown
-    and provides a lightweight startup summary for diagnostics.
+    Initializes the blockchain client, passive operator, and FastAPI server,
+    manages lifecycle events, and emits basic diagnostic summaries.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.config = load_config()
-        self.web_server = None
-        self.automated_operator = None
-        self.blockchain_client = None
+        self.web_server: Optional[LotteryWebServer] = None
+        self.operator: Optional[PassiveOperator] = None
+        self.blockchain_client: Optional[BlockchainClient] = None
+        self._operator_task: Optional[asyncio.Task[Any]] = None
+        self._server_task: Optional[asyncio.Task[Any]] = None
         self.running = True
+        self._stopping = False
+        self._stopped = False
 
-        # Register basic signal handlers
         self._setup_signal_handlers()
+        logger.info("🎲 Passive Lottery Operator Application initialized")
 
-        logger.info("🎲 Enhanced Lottery Operator Application initialized")
+    def _setup_signal_handlers(self) -> None:
+        signal.signal(signal.SIGINT, self._handle_signal)
+        signal.signal(signal.SIGTERM, self._handle_signal)
 
-    def _setup_signal_handlers(self):
-        def _handler(signum, frame):
-            logger.info(f"📡 Received signal {signum}, initiating graceful shutdown...")
-            self.running = False
-
-        signal.signal(signal.SIGINT, _handler)
-        signal.signal(signal.SIGTERM, _handler)
-
-    def _display_config_summary(self):
+    def _display_config_summary(self) -> None:
         """Display key configuration options for diagnostics."""
         logger.info("=" * 60)
         logger.info("📋 CONFIGURATION SUMMARY")
@@ -95,8 +81,18 @@ class EnhancedLotteryOperatorApp:
         logger.info(f"👤 Operator: {blockchain_config.get('operator_address', 'Auto-generated')}")
 
         operator_config = self.config.get('operator', {})
-        logger.info(f"🤖 Auto Create Rounds: {operator_config.get('auto_create_rounds', True)}")
-        logger.info(f"⏱️  Check Interval: {operator_config.get('check_interval', 30)}s")
+        passive_cfg = operator_config.get('passive', {})
+        logger.info(
+            "🤖 Passive poll intervals: events=%ss, state=%ss, draw=%ss",
+            passive_cfg.get('event_poll_interval', operator_config.get('event_poll_interval', 6.0)),
+            passive_cfg.get('state_refresh_interval', operator_config.get('state_refresh_interval', 30.0)),
+            passive_cfg.get('draw_check_interval', operator_config.get('draw_check_interval', 10.0)),
+        )
+        logger.info(
+            "⏱️  Draw retry delay: %ss (max retries %s)",
+            passive_cfg.get('draw_retry_delay', operator_config.get('draw_retry_delay', 45.0)),
+            passive_cfg.get('max_draw_retries', operator_config.get('max_draw_retries', 3)),
+        )
 
         server_config = self.config.get('server', {})
         logger.info(f"🌍 Server Host: {server_config.get('host', '0.0.0.0')}")
@@ -104,9 +100,9 @@ class EnhancedLotteryOperatorApp:
 
         logger.info("=" * 60)
 
-    async def initialize(self):
+    async def initialize(self) -> None:
         """Initialize blockchain client, operator, and web server instances."""
-        logger.info("🚀 Initializing Enhanced Lottery Operator Application")
+        logger.info("🚀 Initializing Passive Lottery Operator Application")
 
         # Show configuration summary
         self._display_config_summary()
@@ -116,18 +112,18 @@ class EnhancedLotteryOperatorApp:
         self.blockchain_client = BlockchainClient(self.config)
         await self.blockchain_client.initialize()
 
-        # Automated operator
-        logger.info("🎯 Initializing automated operator service...")
-        self.automated_operator = AutomatedOperator(self.blockchain_client, self.config)
-        await self.automated_operator.initialize()
+        # Passive operator
+        logger.info("🎯 Initializing passive operator service...")
+        self.operator = PassiveOperator(self.blockchain_client, self.config)
+        await self.operator.initialize()
 
         # Web server
-        logger.info("🌐 Initializing enhanced web server...")
-        self.web_server = LotteryWebServer(self.config, self.automated_operator, self.blockchain_client)
+        logger.info("🌐 Initializing web server...")
+        self.web_server = LotteryWebServer(self.config, self.operator, self.blockchain_client)
 
-        logger.info("🎉 Enhanced application initialization completed")
+        logger.info("🎉 Passive application initialization completed")
 
-    async def start(self):
+    async def start(self) -> None:
         """Start services and run until a shutdown signal is received."""
         try:
             await self.initialize()
@@ -139,88 +135,95 @@ class EnhancedLotteryOperatorApp:
                     att = EnclaveAttestation()
                     _ = att.generate_attestation()
                     logger.info("✅ Enclave attestation generated")
-                except Exception as e:
-                    logger.warning(f"⚠️  Failed to generate enclave attestation: {e}")
+                except Exception as exc:  # pragma: no cover - hardware specific
+                    logger.warning(f"⚠️  Failed to generate enclave attestation: {exc}")
 
-            # Start operator
-            if not self.automated_operator:
-                raise RuntimeError("Automated operator failed to initialize")
+            if not self.operator:
+                raise RuntimeError("Passive operator failed to initialize")
 
-            logger.info("🤖 Starting automated operator service...")
-            operator_task = asyncio.create_task(self.automated_operator.start())
+            logger.info("🤖 Starting passive operator service...")
+            self._operator_task = asyncio.create_task(self.operator.start())
 
-            # Start web server
             if not self.web_server:
                 raise RuntimeError("Web server failed to initialize")
 
             server_host = self.config.get('server', {}).get('host', '0.0.0.0')
             server_port = int(self.config.get('server', {}).get('port', 6080))
 
-            logger.info(f"🌍 Starting enhanced web server on {server_host}:{server_port}...")
+            logger.info(f"🌍 Starting web server on {server_host}:{server_port}...")
             try:
-                server_task = asyncio.create_task(self.web_server.start(host=server_host, port=server_port))
-                # Give the server a moment to attempt bind; if it fails synchronously the task will be done
+                self._server_task = asyncio.create_task(
+                    self.web_server.start(host=server_host, port=server_port)
+                )
                 await asyncio.sleep(0.2)
-                if server_task.done():
-                    exc = server_task.exception()
+                if self._server_task.done():
+                    exc = self._server_task.exception()
                     if exc:
                         logger.error(f"Web server task failed during startup: {exc}")
-                        await self.stop()
                         raise exc
-            except Exception as e:
-                logger.error(f"Web server failed to start: {e}")
-                await self.stop()
+            except Exception as exc:
+                logger.error(f"Web server failed to start: {exc}")
                 raise
 
-            # Display summary
             self._display_startup_summary()
 
-            # Run until signal
             while self.running:
                 await asyncio.sleep(1)
 
             logger.info("🛑 Shutdown signal received, stopping application...")
-
-        except Exception:
-            # Ensure stop is always attempted on any startup error
-            await self.stop()
-            raise
-
         finally:
             await self.stop()
 
-    async def stop(self):
+    async def stop(self) -> None:
         """Stop all services and cleanup resources."""
-        if not self.running:
-            # Allow multiple calls safely
-            pass
+        if self._stopping or self._stopped:
+            return
 
-        logger.info("🛑 Stopping Enhanced Lottery Operator Application")
+        self._stopping = True
+        logger.info("🛑 Stopping Passive Lottery Operator Application")
         self.running = False
 
         # Stop operator
-        if getattr(self, 'automated_operator', None):
+        if self.operator:
             try:
-                await self.automated_operator.stop()
-                logger.info("✅ Automated operator service stopped")
-            except Exception as e:
-                logger.error(f"❌ Error stopping automated operator: {e}")
+                await self.operator.stop()
+                logger.info("✅ Passive operator service stopped")
+            except Exception as exc:
+                logger.error(f"❌ Error stopping passive operator: {exc}")
+        if self._operator_task:
+            try:
+                await self._operator_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:  # pragma: no cover - diagnostic
+                logger.debug(f"Operator task exited with error: {exc}")
+            self._operator_task = None
 
         # Stop web server
-        if getattr(self, 'web_server', None):
+        if self.web_server:
             try:
                 await self.web_server.stop()
-                logger.info("✅ Enhanced web server stopped")
-            except Exception as e:
-                logger.error(f"❌ Error stopping web server: {e}")
+                logger.info("✅ Web server stopped")
+            except Exception as exc:
+                logger.error(f"❌ Error stopping web server: {exc}")
+        if self._server_task:
+            if not self._server_task.done():
+                self._server_task.cancel()
+            try:
+                await self._server_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:  # pragma: no cover - diagnostic
+                logger.debug(f"Web server task exited with error: {exc}")
+            self._server_task = None
 
         # Close blockchain client
-        if getattr(self, 'blockchain_client', None):
+        if self.blockchain_client:
             try:
                 await self.blockchain_client.close()
                 logger.info("✅ Blockchain client connections closed")
-            except Exception as e:
-                logger.error(f"❌ Error closing blockchain client: {e}")
+            except Exception as exc:
+                logger.error(f"❌ Error closing blockchain client: {exc}")
 
         # Clear memory store
         try:
@@ -229,46 +232,62 @@ class EnhancedLotteryOperatorApp:
             elif hasattr(memory_store, 'clear'):
                 memory_store.clear()
             logger.info("✅ Memory store cleared")
-        except Exception as e:
-            logger.error(f"❌ Error clearing memory store: {e}")
+        except Exception as exc:
+            logger.error(f"❌ Error clearing memory store: {exc}")
 
-        logger.info("🟢 Enhanced Lottery Operator Application stopped successfully")
+        logger.info("🟢 Passive Lottery Operator Application stopped successfully")
+        self._stopping = False
+        self._stopped = True
 
-    def _display_startup_summary(self):
+    def _display_startup_summary(self) -> None:
         logger.info("=" * 60)
-        logger.info("🔰 ENHANCED LOTTERY OPERATOR APPLICATION STARTED")
+        logger.info("🔰 PASSIVE LOTTERY OPERATOR APPLICATION STARTED")
         logger.info("=" * 60)
 
         # Operator status
         try:
-            status = self.automated_operator.get_status() if self.automated_operator else {}
-            logger.info(f"🤖 Operator Status: {status.get('status')}")
-            logger.info(f"🔄 Auto Create Rounds: {status.get('auto_create_enabled')}")
-            logger.info(f"📍 Operator Address: {status.get('operator_address')}")
-            current_round_id = status.get('current_round_id') or 0
-            if current_round_id > 0:
+            status = self.operator.get_status() if self.operator else {}
+            status_dict = status if isinstance(status, dict) else getattr(status, '__dict__', {})
+            logger.info(f"🤖 Operator Status: {status_dict.get('status')}")
+            current_round_id = status_dict.get('current_round_id') or 0
+            if current_round_id:
                 logger.info(f"🎲 Current Round: #{current_round_id}")
             else:
-                logger.info("🎲 No active round - will create automatically")
-        except Exception as e:
-            logger.warning(f"⚠️  Could not get operator status: {e}")
+                logger.info("🎲 No active round detected yet")
+            errors = status_dict.get('errors') or []
+            if errors:
+                logger.info(f"⚠️ Pending operator errors: {errors}")
+        except Exception as exc:
+            logger.warning(f"⚠️  Could not get operator status: {exc}")
 
         # Contract config
         try:
             if self.blockchain_client:
                 logger.info(f"💰 Contract Address: {self.blockchain_client.contract_address}")
-                logger.info(f"📍 Operator Address: {self.blockchain_client.account.address if self.blockchain_client.account else 'N/A'}")
-        except Exception as e:
-            logger.warning(f"⚠️  Could not get contract config: {e}")
+                operator_address = (
+                    self.blockchain_client.account.address
+                    if getattr(self.blockchain_client, 'account', None)
+                    else 'N/A'
+                )
+                logger.info(f"📍 Operator Address: {operator_address}")
+        except Exception as exc:
+            logger.warning(f"⚠️  Could not get contract config: {exc}")
 
         # Memory store stats
         try:
-            event_count = len(memory_store.events)
-            round_count = len(memory_store.rounds)
-            bet_count = len(memory_store.bets)
-            logger.info(f"💾 Memory Store: {event_count} events, {round_count} rounds, {bet_count} bets")
-        except Exception as e:
-            logger.warning(f"⚠️  Could not get memory store status: {e}")
+            current_round = memory_store.get_current_round()
+            history_len = len(memory_store.get_round_history())
+            participant_len = len(memory_store.get_participants())
+            feed_len = len(memory_store.get_live_feed())
+            logger.info(
+                "💾 Memory Store: current round=%s, history=%s entries, participants=%s, feed=%s",
+                current_round.round_id if current_round else "none",
+                history_len,
+                participant_len,
+                feed_len,
+            )
+        except Exception as exc:
+            logger.warning(f"⚠️  Could not get memory store status: {exc}")
 
         server_config = self.config.get('server', {})
         host = server_config.get('host', '0.0.0.0')
@@ -282,26 +301,21 @@ class EnhancedLotteryOperatorApp:
         logger.info(f"🔧 API Endpoints: http://{host}:{port}/api/")
         logger.info("=" * 60)
 
-    def _handle_signal(self, signum, frame):
+    def _handle_signal(self, signum, frame) -> None:  # pragma: no cover - signal handler
         logger.info(f"📡 Received signal {signum}, initiating graceful shutdown...")
         self.running = False
 
 
-async def main():
-    """Main entry point for Enhanced Lottery Operator Application"""
-    app = EnhancedLotteryOperatorApp()
-
-    # Set up signal handlers for graceful shutdown
-    signal.signal(signal.SIGINT, app._handle_signal)
-    signal.signal(signal.SIGTERM, app._handle_signal)
+async def main() -> None:
+    """Main entry point for the passive lottery backend."""
+    app = PassiveLotteryOperatorApp()
 
     try:
         await app.start()
     except KeyboardInterrupt:
-        logger.info("🛑 Enhanced application interrupted by user")
-    except Exception as e:
-        logger.error(f"❌ Enhanced application failed: {e}")
-        import traceback
+        logger.info("🛑 Passive application interrupted by user")
+    except Exception as exc:
+        logger.error(f"❌ Passive application failed: {exc}")
         logger.error(f"🔍 Error details: {traceback.format_exc()}")
         sys.exit(1)
 

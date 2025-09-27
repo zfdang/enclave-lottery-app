@@ -152,7 +152,7 @@ const LotteryTimer: React.FC = () => {
           <Box textAlign="center">
             <AttachMoney sx={{ color: 'white', mb: 0.5, fontSize: '1rem' }} />
             <Typography variant="h6" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
-              {roundStatus.total_pot}
+              {((roundStatus.total_pot ?? 0) / 1e18).toFixed(4)}
             </Typography>
             <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.8)' }}>
               Prize Pool (ETH)

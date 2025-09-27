@@ -102,7 +102,7 @@ const HistoryPanel: React.FC = () => {
       {historyData?.summary && (
         <Box mb={1} p={1} sx={{ bgcolor: 'rgba(255, 255, 255, 0.1)', borderRadius: 1 }}>
           <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.8)' }}>
-            {historyData.summary.total_rounds} rounds • {historyData.summary.completion_rate.toFixed(1)}% completed
+            {historyData.summary.total_rounds} rounds • {(historyData.summary.completion_rate ?? 0).toFixed(1)}% completed
           </Typography>
         </Box>
       )}

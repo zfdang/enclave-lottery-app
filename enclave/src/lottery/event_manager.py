@@ -1,441 +1,375 @@
-"""
-Memory-Based Event Management System
+from __future__ import annotations
+import logging
 
-This module provides in-memory storage and management of lottery events and rounds.
-All data is stored in memory and will be lost on application restart, as per requirements.
-"""
+logger = logging.getLogger(__name__)
+"""In-memory state manager for the passive lottery backend."""
 
 import logging
-from datetime import datetime
-from typing import Dict, List, Optional, Callable, Any
+from collections import defaultdict, deque
 from threading import Lock
-from collections import defaultdict
+from typing import Callable, Dict, Iterable, List, Optional
 
 from lottery.models import (
-    LotteryRound, 
-    ContractEvent, 
-    PlayerBet, 
-    RoundState,
-    OperatorStatus
+    ContractConfig,
+    LiveFeedItem,
+    LotteryRound,
+    OperatorStatus,
+    ParticipantSummary,
+    RoundSnapshot,
 )
 
 logger = logging.getLogger(__name__)
 
 
-class MemoryEventStore:
-    """
-    In-memory storage for all lottery events and data.
-    
-    This class manages all lottery-related data in memory:
-    - Contract events history
-    - Round information and history
-    - Player bets and statistics
-    - Operator status and actions
-    
-    Note: All data is volatile and will be lost on application restart.
-    """
-    
-    def __init__(self):
+class MemoryStore:
+    """Volatile storage for contract state, history, and live feed."""
+
+    def __init__(self, *, feed_capacity: int = 200, history_capacity: int = 200) -> None:
         self._lock = Lock()
-        
-        # Event storage
-        self._events: List[ContractEvent] = []
-        self._events_by_name: Dict[str, List[ContractEvent]] = defaultdict(list)
-        
-        # Round storage  
-        self._rounds: Dict[int, LotteryRound] = {}
-        self._current_round_id: Optional[int] = None
-        
-        # Player bet storage
-        self._player_bets: Dict[str, List[PlayerBet]] = defaultdict(list)
-        self._round_bets: Dict[int, List[PlayerBet]] = defaultdict(list)
-        
-        # Operator status
+        self._current_round: Optional[LotteryRound] = None
+        self._participant_summaries: Dict[str, ParticipantSummary] = {}
+        self._history: deque[RoundSnapshot] = deque(maxlen=history_capacity)
+        self._live_feed: deque[LiveFeedItem] = deque(maxlen=feed_capacity)
         self._operator_status = OperatorStatus()
-        
-        # Event listeners
-        self._event_listeners: Dict[str, List[Callable]] = defaultdict(list)
-        
-        logger.info("Memory event store initialized")
-    
-    # Event Management
-    def add_event(self, event: ContractEvent) -> None:
-        """
-        Add a new contract event to memory storage.
-        
-        Args:
-            event: ContractEvent to store
-        """
+        self._contract_config: Optional[ContractConfig] = None
+        self._listeners: Dict[str, List[Callable[[dict | None], None]]] = defaultdict(list)
+
+    # ------------------------------------------------------------------
+    # Listener management
+    # ------------------------------------------------------------------
+    def add_listener(self, event_type: str, callback: Callable[[dict | None], None]) -> None:
         with self._lock:
-            self._events.append(event)
-            self._events_by_name[event.event_name].append(event)
-            
-            logger.debug(f"Added event: {event.event_name} at block {event.block_number}")
-            
-            # Notify listeners
-            self._notify_listeners(event.event_name, event)
-    
-    def get_events(self, event_name: Optional[str] = None, limit: Optional[int] = None) -> List[ContractEvent]:
-        """
-        Retrieve events from memory storage.
-        
-        Args:
-            event_name: Filter by specific event name (optional)
-            limit: Maximum number of events to return (optional)
-            
-        Returns:
-            List of ContractEvent objects
-        """
-        with self._lock:
-            if event_name:
-                events = self._events_by_name.get(event_name, [])
-            else:
-                events = self._events.copy()
-            
-            # Sort by block number (newest first)
-            events.sort(key=lambda e: e.block_number, reverse=True)
-            
-            if limit:
-                events = events[:limit]
-                
-            return events
-    
-    def get_recent_events(self, minutes: int = 60) -> List[ContractEvent]:
-        """
-        Get events from the last N minutes.
-        
-        Args:
-            minutes: Number of minutes to look back
-            
-        Returns:
-            List of recent ContractEvent objects
-        """
-        cutoff_time = datetime.now().timestamp() - (minutes * 60)
-        
-        with self._lock:
-            recent_events = [
-                event for event in self._events
-                if event.timestamp.timestamp() > cutoff_time
-            ]
-            
-            return sorted(recent_events, key=lambda e: e.block_number, reverse=True)
-    
-    # Round Management
-    def set_current_round(self, round_data: LotteryRound) -> None:
-        """
-        Set the current active round.
-        
-        Args:
-            round_data: LotteryRound object representing current round
-        """
-        with self._lock:
-            self._rounds[round_data.round_id] = round_data
-            self._current_round_id = round_data.round_id
-            
-            logger.info(f"Set current round: #{round_data.round_id} (state: {round_data.state.name})")
-    
-    def get_current_round(self) -> Optional[LotteryRound]:
-        """
-        Get the current active round.
-        
-        Returns:
-            Current LotteryRound or None if no active round
-        """
-        with self._lock:
-            if self._current_round_id is not None:
-                return self._rounds.get(self._current_round_id)
-            return None
-    
-    def get_round(self, round_id: int) -> Optional[LotteryRound]:
-        """
-        Get a specific round by ID.
-        
-        Args:
-            round_id: Round identifier
-            
-        Returns:
-            LotteryRound or None if not found
-        """
-        with self._lock:
-            return self._rounds.get(round_id)
-    
-    def get_round_history(self, limit: Optional[int] = None) -> List[LotteryRound]:
-        """
-        Get historical rounds.
-        
-        Args:
-            limit: Maximum number of rounds to return (optional)
-            
-        Returns:
-            List of LotteryRound objects sorted by round_id descending
-        """
-        with self._lock:
-            rounds = list(self._rounds.values())
-            rounds.sort(key=lambda r: r.round_id, reverse=True)
-            
-            if limit:
-                rounds = rounds[:limit]
-                
-            return rounds
-    
-    def update_round_state(self, round_id: int, new_state: RoundState) -> bool:
-        """
-        Update the state of a specific round.
-        
-        Args:
-            round_id: Round identifier
-            new_state: New RoundState
-            
-        Returns:
-            True if updated successfully, False if round not found
-        """
-        with self._lock:
-            if round_id in self._rounds:
-                old_state = self._rounds[round_id].state
-                self._rounds[round_id].state = new_state
-                
-                logger.info(f"Round #{round_id} state changed: {old_state.name} → {new_state.name}")
-                return True
-            
-            logger.warning(f"Attempted to update non-existent round #{round_id}")
-            return False
-    
-    # Player Bet Management
-    def add_player_bet(self, bet: PlayerBet) -> None:
-        """
-        Add a player bet to memory storage.
-        
-        Args:
-            bet: PlayerBet object to store
-        """
-        with self._lock:
-            self._player_bets[bet.player_address].append(bet)
-            self._round_bets[bet.round_id].append(bet)
-            
-            logger.debug(f"Added bet: {bet.amount} wei from {bet.player_address} for round #{bet.round_id}")
-    
-    def get_player_bets(self, player_address: str, round_id: Optional[int] = None) -> List[PlayerBet]:
-        """
-        Get all bets for a specific player.
-        
-        Args:
-            player_address: Player's wallet address
-            round_id: Filter by specific round (optional)
-            
-        Returns:
-            List of PlayerBet objects
-        """
-        with self._lock:
-            player_bets = self._player_bets.get(player_address, [])
-            
-            if round_id is not None:
-                player_bets = [bet for bet in player_bets if bet.round_id == round_id]
-            
-            return player_bets.copy()
-    
-    def get_round_bets(self, round_id: int) -> List[PlayerBet]:
-        """
-        Get all bets for a specific round.
-        
-        Args:
-            round_id: Round identifier
-            
-        Returns:
-            List of PlayerBet objects
-        """
-        with self._lock:
-            return self._round_bets.get(round_id, []).copy()
-    
-    def get_player_statistics(self, player_address: str) -> Dict[str, Any]:
-        """
-        Get comprehensive statistics for a player.
-        
-        Args:
-            player_address: Player's wallet address
-            
-        Returns:
-            Dictionary containing player statistics
-        """
-        with self._lock:
-            player_bets = self._player_bets.get(player_address, [])
-            
-            if not player_bets:
-                return {
-                    'total_bets': 0,
-                    'total_amount': 0,
-                    'rounds_participated': 0,
-                    'average_bet': 0,
-                    'first_bet_time': None,
-                    'last_bet_time': None
-                }
-            
-            total_amount = sum(bet.amount for bet in player_bets)
-            unique_rounds = set(bet.round_id for bet in player_bets)
-            bet_times = [bet.timestamp for bet in player_bets]
-            
-            return {
-                'total_bets': len(player_bets),
-                'total_amount': total_amount,
-                'rounds_participated': len(unique_rounds),
-                'average_bet': total_amount // len(player_bets) if player_bets else 0,
-                'first_bet_time': min(bet_times),
-                'last_bet_time': max(bet_times)
-            }
-    
-    # Operator Status Management
-    def update_operator_status(self, **kwargs) -> None:
-        """
-        Update operator status fields.
-        
-        Args:
-            **kwargs: Fields to update on OperatorStatus
-        """
-        with self._lock:
-            for key, value in kwargs.items():
-                if hasattr(self._operator_status, key):
-                    setattr(self._operator_status, key, value)
-                else:
-                    logger.warning(f"Unknown operator status field: {key}")
-            
-            # Always update last action time
-            self._operator_status.last_action_time = datetime.now()
-    
-    def get_operator_status(self) -> OperatorStatus:
-        """
-        Get current operator status.
-        
-        Returns:
-            Copy of current OperatorStatus
-        """
-        with self._lock:
-            # Return a copy to prevent external modification
-            status = OperatorStatus(
-                is_running=self._operator_status.is_running,
-                current_round_id=self._operator_status.current_round_id,
-                auto_create_rounds=self._operator_status.auto_create_rounds,
-                last_action_time=self._operator_status.last_action_time,
-                pending_actions=self._operator_status.pending_actions.copy(),
-                error_count=self._operator_status.error_count,
-                total_rounds_managed=self._operator_status.total_rounds_managed
-            )
-            return status
-    
-    def add_pending_action(self, action: str) -> None:
-        """
-        Add a pending action for the operator.
-        
-        Args:
-            action: Description of the pending action
-        """
-        with self._lock:
-            if action not in self._operator_status.pending_actions:
-                self._operator_status.pending_actions.append(action)
-                logger.debug(f"Added pending action: {action}")
-    
-    def remove_pending_action(self, action: str) -> None:
-        """
-        Remove a completed action from pending list.
-        
-        Args:
-            action: Description of the completed action
-        """
-        with self._lock:
-            if action in self._operator_status.pending_actions:
-                self._operator_status.pending_actions.remove(action)
-                logger.debug(f"Completed action: {action}")
-    
-    # Event Listeners
-    def add_event_listener(self, event_name: str, callback: Callable[[ContractEvent], None]) -> None:
-        """
-        Add a listener for specific contract events.
-        
-        Args:
-            event_name: Name of event to listen for
-            callback: Function to call when event occurs
-        """
-        with self._lock:
-            self._event_listeners[event_name].append(callback)
-            logger.debug(f"Added listener for {event_name} events")
-    
-    def _notify_listeners(self, event_name: str, event: ContractEvent) -> None:
-        """
-        Notify all listeners of a new event (internal use).
-        
-        Args:
-            event_name: Name of the event
-            event: ContractEvent that occurred
-        """
-        listeners = self._event_listeners.get(event_name, [])
+            self._listeners[event_type].append(callback)
+            logger.info(f"[MemoryStore] Adding listener for event_type={event_type}, callback={callback}")
+
+    def _emit(self, event_type: str, payload: dict | None) -> None:
+        listeners = list(self._listeners.get(event_type, []))
         for callback in listeners:
             try:
-                callback(event)
-            except Exception as e:
-                logger.error(f"Event listener error for {event_name}: {e}")
-    
-    # Statistics and Reporting
-    def get_system_statistics(self) -> Dict[str, Any]:
-        """
-        Get comprehensive system statistics.
-        
-        Returns:
-            Dictionary containing system-wide statistics
-        """
+                logger.info("Emitting %s event to listener", event_type)
+                callback(payload)
+            except Exception as exc:  # pragma: no cover
+                logger.error("Listener for %s failed: %s", event_type, exc)
+
+    # ------------------------------------------------------------------
+    # Bootstrap helpers
+    # ------------------------------------------------------------------
+    def bootstrap(
+        self,
+        *,
+        current_round: Optional[LotteryRound],
+        participants: Iterable[ParticipantSummary] = (),
+        history: Iterable[RoundSnapshot] = (),
+        contract_config: Optional[ContractConfig] = None,
+    ) -> None:
         with self._lock:
-            current_round = self.get_current_round()
-            
-            stats = {
-                'total_events': len(self._events),
-                'total_rounds': len(self._rounds),
-                'total_players': len(self._player_bets),
-                'total_bets': sum(len(bets) for bets in self._player_bets.values()),
-                'operator_status': self.get_operator_status().__dict__,
-                'current_round': current_round.__dict__ if current_round else None,
-                'event_types': list(self._events_by_name.keys()),
-                'recent_activity': len(self.get_recent_events(60))  # Last hour
+            self._current_round = current_round
+            self._participant_summaries = {p.address.lower(): p for p in participants}
+            self._history.clear()
+            for item in history:
+                self._history.append(item)
+            self._contract_config = contract_config
+            if current_round:
+                self._operator_status.current_round_id = current_round.round_id
+
+        if current_round:
+            self._emit("round_update", self._serialize_round(current_round))
+        self._emit("participants_update", self._serialize_participants())
+        self._emit("history_update", self._serialize_history())
+        if contract_config:
+            self._emit("config_update", self._serialize_config(contract_config))
+        logger.debug(f"[MemoryStore] Bootstrapped with current_round={current_round}, participants={participants}, contract_config={contract_config}")
+
+    # ------------------------------------------------------------------
+    # Round state management
+    # ------------------------------------------------------------------
+    def set_current_round(self, round_data: Optional[LotteryRound], *, reset_participants: bool = True) -> None:
+        with self._lock:
+            self._current_round = round_data
+            if reset_participants:
+                self._participant_summaries = {}
+            self._operator_status.current_round_id = (
+                round_data.round_id if round_data else None
+            )
+            self._operator_status.record_event()
+
+            payload = self._serialize_round(round_data) if round_data else None
+
+        self._emit("round_update", payload)
+        self._emit("participants_update", self._serialize_participants())
+        logger.info(f"[MemoryStore] set_current_round called with round_data={round_data}, reset_participants={reset_participants}")
+
+    def sync_participants(self, summaries: Iterable[ParticipantSummary]) -> None:
+        with self._lock:
+            self._participant_summaries = {p.address.lower(): p for p in summaries}
+        self._emit("participants_update", self._serialize_participants())
+        logger.debug(f"[MemoryStore] sync_participants called with {len(list(summaries))} participants")
+
+    def record_bet(
+        self,
+        *,
+        round_id: int,
+        player: str,
+        amount: int,
+        new_total_pot: int,
+        participant_count: int,
+    ) -> None:
+        player_key = player.lower()
+        with self._lock:
+            summary = self._participant_summaries.get(player_key)
+            if summary is None:
+                summary = ParticipantSummary(address=player)
+                self._participant_summaries[player_key] = summary
+            summary.add_bet(amount)
+
+            if self._current_round and self._current_round.round_id == round_id:
+                self._current_round.total_pot = new_total_pot
+                self._current_round.participant_count = participant_count
+
+            feed_item = LiveFeedItem(
+                event_type="bet_placed",
+                message=f"Bet placed by {player[:10]}",
+                details={
+                    "roundId": round_id,
+                    "player": player,
+                    "amountWei": amount,
+                    "totalPotWei": new_total_pot,
+                },
+            )
+            self._append_feed(feed_item)
+
+            payload = self._serialize_round(self._current_round) if self._current_round else None
+
+        self._emit("round_update", payload)
+        self._emit("participants_update", self._serialize_participants())
+        self._emit("live_feed", self._serialize_feed_item(feed_item))
+        logger.debug(f"[MemoryStore] record_bet: round_id={round_id}, player={player}, amount={amount}, new_total_pot={new_total_pot}, participant_count={participant_count}")
+
+    def record_round_completion(self, snapshot: RoundSnapshot) -> None:
+        with self._lock:
+            self._append_history(snapshot)
+            feed_item = LiveFeedItem(
+                event_type="round_completed"
+                if snapshot.state.name == "COMPLETED"
+                else "round_refunded",
+                message=f"Round {snapshot.round_id} {snapshot.state.name.lower()}",
+                details={
+                    "roundId": snapshot.round_id,
+                    "totalPotWei": snapshot.total_pot,
+                    "winner": snapshot.winner or "",
+                },
+            )
+            self._append_feed(feed_item)
+            self._participant_summaries = {}
+            payload_feed = self._serialize_feed_item(feed_item)
+            history_payload = self._serialize_history()
+
+        self._emit("history_update", history_payload)
+        self._emit("participants_update", self._serialize_participants())
+        self._emit("live_feed", payload_feed)
+        logger.debug(f"[MemoryStore] record_round_completion: snapshot={snapshot}")
+
+    # ------------------------------------------------------------------
+    # Configuration and status
+    # ------------------------------------------------------------------
+    def set_contract_config(self, config: ContractConfig) -> None:
+        with self._lock:
+            self._contract_config = config
+        self._emit("config_update", self._serialize_config(config))
+        logger.debug(f"[MemoryStore] set_contract_config: config={config}")
+
+    def get_contract_config(self) -> Optional[ContractConfig]:
+        with self._lock:
+            return self._contract_config
+
+    def update_operator_status(self, update: Callable[[OperatorStatus], None]) -> OperatorStatus:
+        with self._lock:
+            update(self._operator_status)
+            status_copy = OperatorStatus(
+                is_running=self._operator_status.is_running,
+                current_round_id=self._operator_status.current_round_id,
+                last_event_time=self._operator_status.last_event_time,
+                last_draw_attempt=self._operator_status.last_draw_attempt,
+                consecutive_draw_failures=self._operator_status.consecutive_draw_failures,
+                max_draw_retries=self._operator_status.max_draw_retries,
+                scheduled_draw_round_id=self._operator_status.scheduled_draw_round_id,
+                scheduled_draw_due_at=self._operator_status.scheduled_draw_due_at,
+                watchdog_last_check=self._operator_status.watchdog_last_check,
+            )
+        self._emit("operator_status", self._serialize_operator_status(status_copy))
+        logger.debug(f"[MemoryStore] update_operator_status called with update={update}")
+        return status_copy
+
+    def add_operator_alert(
+        self,
+        *,
+        message: str,
+        details: Dict[str, int | str],
+        severity: str = "error",
+    ) -> None:
+        feed_item = LiveFeedItem(
+            event_type="operator_alert",
+            message=message,
+            details=details,
+            severity=severity,
+        )
+        with self._lock:
+            self._append_feed(feed_item)
+        payload = self._serialize_feed_item(feed_item)
+        self._emit("live_feed", payload)
+        self._emit("operator_alert", payload)
+        logger.debug(f"[MemoryStore] add_operator_alert: message={message}, details={details}, severity={severity}")
+
+    # ------------------------------------------------------------------
+    # Accessors
+    # ------------------------------------------------------------------
+    def get_current_round(self) -> Optional[LotteryRound]:
+        with self._lock:
+            return self._current_round
+
+    def get_participants(self) -> List[ParticipantSummary]:
+        with self._lock:
+            return sorted(
+                self._participant_summaries.values(),
+                key=lambda item: item.total_amount,
+                reverse=True,
+            )
+
+    def get_round_history(self, limit: Optional[int] = None) -> List[RoundSnapshot]:
+        with self._lock:
+            items = list(self._history)
+        if limit is not None:
+            return items[-limit:]
+        return items
+
+    def get_live_feed(self, limit: Optional[int] = None) -> List[LiveFeedItem]:
+        with self._lock:
+            items = list(self._live_feed)
+        if limit is not None:
+            return items[-limit:]
+        return items
+
+    def get_operator_status(self) -> OperatorStatus:
+        with self._lock:
+            return self._operator_status
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+    def _append_history(self, snapshot: RoundSnapshot) -> None:
+        self._history.append(snapshot)
+
+    def _append_feed(self, item: LiveFeedItem) -> None:
+        self._live_feed.append(item)
+
+    def _serialize_round(self, round_data: Optional[LotteryRound]) -> Optional[dict]:
+        if not round_data:
+            return None
+        return {
+            "roundId": round_data.round_id,
+            "state": round_data.state.value,
+            "stateLabel": round_data.state.name,
+            "startTime": round_data.start_time,
+            "endTime": round_data.end_time,
+            "minDrawTime": round_data.min_draw_time,
+            "maxDrawTime": round_data.max_draw_time,
+            "totalPotWei": round_data.total_pot,
+            "participantCount": round_data.participant_count,
+            "winner": round_data.winner,
+            "publisherCommissionWei": round_data.publisher_commission,
+            "sparsityCommissionWei": round_data.sparsity_commission,
+            "winnerPrizeWei": round_data.winner_prize,
+        }
+
+    def _serialize_participants(self) -> dict:
+        participants = [
+            {
+                "address": summary.address,
+                "totalAmountWei": summary.total_amount,
+                "betCount": summary.bet_count,
             }
-            
-            # Calculate total volume
-            total_volume = 0
-            for round_bets in self._round_bets.values():
-                total_volume += sum(bet.amount for bet in round_bets)
-            stats['total_volume_wei'] = total_volume
-            
-            return stats
+            for summary in self.get_participants()
+        ]
+        return {
+            "participants": participants,
+            "totalParticipants": len(participants),
+        }
 
-    # Compatibility properties for diagnostics
-    @property
-    def events(self) -> List[ContractEvent]:
-        with self._lock:
-            return list(self._events)
+    def _serialize_history(self) -> dict:
+        rounds = [
+            {
+                "roundId": snapshot.round_id,
+                "state": snapshot.state.value,
+                "stateLabel": snapshot.state.name,
+                "startTime": snapshot.start_time,
+                "endTime": snapshot.end_time,
+                "minDrawTime": snapshot.min_draw_time,
+                "maxDrawTime": snapshot.max_draw_time,
+                "totalPotWei": snapshot.total_pot,
+                "participantCount": snapshot.participant_count,
+                "winner": snapshot.winner,
+                "winnerPrizeWei": snapshot.winner_prize,
+                "publisherCommissionWei": snapshot.publisher_commission,
+                "sparsityCommissionWei": snapshot.sparsity_commission,
+                "finishedAt": snapshot.finished_at,
+                "refundReason": snapshot.refund_reason,
+            }
+            for snapshot in self.get_round_history()
+        ]
+        return {"rounds": rounds}
 
-    @property
-    def rounds(self) -> Dict[int, LotteryRound]:
-        with self._lock:
-            return dict(self._rounds)
+    def _serialize_feed_item(self, item: LiveFeedItem) -> dict:
+        return {
+            "type": item.event_type,
+            "message": item.message,
+            "details": item.details,
+            "severity": item.severity,
+            "timestamp": item.created_at.isoformat(),
+        }
 
-    @property
-    def bets(self) -> Dict[int, List[PlayerBet]]:
-        with self._lock:
-            return dict(self._round_bets)
-    
+    def _serialize_config(self, config: ContractConfig) -> dict:
+        return {
+            "publisher": config.publisher_addr,
+            "sparsity": config.sparsity_addr,
+            "operator": config.operator_addr,
+            "publisherCommission": config.publisher_commission,
+            "sparsityCommission": config.sparsity_commission,
+            "minBet": config.min_bet,
+            "bettingDuration": config.betting_duration,
+            "minDrawDelay": config.min_draw_delay,
+            "maxDrawDelay": config.max_draw_delay,
+            "minEndTimeExtension": config.min_end_time_extension,
+            "minParticipants": config.min_participants,
+        }
+
+    def _serialize_operator_status(self, status: OperatorStatus) -> dict:
+        return {
+            "isRunning": status.is_running,
+            "currentRoundId": status.current_round_id,
+            "lastEventTime": status.last_event_time.isoformat() if status.last_event_time else None,
+            "lastDrawAttempt": status.last_draw_attempt.isoformat() if status.last_draw_attempt else None,
+            "consecutiveDrawFailures": status.consecutive_draw_failures,
+            "maxDrawRetries": status.max_draw_retries,
+            "scheduledDrawRoundId": status.scheduled_draw_round_id,
+            "scheduledDrawDueAt": status.scheduled_draw_due_at,
+            "watchdogLastCheck": status.watchdog_last_check.isoformat() if status.watchdog_last_check else None,
+        }
+
     def clear_all_data(self) -> None:
-        """
-        Clear all stored data (for testing or reset).
-        
-        Warning: This will permanently delete all in-memory data!
-        """
         with self._lock:
-            self._events.clear()
-            self._events_by_name.clear()
-            self._rounds.clear()
-            self._player_bets.clear()
-            self._round_bets.clear()
-            self._current_round_id = None
-            self._operator_status = OperatorStatus()
-            self._event_listeners.clear()
-            
-            logger.warning("All memory data cleared!")
+            self._current_round = None
+            self._participant_summaries = {}
+            self._history.clear()
+            self._live_feed.clear()
+            self._operator_status = OperatorStatus(
+                max_draw_retries=self._operator_status.max_draw_retries
+            )
+            self._contract_config = None
+        self._emit("round_update", None)
+        self._emit("participants_update", self._serialize_participants())
+        self._emit("history_update", self._serialize_history())
+        logger.debug("[MemoryStore] clear_all_data called")
 
 
-# Global instance for application-wide use
-memory_store = MemoryEventStore()
+# Global singleton used across the backend.
+memory_store = MemoryStore()

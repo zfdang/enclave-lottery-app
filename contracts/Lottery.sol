@@ -159,7 +159,7 @@ contract Lottery {
 
         // start with roundId = 1 and WAITING state
         round = LotteryRound({
-            roundId: 0,
+            roundId: 1,
             startTime: 0,
             endTime: 0,
             minDrawTime: 0,
@@ -264,36 +264,9 @@ contract Lottery {
      * @dev Start a new lottery round
      * @notice Can only be called by operator when in waiting state
      */
-    function startNewRound() external onlyOperator {
+    function startRound() external onlyOperator {
         require(round.state == RoundState.WAITING, "Must be in waiting state to start new round");
-
-        _clearBettingData();
-
-        uint256 newRoundId = round.roundId + 1;
-
-        uint256 startTime = block.timestamp;
-        uint256 endTime = startTime + bettingDuration;
-        uint256 minDrawTime = endTime + minDrawDelayAfterEnd;
-        uint256 maxDrawTime = endTime + maxDrawDelayAfterEnd;
-
-        round = LotteryRound({
-            roundId: newRoundId,
-            startTime: startTime,
-            endTime: endTime,
-            minDrawTime: minDrawTime,
-            maxDrawTime: maxDrawTime,
-            totalPot: 0,
-            participantCount: 0,
-            winner: address(0),
-            publisherCommission: 0,
-            sparsityCommission: 0,
-            winnerPrize: 0,
-            state: RoundState.BETTING
-        });
-
-        _changeState(RoundState.BETTING);
-
-        emit RoundCreated(round.roundId, startTime, endTime, minDrawTime, maxDrawTime);
+        _startRoundFromWaiting();
     }
     
     /**
@@ -326,7 +299,7 @@ contract Lottery {
         _refundRound("Operator-initiated refund");
 
         // start new round in waiting state, waiting for first bet or operator to start it explicitly
-        _startNewRoundInWaiting();
+        _createNewRoundToWaiting();
     }
     
     /**
@@ -362,8 +335,8 @@ contract Lottery {
             _distributePayout(winner, randomSeed);
         }
         
-        // start new round in waiting state, waiting for first bet or operator to start it explicitly
-        _startNewRoundInWaiting();
+        // create new round in waiting state, waiting for first bet or operator to start it explicitly
+        _createNewRoundToWaiting();
     }
     
     /**
@@ -432,8 +405,18 @@ contract Lottery {
      * @param reason Reason for refund
      */
     function _refundRound(string memory reason) internal {
-        uint256 totalRefunded = _refundParticipants();
-        
+        uint256 totalRefunded = 0;
+        for (uint256 i = 0; i < participants.length; i++) {
+            address participant = participants[i];
+            uint256 betAmount = bets[participant];
+            
+            if (betAmount > 0) {
+                bets[participant] = 0; // Prevent re-entrancy
+                payable(participant).transfer(betAmount);
+                totalRefunded += betAmount;
+            }
+        }
+                
         emit RoundRefunded(round.roundId, totalRefunded, round.participantCount, reason);
         _changeState(RoundState.REFUNDED);        
     }
@@ -450,7 +433,7 @@ contract Lottery {
 
         // If currently waiting, implicitly start a new round from this first bet
         if (round.state == RoundState.WAITING) {
-            _startNewRoundFromFirstBet();
+            _startRoundFromWaiting();
         }
 
         // After ensuring a round exists, require that we're within the active betting window
@@ -471,35 +454,16 @@ contract Lottery {
     }
     
     /**
-     * @dev Internal function to start a new round when first bet is placed
+     * @dev Internal function to start the current round when first bet is placed, or started by operator manually
      */
-    function _startNewRoundFromFirstBet() internal {
-        _clearBettingData();
-        
-        uint256 newRoundId = round.roundId + 1;
-        uint256 startTime = block.timestamp;
-        uint256 endTime = startTime + bettingDuration;
-        uint256 minDrawTime = endTime + minDrawDelayAfterEnd;
-        uint256 maxDrawTime = endTime + maxDrawDelayAfterEnd;
-        
-        round = LotteryRound({
-            roundId: newRoundId,
-            startTime: startTime,
-            endTime: endTime,
-            minDrawTime: minDrawTime,
-            maxDrawTime: maxDrawTime,
-            totalPot: 0,
-            participantCount: 0,
-            winner: address(0),
-            publisherCommission: 0,
-            sparsityCommission: 0,
-            winnerPrize: 0,
-            state: RoundState.BETTING
-        });
+    function _startRoundFromWaiting() internal {
+                
+        round.startTime = block.timestamp;
+        round.endTime = round.startTime + bettingDuration;
+        round.minDrawTime = round.endTime + minDrawDelayAfterEnd;
+        round.maxDrawTime = round.endTime + maxDrawDelayAfterEnd;
         
         _changeState(RoundState.BETTING);
-        
-        emit RoundCreated(round.roundId, startTime, endTime, minDrawTime, maxDrawTime);
     }
     
     // =============== PUBLIC FUNCTIONS ===============
@@ -509,22 +473,25 @@ contract Lottery {
      * @notice Anyone can call this if maxDrawTime has passed without completion
      */
     function refundExpiredRound() external {
-        require(round.roundId > 0, "No active round");
         require(round.state == RoundState.BETTING, "Round not in betting state");
+        require(round.participantCount > 0, "No participants in round");
         require(block.timestamp > round.maxDrawTime, "Max draw time not expired");
         
         _refundRound("Draw time expired - public refund");
 
-        // start new round in waiting state, waiting for first bet or operator to start it explicitly
-        _startNewRoundInWaiting();
+        // create new round in waiting state, waiting for first bet or operator to start it explicitly
+        _createNewRoundToWaiting();
     }
     
     // =============== INTERNAL FUNCTIONS ===============
     
     /**
-     * @dev Internal function to clear current round data for new round
+     * @dev Internal function to reset round to waiting state
      */
-    function _clearBettingData() internal {
+    function _createNewRoundToWaiting() internal {
+        // check state is completed or refunded
+        require(round.state == RoundState.COMPLETED || round.state == RoundState.REFUNDED, "Can only reset from completed or refunded state");
+        
         // Clear current round bets mapping for previous participants
         for (uint256 i = 0; i < participants.length; i++) {
             delete bets[participants[i]];
@@ -532,17 +499,6 @@ contract Lottery {
         
         // Clear current round participants array
         delete participants;
-    }
-
-
-    /**
-     * @dev Internal function to reset round to waiting state
-     */
-    function _startNewRoundInWaiting() internal {
-        // check state is completed or refunded
-        require(round.state == RoundState.COMPLETED || round.state == RoundState.REFUNDED, "Can only reset from completed or refunded state");
-        
-        _clearBettingData();
 
         uint256 newRoundId = round.roundId + 1;
         round = LotteryRound({
@@ -560,29 +516,10 @@ contract Lottery {
             state: RoundState.WAITING
         });
 
+        emit RoundCreated(newRoundId, 0, 0, 0, 0);
         _changeState(RoundState.WAITING);
-    }
-    
-    /**
-     * @dev Internal function to refund all participants of current round
-     * @return totalRefunded Total amount refunded
-     */
-    function _refundParticipants() internal returns (uint256 totalRefunded) {
-        for (uint256 i = 0; i < participants.length; i++) {
-            address participant = participants[i];
-            uint256 betAmount = bets[participant];
-            
-            if (betAmount > 0) {
-                bets[participant] = 0; // Prevent re-entrancy
-                payable(participant).transfer(betAmount);
-                totalRefunded += betAmount;
-            }
-        }
-        
-        return totalRefunded;
-    }
-    
 
+    }
     
     // =============== VIEW FUNCTIONS ===============
     

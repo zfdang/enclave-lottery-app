@@ -1,614 +1,556 @@
-"""
-Enhanced FastAPI Web Server for Automated Lottery System
+"""Passive FastAPI web server for the enclave lottery backend."""
 
-Provides modern API endpoints for the single-round lottery system with:
-- Real-time round information
-- Player betting interface  
-- Operator status monitoring
-- WebSocket live updates
-- Memory-based event streaming
-"""
+from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, BackgroundTasks
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from lottery.models import RoundState, LotteryRound, ContractEvent
-from lottery.event_manager import memory_store
-from lottery.operator import AutomatedOperator
 from blockchain.client import BlockchainClient
+from lottery.event_manager import MemoryStore, memory_store
+from lottery.models import (
+    LiveFeedItem,
+    LotteryRound,
+    ParticipantSummary,
+    RoundSnapshot,
+)
+from lottery.operator import PassiveOperator
 
 logger = logging.getLogger(__name__)
 
 
-# =============== REQUEST/RESPONSE MODELS ===============
-
-class BetRequest(BaseModel):
-    """Player bet request"""
-    player_address: str
-    amount: int  # Amount in wei
-    signature: str  # Wallet signature for authentication
-
-
-class WalletConnectionRequest(BaseModel):
-    """Wallet connection request"""
+class WalletConnectRequest(BaseModel):
     address: str
     signature: str
     message: Optional[str] = None
 
 
-class OperatorActionRequest(BaseModel):
-    """Manual operator action request"""
-    action: str  # 'create_round', 'draw_round', 'refund_round'
-    round_id: Optional[int] = None
-    reason: Optional[str] = None
+class BetRecordRequest(BaseModel):
+    user_address: str
+    amount: Optional[float] = None
+    transaction_hash: Optional[str] = None
+    draw_id: Optional[int] = None
 
 
-# =============== ENHANCED WEB SERVER ===============
+class VerifyBetRequest(BaseModel):
+    user_address: str
+    transaction_hash: str
+    draw_id: Optional[int] = None
 
 
 class LotteryWebServer:
-    """
-    Enhanced web server for the automated lottery system.
-    
-    Provides comprehensive API for:
-    - Current round information and real-time updates
-    - Player betting interface with wallet integration
-    - Operator status and manual overrides
-    - System monitoring and health checks
-    - WebSocket live event streaming
-    """
-    
-    def __init__(self, config: Dict[str, Any], operator: AutomatedOperator, blockchain_client: BlockchainClient):
+    """HTTP and WebSocket gateway for the passive lottery backend."""
+
+    def __init__(
+        self,
+        config: Dict[str, Any],
+        operator: PassiveOperator,
+        blockchain_client: BlockchainClient,
+        store: MemoryStore = memory_store,
+    ) -> None:
         self.config = config
         self.operator = operator
         self.blockchain_client = blockchain_client
-        
-        # Initialize FastAPI app
+        self._store = store
+
         self.app = FastAPI(
-            title="Automated Lottery System API",
-            description="API for single-round lottery with automated operator",
-            version="2.0.0"
+            title="Enclave Lottery API",
+            description="Passive backend API surface for the enclave-hosted lottery",
+            version="3.0.0",
         )
-        
-        # WebSocket connections for live updates
-        self.websocket_connections: List[WebSocket] = []
-        
-        # Setup server components
+
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._broadcast_queue: Optional[asyncio.Queue[Tuple[str, Dict[str, Any] | None]]] = None
+        self._broadcast_task: Optional[asyncio.Task[None]] = None
+        self._ws_lock: Optional[asyncio.Lock] = None
+        self._listeners_registered = False
+        self._websockets: Set[WebSocket] = set()
+
         self._setup_middleware()
-        self._setup_routes()
         self._setup_static_files()
-        
-        logger.info("Enhanced lottery web server initialized")
+        self._setup_routes()
+
+    # ------------------------------------------------------------------
+    # FastAPI scaffolding
+    # ------------------------------------------------------------------
     def _setup_middleware(self) -> None:
-        """Setup CORS and other middleware"""
         self.app.add_middleware(
             CORSMiddleware,
-            allow_origins=["*"],  # Configure for production
+            allow_origins=["*"],
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
         )
-    
+
     def _setup_static_files(self) -> None:
-        """Setup static file serving for React frontend"""
         frontend_dist = Path(__file__).parent / "frontend" / "dist"
-        
         if frontend_dist.exists():
-            # Mount assets directory for JS/CSS files
             assets_dir = frontend_dist / "assets"
             if assets_dir.exists():
                 self.app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
-                
-            # Mount static files
             self.app.mount("/static", StaticFiles(directory=str(frontend_dist)), name="static")
-            
-            logger.info(f"Frontend static files mounted from: {frontend_dist}")
+            logger.info("Frontend static assets mounted from %s", frontend_dist)
         else:
-            logger.warning("Frontend dist directory not found - run build script first")
-            
-    def _setup_routes(self) -> None:
-        """Setup all API routes"""
-        
-        # =============== FRONTEND SERVING ===============
-        
+            logger.info("Frontend build directory not found; API-only mode")
+
+    def _setup_routes(self) -> None:  # noqa: C901 - routing setup intentionally verbose
         @self.app.get("/")
-        async def serve_frontend():
-            """Serve the main React frontend"""
+        async def serve_frontend() -> HTMLResponse:
             frontend_file = Path(__file__).parent / "frontend" / "dist" / "index.html"
-            if frontend_file.exists():
-                return HTMLResponse(content=frontend_file.read_text())
-            return HTMLResponse(content="<h1>Automated Lottery System - Frontend not built</h1>")
-        
-        # =============== SYSTEM STATUS ENDPOINTS ===============
-        
+            if not frontend_file.exists():
+                return HTMLResponse("<h1>Lottery frontend not built</h1>")
+            return HTMLResponse(frontend_file.read_text())
+
+        # ------------------------------------------------------------------
+        # Health & status
+        # ------------------------------------------------------------------
         @self.app.get("/api/health")
-        async def health_check():
-            """System health check"""
-            blockchain_health = await self.blockchain_client.health_check() if self.blockchain_client else None
-            
+        async def health_check() -> Dict[str, Any]:
+            blockchain_health: Dict[str, Any] | None = None
+            if self.blockchain_client:
+                try:
+                    blockchain_health = await self.blockchain_client.health_check()
+                except Exception as exc:  # pragma: no cover - diagnostic path
+                    logger.warning("Blockchain health probe failed: %s", exc)
+                    blockchain_health = {"status": "error", "detail": str(exc)}
+
+            operator_state = self.operator.get_status() if self.operator else {}
+            current_round = self._store.get_current_round()
             return {
-                "status": "healthy",
+                "status": "ok",
                 "timestamp": datetime.utcnow().isoformat(),
                 "components": {
-                    "web_server": True,
-                    "operator": self.operator.is_running if self.operator else False,
-                    "blockchain": blockchain_health['status'] if blockchain_health else 'unavailable',
-                    "memory_store": True
+                    "web": True,
+                    "operator": operator_state.get("status", "unknown"),
+                    "blockchain": blockchain_health or {"status": "unavailable"},
+                    "store": {"round": current_round.round_id if current_round else 0},
                 },
-                "version": "2.0.0"
             }
-        
+
         @self.app.get("/api/status")
-        async def system_status():
-            """Comprehensive system status"""
-            operator_status = self.operator.get_operator_status() if self.operator else None
-            blockchain_status = self.blockchain_client.get_client_status() if self.blockchain_client else None
-            memory_stats = memory_store.get_system_statistics()
-            
+        async def system_status() -> Dict[str, Any]:
+            current_round = self._store.get_current_round()
+            participants = self._store.get_participants()
+            history = self._store.get_round_history(limit=5)
+            operator_status = self.operator.get_status() if self.operator else {}
+            blockchain_status = self.blockchain_client.get_client_status() if self.blockchain_client else {}
             return {
                 "timestamp": datetime.utcnow().isoformat(),
+                "round": self._serialize_round(current_round),
+                "participants": self._serialize_participants(participants),
+                "recent_history": [self._serialize_history_round(item) for item in history],
                 "operator": operator_status,
                 "blockchain": blockchain_status,
-                "memory_store": memory_stats,
-                "websocket_connections": len(self.websocket_connections)
+                "websocket_connections": len(self._websockets),
             }
-        
+
         @self.app.get("/api/attestation")
-        async def get_attestation():
-            """Get nitro enclave attestation document (mockup for development)"""
-            import base64
-            import json
-            
-            # Mock attestation document structure
-            mock_attestation = {
+        async def get_attestation() -> Dict[str, Any]:
+            payload = {
                 "module_id": "i-1234567890abcdef0-enc0123456789abcdef",
                 "timestamp": int(datetime.utcnow().timestamp() * 1000),
                 "digest": "SHA384",
-                "pcrs": {
-                    "0": "a" * 96,  # Boot ROM
-                    "1": "b" * 96,  # Kernel and bootstrap
-                    "2": "c" * 96,  # Application
-                    "8": "d" * 96   # Certificate
-                },
+                "pcrs": {str(idx): "a" * 96 for idx in (0, 1, 2, 8)},
                 "certificate": "-----BEGIN CERTIFICATE-----\nMockCertificateData\n-----END CERTIFICATE-----",
                 "cabundle": ["-----BEGIN CERTIFICATE-----\nMockRootCA\n-----END CERTIFICATE-----"],
                 "public_key": None,
-                "user_data": base64.b64encode(json.dumps({
-                    "lottery_contract": self.blockchain_client.contract_address if self.blockchain_client else "0x0000000000000000000000000000000000000000",
-                    "operator_address": self.blockchain_client.account.address if self.blockchain_client and self.blockchain_client.account else "0x0000000000000000000000000000000000000000",
-                    "enclave_version": "2.0.0",
-                    "build_timestamp": "2025-09-25T00:00:00Z"
-                }).encode()).decode(),
-                "nonce": None
-            }
-            
-            # Base64 encode the entire attestation document (as Nitro Enclaves do)
-            attestation_document = base64.b64encode(
-                json.dumps(mock_attestation).encode()
-            ).decode()
-            
-            return {
-                "attestation_document": attestation_document,
-                "attestation_document_b64": attestation_document,  # Alternative field name
-                "pcrs": mock_attestation["pcrs"],
-                "user_data": mock_attestation["user_data"],
-                "timestamp": mock_attestation["timestamp"],
-                "verified": True,  # Mock verification status
-                "note": "This is a mock attestation for development purposes"
-            }
-        
-        # =============== LOTTERY ROUND ENDPOINTS ===============
-        
-        @self.app.get("/api/round/status")
-        async def get_current_round():
-            """Get current active round information"""
-            try:
-                current_round = memory_store.get_current_round()
-                
-                if not current_round:
-                    return {
-                        "round_id": 0
-                    }
-                
-                return {
-                    "round_id": current_round.round_id,
-                    "state": current_round.state.value,
-                    "state_name": current_round.state.name,
-                    "start_time": current_round.start_time,
-                    "end_time": current_round.end_time,
-                    "min_draw_time": current_round.min_draw_time,
-                    "max_draw_time": current_round.max_draw_time,
-                    "total_pot": current_round.total_pot,
-                    "participant_count": current_round.participant_count,
-                    "winner": current_round.winner,
-                    "publisher_commission": current_round.publisher_commission,
-                    "sparsity_commission": current_round.sparsity_commission,
-                    "winner_prize": current_round.winner_prize
-                }
-                
-            except Exception as e:
-                logger.error(f"Error getting current round: {e}")
-                raise HTTPException(status_code=500, detail="Failed to get round information")
-        
-        @self.app.get("/api/round/participants")
-        async def get_round_participants():
-            """Get all participants and their bets for the current round"""
-            try:
-                current_round = memory_store.get_current_round()
-                
-                if not current_round:
-                    return {
-                        "round_id": None,
-                        "participants": [],
-                        "total_participants": 0,
-                        "total_bets": 0,
-                        "total_bet_amount": 0,
-                        "message": "No active round"
-                    }
-                
-                # Get all bets for the current round
-                round_bets = memory_store.get_round_bets(current_round.round_id)
-                
-                # Group bets by player address
-                participants_data = {}
-                total_bet_amount = 0
-                
-                for bet in round_bets:
-                    player_addr = bet.player_address
-                    
-                    if player_addr not in participants_data:
-                        participants_data[player_addr] = {
-                            "address": player_addr,
-                            "bets": [],
-                            "total_bet_amount": 0,
-                            "bet_count": 0,
-                            "ticket_numbers": []
+                "user_data": base64.b64encode(
+                    json.dumps(
+                        {
+                            "lottery_contract": self.blockchain_client.contract_address if self.blockchain_client else None,
+                            "operator_address": self.blockchain_client.account.address if self.blockchain_client and self.blockchain_client.account else None,
+                            "enclave_version": "3.0.0",
+                            "build_timestamp": datetime.utcnow().isoformat(),
                         }
-                    
-                    # Add bet information
-                    bet_info = {
-                        "amount": bet.amount,
-                        "ticket_numbers": bet.ticket_numbers,
-                        "timestamp": bet.timestamp.isoformat()
-                    }
-                    
-                    participants_data[player_addr]["bets"].append(bet_info)
-                    participants_data[player_addr]["total_bet_amount"] += bet.amount
-                    participants_data[player_addr]["bet_count"] += 1
-                    participants_data[player_addr]["ticket_numbers"].extend(bet.ticket_numbers)
-                    
-                    total_bet_amount += bet.amount
-                
-                # Convert to list format
-                participants_list = list(participants_data.values())
-                
-                # Sort by total bet amount (descending)
-                participants_list.sort(key=lambda x: x["total_bet_amount"], reverse=True)
-                
-                return {
-                    "round_id": current_round.round_id,
-                    "round_state": current_round.state.name,
-                    "participants": participants_list,
-                    "total_participants": len(participants_list),
-                    "total_bets": sum(p["bet_count"] for p in participants_list),
-                    "total_bet_amount": total_bet_amount,
-                    "current_time": int(datetime.now().timestamp())
-                }
-                
-            except Exception as e:
-                logger.error(f"Error getting round participants: {e}")
-                raise HTTPException(status_code=500, detail="Failed to get participants information")
-        
-        @self.app.get("/api/history")
-        async def get_round_history(limit: int = 50):
-            """Get historical rounds with final states, winners, and prizes"""
-            try:
-                # Validate limit parameter
-                if limit <= 0:
-                    limit = 50
-                elif limit > 200:  # Cap maximum limit
-                    limit = 200
-                
-                # Get round history from memory store
-                historical_rounds = memory_store.get_round_history(limit=limit)
-                
-                # Process each round to extract relevant historical data
-                history_data = []
-                
-                for round_data in historical_rounds:
-                    # Calculate derived values
-                    total_commission = round_data.publisher_commission + round_data.sparsity_commission
-                    
-                    # Get bet count for this round
-                    round_bets = memory_store.get_round_bets(round_data.round_id)
-                    total_bets_placed = len(round_bets)
-                    
-                    # Format round data for history view
-                    round_info = {
-                        "round_id": round_data.round_id,
-                        "final_state": round_data.state.name,
-                        "final_state_value": round_data.state.value,
-                        "start_time": round_data.start_time,
-                        "end_time": round_data.end_time,
-                        "min_draw_time": round_data.min_draw_time,
-                        "max_draw_time": round_data.max_draw_time,
-                        "total_pot": round_data.total_pot,
-                        "participant_count": round_data.participant_count,
-                        "total_bets_placed": total_bets_placed,
-                        "winner": round_data.winner,
-                        "winner_prize": round_data.winner_prize,
-                        "publisher_commission": round_data.publisher_commission,
-                        "sparsity_commission": round_data.sparsity_commission,
-                        "total_commission": total_commission,
-                        "is_completed": round_data.state == RoundState.COMPLETED,
-                        "is_refunded": round_data.state == RoundState.REFUNDED,
-                        "has_winner": round_data.winner is not None
-                    }
-                    
-                    history_data.append(round_info)
-                
-                # Calculate summary statistics
-                total_rounds = len(history_data)
-                completed_rounds = len([r for r in history_data if r["is_completed"]])
-                refunded_rounds = len([r for r in history_data if r["is_refunded"]])
-                total_volume = sum(r["total_pot"] for r in history_data)
-                total_prizes_awarded = sum(r["winner_prize"] for r in history_data if r["has_winner"])
-                
-                return {
-                    "rounds": history_data,
-                    "summary": {
-                        "total_rounds": total_rounds,
-                        "completed_rounds": completed_rounds,
-                        "refunded_rounds": refunded_rounds,
-                        "completion_rate": (completed_rounds / total_rounds * 100) if total_rounds > 0 else 0,
-                        "total_volume": total_volume,
-                        "total_prizes_awarded": total_prizes_awarded,
-                        "average_pot_size": (total_volume / total_rounds) if total_rounds > 0 else 0
-                    },
-                    "pagination": {
-                        "limit": limit,
-                        "returned_count": len(history_data)
-                    },
-                    "timestamp": int(datetime.now().timestamp())
-                }
-                
-            except Exception as e:
-                logger.error(f"Error getting round history: {e}")
-                raise HTTPException(status_code=500, detail="Failed to get round history")
-        
-        @self.app.get("/api/contract/config")
-        async def get_contract_config():
-            """Get lottery contract configuration"""
-            try:
-                if not self.blockchain_client:
-                    raise HTTPException(status_code=503, detail="Blockchain service unavailable")
-                
-                config = await self.blockchain_client.get_contract_config()
-                
-                return {
-                    "config": config,
-                    "contract_address": self.blockchain_client.contract_address,
-                    "timestamp": datetime.utcnow().isoformat()
-                }
-                
-            except Exception as e:
-                logger.error(f"Error getting contract config: {e}")
-                raise HTTPException(status_code=500, detail="Failed to get contract configuration")
-        
-        @self.app.get("/api/contract/address")
-        async def get_contract_address():
-            """Return only the configured lottery contract address."""
-            try:
-                if not self.blockchain_client:
-                    raise HTTPException(status_code=503, detail="Blockchain service unavailable")
+                    ).encode("utf-8")
+                ).decode("utf-8"),
+                "nonce": None,
+            }
+            encoded = base64.b64encode(json.dumps(payload).encode("utf-8")).decode("utf-8")
+            return {
+                "attestation_document": encoded,
+                "pcrs": payload["pcrs"],
+                "user_data": payload["user_data"],
+                "timestamp": payload["timestamp"],
+                "verified": True,
+                "note": "Mock attestation for development purposes only",
+            }
 
+        # ------------------------------------------------------------------
+        # Lottery state
+        # ------------------------------------------------------------------
+        @self.app.get("/api/round/status")
+        async def get_round_status() -> Dict[str, Any]:
+            current = self._store.get_current_round()
+            response = self._serialize_round(current)
+            response.setdefault("participants", [item.address for item in self._store.get_participants()])
+            return response
+
+        @self.app.get("/api/round/participants")
+        async def get_round_participants(limit: int = 200) -> Dict[str, Any]:
+            current = self._store.get_current_round()
+            participants = self._store.get_participants()
+            if current is None:
                 return {
-                    "contract_address": self.blockchain_client.contract_address,
-                    "timestamp": datetime.utcnow().isoformat()
+                    "round_id": 0,
+                    "participants": [],
+                    "total_participants": 0,
+                    "total_amount_wei": 0,
+                    "timestamp": datetime.utcnow().isoformat(),
                 }
-            except HTTPException:
-                raise
-            except Exception as e:
-                logger.error(f"Error getting contract address: {e}")
-                raise HTTPException(status_code=500, detail="Failed to get contract address")
-        
-        
-        # =============== WEBSOCKET ENDPOINT ===============
-        
+            if limit > 0:
+                participants = participants[:limit]
+            total_amount = sum(p.total_amount for p in participants)
+            serialized = [
+                {
+                    "address": item.address,
+                    "totalAmountWei": item.total_amount,
+                    "betCount": item.bet_count,
+                }
+                for item in participants
+            ]
+            return {
+                "round_id": current.round_id,
+                "round_state": current.state.name,
+                "participants": serialized,
+                "total_participants": len(self._store.get_participants()),
+                "total_amount_wei": total_amount,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+
+        @self.app.get("/api/history")
+        async def get_round_history(limit: int = 50) -> Dict[str, Any]:
+            limit = max(1, min(limit, 200))
+            history = self._store.get_round_history(limit=limit)
+            rounds = [self._serialize_history_round(item) for item in history]
+            return {
+                "rounds": rounds,
+                "summary": {
+                    "total_rounds": len(rounds),
+                    "completed_rounds": sum(1 for r in rounds if r["final_state"] == "COMPLETED"),
+                    "refunded_rounds": sum(1 for r in rounds if r["final_state"] == "REFUNDED"),
+                    "total_volume_wei": sum(r["total_pot_wei"] for r in rounds),
+                },
+                "pagination": {"limit": limit, "returned": len(rounds)},
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+
+        @self.app.get("/api/activities")
+        async def get_live_feed(limit: int = 50) -> Dict[str, Any]:
+            limit = max(1, min(limit, 200))
+            feed = self._store.get_live_feed(limit=limit)
+            activities = [self._serialize_activity(item, idx) for idx, item in enumerate(reversed(feed))]
+            return {"activities": activities}
+
+        @self.app.get("/api/contract/config")
+        async def get_contract_config() -> Dict[str, Any]:
+            store_config = self._store.get_contract_config()
+            if store_config is None:
+                if not self.blockchain_client:
+                    raise HTTPException(status_code=503, detail="Blockchain client unavailable")
+                store_config = await self.blockchain_client.get_contract_config()
+                self._store.set_contract_config(store_config)
+            return {
+                "config": {
+                    "publisherAddr": store_config.publisher_addr,
+                    "sparsityAddr": store_config.sparsity_addr,
+                    "operatorAddr": store_config.operator_addr,
+                    "publisherCommission": store_config.publisher_commission,
+                    "sparsityCommission": store_config.sparsity_commission,
+                    "minBet": store_config.min_bet,
+                    "bettingDuration": store_config.betting_duration,
+                    "minDrawDelay": store_config.min_draw_delay,
+                    "maxDrawDelay": store_config.max_draw_delay,
+                    "minEndTimeExtension": store_config.min_end_time_extension,
+                    "minParticipants": store_config.min_participants,
+                },
+                "contract_address": self.blockchain_client.contract_address if self.blockchain_client else None,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+
+        @self.app.get("/api/contract/address")
+        async def get_contract_address() -> Dict[str, Any]:
+            if not self.blockchain_client:
+                raise HTTPException(status_code=503, detail="Blockchain client unavailable")
+            return {
+                "contract_address": self.blockchain_client.contract_address,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+
+        # ------------------------------------------------------------------
+        # Compatibility stubs for legacy front-end calls
+        # ------------------------------------------------------------------
+        @self.app.post("/api/auth/connect")
+        async def connect_wallet(request: WalletConnectRequest) -> Dict[str, Any]:
+            logger.info("Wallet connected: %s", request.address)
+            return {"status": "connected", "address": request.address}
+
+        @self.app.post("/api/bet")
+        async def record_bet(request: BetRecordRequest) -> Dict[str, Any]:
+            logger.debug("Received bet webhook: %s", request.dict())
+            return {"status": "accepted", "transaction_hash": request.transaction_hash}
+
+        @self.app.post("/api/verify-bet")
+        async def verify_bet(request: VerifyBetRequest) -> Dict[str, Any]:
+            logger.debug("Verify bet request: %s", request.dict())
+            return {"status": "verified", "transaction_hash": request.transaction_hash}
+
+        # ------------------------------------------------------------------
+        # WebSocket endpoint
+        # ------------------------------------------------------------------
         @self.app.websocket("/ws/lottery")
-        async def websocket_endpoint(websocket: WebSocket):
-            """WebSocket endpoint for real-time lottery updates"""
+        async def websocket_endpoint(websocket: WebSocket) -> None:
             await websocket.accept()
-            self.websocket_connections.append(websocket)
-            
-            logger.info(f"WebSocket client connected. Total connections: {len(self.websocket_connections)}")
-            
+            if self._ws_lock is None:
+                self._ws_lock = asyncio.Lock()
+            async with self._ws_lock:
+                self._websockets.add(websocket)
+            logger.info("WebSocket client connected (%s total)", len(self._websockets))
             try:
-                # Send initial state
-                current_round = memory_store.get_current_round()
-                await websocket.send_text(json.dumps({
-                    "type": "initial_state",
-                    "data": {
-                        "round": current_round.__dict__ if current_round else None,
-                        "timestamp": datetime.utcnow().isoformat()
-                    }
-                }))
-                
-                # Keep connection alive and handle messages
+                await websocket.send_json({"type": "snapshot", "payload": await self._build_initial_snapshot()})
                 while True:
                     try:
-                        data = await websocket.receive_text()
-                        message = json.loads(data)
-                        
-                        # Handle ping/pong
-                        if message.get("type") == "ping":
-                            await websocket.send_text(json.dumps({"type": "pong"}))
-                        
+                        await websocket.receive_text()
                     except WebSocketDisconnect:
                         break
-                    except Exception as e:
-                        logger.error(f"WebSocket message error: {e}")
+                    except Exception as exc:  # pragma: no cover - defensive
+                        logger.debug("WebSocket receive error: %s", exc)
                         break
-                        
-            except WebSocketDisconnect:
-                pass
-            except Exception as e:
-                logger.error(f"WebSocket error: {e}")
             finally:
-                if websocket in self.websocket_connections:
-                    self.websocket_connections.remove(websocket)
-                logger.info(f"WebSocket client disconnected. Remaining connections: {len(self.websocket_connections)}")
-        
-        # =============== CATCH-ALL ROUTE FOR SPA ===============
-        
+                async with self._ws_lock:
+                    self._websockets.discard(websocket)
+                logger.info("WebSocket client disconnected (%s remaining)", len(self._websockets))
+
+        # ------------------------------------------------------------------
+        # SPA fallback
+        # ------------------------------------------------------------------
         @self.app.get("/{file_path:path}")
-        async def serve_static_files(file_path: str):
-            """Serve static files or fallback to index.html for SPA routes"""
-            # Don't intercept API routes
-            if file_path.startswith('api') or file_path.startswith('ws'):
+        async def serve_static_files(file_path: str) -> Response:
+            if file_path.startswith("api") or file_path.startswith("ws"):
                 raise HTTPException(status_code=404, detail="Not found")
-
             frontend_dist = Path(__file__).parent / "frontend" / "dist"
-            file_full_path = frontend_dist / file_path
-
-            # Security check: ensure file is within the dist directory
+            requested = (frontend_dist / file_path).resolve()
             try:
-                file_full_path.resolve().relative_to(frontend_dist.resolve())
+                requested.relative_to(frontend_dist.resolve())
             except ValueError:
                 raise HTTPException(status_code=404, detail="Not found")
-
-            if file_full_path.exists() and file_full_path.is_file():
-                # Determine content type
+            if requested.is_file():
                 content_type = "text/plain"
-                if file_path.endswith('.js'):
+                if file_path.endswith(".js"):
                     content_type = "application/javascript"
-                elif file_path.endswith('.css'):
+                elif file_path.endswith(".css"):
                     content_type = "text/css"
-                elif file_path.endswith('.svg'):
+                elif file_path.endswith(".svg"):
                     content_type = "image/svg+xml"
-                elif file_path.endswith('.png'):
+                elif file_path.endswith(".png"):
                     content_type = "image/png"
-                elif file_path.endswith(('.jpg', '.jpeg')):
+                elif file_path.endswith((".jpg", ".jpeg")):
                     content_type = "image/jpeg"
-
-                with open(file_full_path, 'rb') as f:
-                    content = f.read()
-                return Response(content=content, media_type=content_type)
-
-            # SPA fallback to index.html
-            index_file = frontend_dist / "index.html"
-            if index_file.exists():
-                return HTMLResponse(content=index_file.read_text())
-                
+                return Response(content=requested.read_bytes(), media_type=content_type)
+            index = frontend_dist / "index.html"
+            if index.exists():
+                return HTMLResponse(index.read_text())
             raise HTTPException(status_code=404, detail="Frontend not found")
-    
-    # =============== WEBSOCKET BROADCASTING ===============
-    
-    async def broadcast_update(self, message: Dict[str, Any]) -> None:
-        """Broadcast update to all connected WebSocket clients"""
-        if not self.websocket_connections:
-            return
-        
-        message_str = json.dumps({
-            **message,
-            "timestamp": datetime.utcnow().isoformat()
-        })
-        
-        disconnected = []
-        
-        for websocket in self.websocket_connections:
-            try:
-                await websocket.send_text(message_str)
-            except Exception as e:
-                logger.warning(f"Failed to send WebSocket message: {e}")
-                disconnected.append(websocket)
-        
-        # Remove disconnected clients
-        for websocket in disconnected:
-            if websocket in self.websocket_connections:
-                self.websocket_connections.remove(websocket)
-    
-    # =============== SERVER LIFECYCLE ===============
-    
+
+    # ------------------------------------------------------------------
+    # Lifecycle management
+    # ------------------------------------------------------------------
     async def start(self, host: str = "0.0.0.0", port: int = 6080) -> None:
-        """Start the enhanced web server"""
         import uvicorn
-        
-        logger.info(f"🌐 Starting enhanced lottery web server on {host}:{port}...")
-        
-        # Setup event listeners for real-time updates
-        self._setup_event_listeners()
-        
-        config = uvicorn.Config(
-            self.app,
-            host=host,
-            port=port,
-            log_level="info",
-            access_log=True
-        )
-        
+
+        logger.info("Starting passive lottery web server on %s:%s", host, port)
+        self._loop = asyncio.get_running_loop()
+        if self._broadcast_queue is None:
+            self._broadcast_queue = asyncio.Queue()
+        if self._ws_lock is None:
+            self._ws_lock = asyncio.Lock()
+        self._register_store_listeners()
+        if self._broadcast_task is None:
+            self._broadcast_task = asyncio.create_task(self._broadcast_loop(), name="lottery-web-broadcast")
+
+        config = uvicorn.Config(self.app, host=host, port=port, log_level="info", access_log=True)
         server = uvicorn.Server(config)
         try:
             await server.serve()
-        except SystemExit as se:
-            # Convert uvicorn's SystemExit to OSError so callers see a bind failure
-            logger.error(f"Web server exited during startup with SystemExit: {se}")
-            raise OSError(str(se))
-        except OSError as e:
-            logger.error(f"Failed to start web server on {host}:{port}: {e}")
-            # Fail fast: do not attempt fallback ports
-            raise
-    
+        finally:
+            logger.info("Passive lottery web server stopped")
+
     async def stop(self) -> None:
-        """Stop the web server gracefully"""
-        logger.info("🛑 Stopping enhanced lottery web server...")
-        
-        # Close all WebSocket connections
-        for websocket in self.websocket_connections:
+        logger.info("Stopping passive lottery web server")
+        if self._broadcast_task:
+            self._broadcast_task.cancel()
             try:
-                await websocket.close(code=1001, reason="Server shutdown")
-            except Exception as e:
-                logger.warning(f"Error closing WebSocket: {e}")
-        
-        self.websocket_connections.clear()
-        logger.info("✅ Web server stopped")
-    
-    def _setup_event_listeners(self) -> None:
-        """Setup event listeners for broadcasting updates"""
-        # Add listeners for important events
-        memory_store.add_event_listener("RoundCreated", self._on_round_created)
-        memory_store.add_event_listener("BetPlaced", self._on_bet_placed)
-        memory_store.add_event_listener("RoundCompleted", self._on_round_completed)
-        
-        logger.debug("WebSocket event listeners configured")
-    
-    async def _on_round_created(self, event: ContractEvent) -> None:
-        """Handle RoundCreated event"""
-        await self.broadcast_update({
-            "type": "round_created",
-            "data": {"round_id": event.args.get("roundId")}
-        })
-    
-    async def _on_bet_placed(self, event: ContractEvent) -> None:
-        """Handle BetPlaced event"""
-        await self.broadcast_update({
-            "type": "bet_placed",
-            "data": event.args
-        })
-    
-    async def _on_round_completed(self, event: ContractEvent) -> None:
-        """Handle RoundCompleted event"""
-        await self.broadcast_update({
-            "type": "round_completed",
-            "data": event.args
-        })
+                await self._broadcast_task
+            except asyncio.CancelledError:
+                pass
+            self._broadcast_task = None
+        if self._ws_lock is None:
+            self._ws_lock = asyncio.Lock()
+        async with self._ws_lock:
+            for websocket in list(self._websockets):
+                try:
+                    await websocket.close(code=1001, reason="Server shutdown")
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.debug("Error closing websocket: %s", exc)
+            self._websockets.clear()
+
+    # ------------------------------------------------------------------
+    # Store listeners & broadcasting
+    # ------------------------------------------------------------------
+    def _register_store_listeners(self) -> None:
+        if self._listeners_registered:
+            return
+        for event in (
+            "round_update",
+            "participants_update",
+            "history_update",
+            "live_feed",
+            "config_update",
+            "operator_status",
+            "operator_alert",
+        ):
+            self._store.add_listener(event, lambda payload, evt=event: self._enqueue_broadcast(evt, payload))
+        self._listeners_registered = True
+
+    def _enqueue_broadcast(self, event_type: str, payload: Dict[str, Any] | None) -> None:
+        if not self._broadcast_queue or not self._loop:
+            return
+        try:
+            self._loop.call_soon_threadsafe(self._broadcast_queue.put_nowait, (event_type, payload))
+        except RuntimeError:  # pragma: no cover - loop already closing
+            logger.debug("Failed to enqueue broadcast for %s", event_type)
+
+    async def _broadcast_loop(self) -> None:
+        assert self._broadcast_queue is not None
+        while True:
+            try:
+                event_type, payload = await self._broadcast_queue.get()
+                await self._broadcast_to_clients(event_type, payload)
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.exception("Broadcast loop error: %s", exc)
+
+    async def _broadcast_to_clients(self, event_type: str, payload: Dict[str, Any] | None) -> None:
+        if self._ws_lock is None:
+            self._ws_lock = asyncio.Lock()
+        message = {"type": event_type, "payload": payload, "timestamp": datetime.utcnow().isoformat()}
+        async with self._ws_lock:
+            if not self._websockets:
+                return
+            to_remove: List[WebSocket] = []
+            for websocket in self._websockets:
+                try:
+                    await websocket.send_json(message)
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.debug("WebSocket send failed: %s", exc)
+                    to_remove.append(websocket)
+            for websocket in to_remove:
+                self._websockets.discard(websocket)
+
+    async def _build_initial_snapshot(self) -> Dict[str, Any]:
+        current = self._store.get_current_round()
+        participants = self._store.get_participants()
+        history = self._store.get_round_history(limit=10)
+        feed = self._store.get_live_feed(limit=20)
+        operator_status = self.operator.get_status() if self.operator else {}
+        config = self._store.get_contract_config()
+        return {
+            "round": self._serialize_round(current),
+            "participants": self._serialize_participants(participants),
+            "history": [self._serialize_history_round(item) for item in history],
+            "live_feed": [self._serialize_activity(item, idx) for idx, item in enumerate(reversed(feed))],
+            "operator": operator_status,
+            "config": {
+                "publisherAddr": config.publisher_addr if config else None,
+                "sparsityAddr": config.sparsity_addr if config else None,
+                "operatorAddr": config.operator_addr if config else None,
+            },
+        }
+
+    # ------------------------------------------------------------------
+    # Serialization helpers
+    # ------------------------------------------------------------------
+    def _serialize_round(self, round_data: Optional[LotteryRound]) -> Dict[str, Any]:
+        if round_data is None:
+            return {
+                "round_id": 0,
+                "state": 0,
+                "state_name": "waiting",
+                "state_label": "WAITING",
+            }
+        return {
+            "round_id": round_data.round_id,
+            "state": round_data.state.value,
+            "state_name": round_data.state.name.lower(),
+            "state_label": round_data.state.name,
+            "status": round_data.state.name.lower(),
+            "start_time": round_data.start_time,
+            "end_time": round_data.end_time,
+            "min_draw_time": round_data.min_draw_time,
+            "max_draw_time": round_data.max_draw_time,
+            "total_pot": round_data.total_pot,
+            "participant_count": round_data.participant_count,
+            "winner": round_data.winner,
+            "publisher_commission": round_data.publisher_commission,
+            "sparsity_commission": round_data.sparsity_commission,
+            "winner_prize": round_data.winner_prize,
+        }
+
+    def _serialize_participants(self, participants: Iterable[ParticipantSummary]) -> List[Dict[str, Any]]:
+        return [
+            {
+                "address": participant.address,
+                "totalAmountWei": participant.total_amount,
+                "betCount": participant.bet_count,
+            }
+            for participant in participants
+        ]
+
+    def _serialize_history_round(self, snapshot: RoundSnapshot) -> Dict[str, Any]:
+        return {
+            "round_id": snapshot.round_id,
+            "final_state": snapshot.state.name,
+            "start_time": snapshot.start_time,
+            "end_time": snapshot.end_time,
+            "min_draw_time": snapshot.min_draw_time,
+            "max_draw_time": snapshot.max_draw_time,
+            "total_pot_wei": snapshot.total_pot,
+            "participant_count": snapshot.participant_count,
+            "winner": snapshot.winner,
+            "winner_prize_wei": snapshot.winner_prize,
+            "publisher_commission_wei": snapshot.publisher_commission,
+            "sparsity_commission_wei": snapshot.sparsity_commission,
+            "finished_at": snapshot.finished_at,
+            "refund_reason": snapshot.refund_reason,
+        }
+
+    def _serialize_activity(self, item: LiveFeedItem, index: int) -> Dict[str, Any]:
+        return {
+            "activity_id": f"{item.created_at.isoformat()}-{index}",
+            "user_address": item.details.get("player") or item.details.get("roundId") or "system",
+            "activity_type": self._map_feed_type(item.event_type),
+            "details": item.details,
+            "message": item.message,
+            "severity": item.severity,
+            "timestamp": item.created_at.isoformat(),
+        }
+
+    def _map_feed_type(self, event_type: str) -> str:
+        if event_type == "bet_placed":
+            return "bet"
+        if event_type == "round_completed":
+            return "win"
+        if event_type == "operator_alert":
+            return "system"
+        return event_type
