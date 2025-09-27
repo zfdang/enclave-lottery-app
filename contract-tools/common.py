@@ -322,6 +322,19 @@ def display_contracts_table(contracts_info: List[Dict[str, Any]], w3: Web3, role
         
         print(f"\n{i}. Contract: {deployment['contract_address']}")
         print(f"   📁 File: {info['file_path']}")
+        # show the time when deployed, timestamp can be extracted from filename
+        import datetime
+        file_name = info['file_path'].split('/')[-1]
+        if file_name.startswith('deployment_') and file_name.endswith('.json'):
+            try:
+                ts_str = file_name[len('deployment_'):-len('.json')]
+                ts = int(ts_str)
+                deployed_at = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
+            except Exception:
+                deployed_at = ts_str
+        else:
+            deployed_at = file_name
+        print(f"   🕒 Deployed at: {deployed_at}")
         
         if status.get('is_accessible'):
             # Safe getters with defaults

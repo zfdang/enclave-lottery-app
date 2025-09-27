@@ -220,24 +220,24 @@ class PassiveOperator:
             await self._wait_with_stop(self._settings.draw_check_interval)
 
     async def _handle_event(self, event: BlockchainEvent) -> None:
-        logger.debug(f"[handle_event] Event: {event.name}, block: {event.block_number}, tx: {event.transaction_hash}, args: {event.args}")
+        logger.info(f"[handle_event] Event: {event.name}, block: {event.block_number}, tx: {event.transaction_hash}, args: {event.args}")
         if event.name == "RoundCreated":
-            logger.debug(f"[handle_event] Handling RoundCreated event: {event.args}")
+            logger.info(f"[handle_event] Handling RoundCreated event: {event.args}")
             await self._on_round_created(event)
         elif event.name == "RoundStateChanged":
-            logger.debug(f"[handle_event] Handling RoundStateChanged event: {event.args}")
+            logger.info(f"[handle_event] Handling RoundStateChanged event: {event.args}")
             await self._on_round_state_changed(event)
         elif event.name == "BetPlaced":
-            logger.debug(f"[handle_event] Handling BetPlaced event: {event.args}")
+            logger.info(f"[handle_event] Handling BetPlaced event: {event.args}")
             await self._on_bet_placed(event)
         elif event.name == "EndTimeExtended":
-            logger.debug(f"[handle_event] Handling EndTimeExtended event: {event.args}")
+            logger.info(f"[handle_event] Handling EndTimeExtended event: {event.args}")
             await self._on_end_time_extended(event)
         elif event.name == "RoundCompleted":
-            logger.debug(f"[handle_event] Handling RoundCompleted event: {event.args}")
+            logger.info(f"[handle_event] Handling RoundCompleted event: {event.args}")
             await self._on_round_completed(event)
         elif event.name == "RoundRefunded":
-            logger.debug(f"[handle_event] Handling RoundRefunded event: {event.args}")
+            logger.info(f"[handle_event] Handling RoundRefunded event: {event.args}")
             await self._on_round_refunded(event)
         elif event.name in {
             "MinBetAmountUpdated",
@@ -245,7 +245,7 @@ class PassiveOperator:
             "MinParticipantsUpdated",
             "OperatorUpdated",
         }:
-            logger.debug(f"[handle_event] Handling config update event: {event.name}")
+            logger.info(f"[handle_event] Handling config update event: {event.name}")
             await self._refresh_contract_config()
 
     # ------------------------------------------------------------------

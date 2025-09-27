@@ -427,6 +427,8 @@ class LotteryWebServer:
             return
         try:
             self._loop.call_soon_threadsafe(self._broadcast_queue.put_nowait, (event_type, payload))
+            # show logger.info
+            logger.info("Enqueued broadcast for %s", event_type)
         except RuntimeError:  # pragma: no cover - loop already closing
             logger.debug("Failed to enqueue broadcast for %s", event_type)
 

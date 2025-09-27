@@ -72,20 +72,33 @@ class OperatorManager(LotteryContractBase):
         print(f"✅ Min participants updated. Tx: {tx_hash}")
         return tx_hash
 
-    def start_new_round(self, contract_address: str, abi: List[Dict[str, Any]]):
+
+    def start_round(self, contract_address: str, abi: List[Dict[str, Any]]):
         print(f"▶️ Starting new round on {contract_address}")
         contract = self.get_contract_instance(contract_address, abi)
-
-        transaction = contract.functions.startNewRound().build_transaction({
+        transaction = contract.functions.startRound().build_transaction({
             'from': self.account.address,
             'gas': 300000,
             'gasPrice': self.w3.to_wei('20', 'gwei'),
             'nonce': self.w3.eth.get_transaction_count(self.account.address),
             'chainId': self.chain_id
         })
-
         tx_hash = self.send_transaction(transaction)
         print(f"✅ New round started. Tx: {tx_hash}")
+        return tx_hash
+
+    def extend_betting_time(self, contract_address: str, abi: List[Dict[str, Any]], new_end_time: int):
+        print(f"⏳ Extending betting time for {contract_address} to {new_end_time} (unix timestamp)")
+        contract = self.get_contract_instance(contract_address, abi)
+        transaction = contract.functions.extendBettingTime(new_end_time).build_transaction({
+            'from': self.account.address,
+            'gas': 120000,
+            'gasPrice': self.w3.to_wei('20', 'gwei'),
+            'nonce': self.w3.eth.get_transaction_count(self.account.address),
+            'chainId': self.chain_id
+        })
+        tx_hash = self.send_transaction(transaction)
+        print(f"✅ Betting time extended. Tx: {tx_hash}")
         return tx_hash
 
     def refund_round(self, contract_address: str, abi: List[Dict[str, Any]]):
@@ -129,7 +142,8 @@ def main():
     mode_group.add_argument("--update-min-bet", action="store_true", help="Update minimum bet amount (wei)")
     mode_group.add_argument("--update-betting-duration", action="store_true", help="Update betting duration (seconds)")
     mode_group.add_argument("--update-min-participants", action="store_true", help="Update min participants required")
-    mode_group.add_argument("--start-new-round", action="store_true", help="Start new round")
+    mode_group.add_argument("--start-round", action="store_true", help="Start new round")
+    mode_group.add_argument("--extend-betting-time", action="store_true", help="Extend betting end time (unix timestamp)")
     mode_group.add_argument("--refund-round", action="store_true", help="Refund current round")
     mode_group.add_argument("--draw-winner", action="store_true", help="Draw winner for current round")
     mode_group.add_argument("--interactive", action="store_true", default=True, help="Interactive menu (default)")
@@ -138,6 +152,7 @@ def main():
     parser.add_argument("--min-bet", help="Minimum bet in wei (for --update-min-bet)")
     parser.add_argument("--duration", help="Betting duration in seconds (for --update-betting-duration)")
     parser.add_argument("--min-participants", help="Minimum participants (for --update-min-participants)")
+    parser.add_argument("--new-end-time", help="New betting end time (unix timestamp, for --extend-betting-time)")
 
     args = parser.parse_args()
 
@@ -227,16 +242,28 @@ def main():
         manager.update_min_participants(rec['deployment']['contract_address'], abi, int(args.min_participants))
         return
 
-    if args.start_new_round:
+    if args.start_round:
         if not args.contract:
-            print("❌ --contract is required for --start-new-round")
+            print("❌ --contract is required for --start-round")
             return
         rec = find_contract_record(args.contract)
         if not rec:
             print(f"❌ Contract {args.contract} not found in deployment records")
             return
         abi = rec['abi']
-        manager.start_new_round(rec['deployment']['contract_address'], abi)
+        manager.start_round(rec['deployment']['contract_address'], abi)
+        return
+
+    if args.extend_betting_time:
+        if not args.contract or not args.new_end_time:
+            print("❌ --contract and --new-end-time are required for --extend-betting-time")
+            return
+        rec = find_contract_record(args.contract)
+        if not rec:
+            print(f"❌ Contract {args.contract} not found in deployment records")
+            return
+        abi = rec['abi']
+        manager.extend_betting_time(rec['deployment']['contract_address'], abi, int(args.new_end_time))
         return
 
     if args.refund_round:
@@ -272,11 +299,12 @@ def main():
         print('3. Update betting duration')
         print('4. Update min participants')
         print('5. Start new round')
-        print('6. Refund current round')
-        print('7. Draw winner')
-        print('8. Exit')
+        print('6. Extend betting end time')
+        print('7. Refund current round')
+        print('8. Draw winner')
+        print('9. Exit')
 
-        choice = input('\nSelect option (1-8): ').strip()
+        choice = input('\nSelect option (1-9): ').strip()
 
         if choice == '1':
             contracts_info = manager.query_all_contracts()
@@ -317,11 +345,21 @@ def main():
             if not rec:
                 continue
             try:
-                manager.start_new_round(rec['deployment']['contract_address'], rec['abi'])
+                manager.start_round(rec['deployment']['contract_address'], rec['abi'])
             except Exception as e:
                 print(f'❌ Failed to start new round: {e}')
 
         elif choice == '6':
+            rec = select_contract_interactive()
+            if not rec:
+                continue
+            new_end_time = input('New betting end time (unix timestamp): ').strip()
+            try:
+                manager.extend_betting_time(rec['deployment']['contract_address'], rec['abi'], int(new_end_time))
+            except Exception as e:
+                print(f'❌ Failed to extend betting time: {e}')
+
+        elif choice == '7':
             rec = select_contract_interactive()
             if not rec:
                 continue
@@ -330,7 +368,7 @@ def main():
             except Exception as e:
                 print(f'❌ Failed to refund round: {e}')
 
-        elif choice == '7':
+        elif choice == '8':
             rec = select_contract_interactive()
             if not rec:
                 continue
@@ -339,7 +377,7 @@ def main():
             except Exception as e:
                 print(f'❌ Failed to draw winner: {e}')
 
-        elif choice == '8':
+        elif choice == '9':
             break
 
         else:
