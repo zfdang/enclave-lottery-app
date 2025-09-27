@@ -169,7 +169,8 @@ class PassiveOperator:
         if self._event_from_block is None:
             latest_block = await self._client.get_latest_block()
             self._event_from_block = max(latest_block - self._settings.event_replay_blocks, 0)
-            logger.info("Starting event sync from block %s", self._event_from_block)
+            logger.info("Starting event sync from block %s (latest: %s, replay: %s)", 
+                       self._event_from_block, latest_block, self._settings.event_replay_blocks)
 
         while not self._stop_event.is_set():
             from_block = self._event_from_block if self._event_cursor else max(self._event_from_block - 1, 0)
@@ -177,6 +178,8 @@ class PassiveOperator:
             try:
                 events = await self._client.get_events(from_block)
                 logger.debug(f"[event_loop] Got {len(events)} events from block {from_block}")
+                if events:
+                    logger.info(f"[event_loop] Processing {len(events)} events from block {from_block}")
                 for event in events:
                     cursor = (event.block_number, event.transaction_hash)
                     logger.debug(f"[event_loop] Processing event {event.name} at block {event.block_number}, tx {event.transaction_hash}")

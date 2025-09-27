@@ -2,7 +2,10 @@
 set -e
 
 # Variables
-APP_USER="ec2-user"   # or another user you want to run Anvil as
+# Choose which user will run the Anvil service:
+# - If the script is run via sudo, prefer the original invoking user in $SUDO_USER
+# - Otherwise fall back to the current login user (id -un)
+APP_USER="${SUDO_USER:-$(id -un)}"
 SERVICE_NAME="anvil"
 APP_HOME="/home/${APP_USER}"
 FOUNDRY_DIR="${APP_HOME}/.foundry"
@@ -29,7 +32,7 @@ After=network.target
 [Service]
 User=${APP_USER}
 WorkingDirectory=${APP_HOME}
-ExecStart=${FOUNDRY_BIN}/anvil --host 0.0.0.0 --port 8545
+ExecStart=${FOUNDRY_BIN}/anvil --host 0.0.0.0 --port 8545 --block-time 30
 Restart=on-failure
 Environment=PATH=${FOUNDRY_BIN}:/usr/local/bin:/usr/bin:/bin
 StandardOutput=append:${APP_HOME}/anvil.log

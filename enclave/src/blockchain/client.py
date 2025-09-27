@@ -68,6 +68,22 @@ class BlockchainClient:
             raise ConnectionError(f"Failed to connect to RPC at {self.rpc_url}")
 
         logger.info("Connected to RPC %s (chain id %s)", self.rpc_url, self.chain_id)
+        
+        # Verify chain ID matches
+        try:
+            actual_chain_id = self._w3.eth.chain_id
+            if actual_chain_id != self.chain_id:
+                logger.warning(f"Chain ID mismatch: expected {self.chain_id}, got {actual_chain_id}")
+        except Exception as exc:
+            logger.warning(f"Could not verify chain ID: {exc}")
+        
+        # Log latest block for debugging
+        try:
+            latest_block = self._w3.eth.block_number
+            logger.info(f"Latest block number: {latest_block}")
+        except Exception as exc:
+            logger.warning(f"Could not get latest block: {exc}")
+        
         await self._load_contract()
 
     async def close(self) -> None:
@@ -84,6 +100,8 @@ class BlockchainClient:
         logger.info("Loading Lottery ABI from %s", abi_path)
         with abi_path.open("r", encoding="utf-8") as handle:
             self.contract_abi = json.load(handle)
+        
+        logger.info(f"Loaded ABI with {len(self.contract_abi)} items")
 
         def _build_contract() -> Contract:
             assert self._w3 is not None
@@ -91,6 +109,26 @@ class BlockchainClient:
 
         self._contract = await asyncio.to_thread(_build_contract)
         logger.info("Contract bound at %s", self.contract_address)
+        
+        # Verify contract exists and has code
+        try:
+            code = self._w3.eth.get_code(self.contract_address)
+            if code == b'\x00' or len(code) == 0:
+                logger.error(f"No contract code found at address {self.contract_address}")
+                raise ValueError(f"No contract deployed at {self.contract_address}")
+            else:
+                logger.info(f"Contract verified at {self.contract_address} with {len(code)} bytes of code")
+        except Exception as exc:
+            logger.error(f"Failed to verify contract at {self.contract_address}: {exc}")
+            raise
+        
+        # Test basic contract call
+        try:
+            config = await self._call_view("getConfig")
+            logger.info(f"Contract config retrieved successfully: publisher={config[0][:10]}..., operator={config[2][:10] if config[2] else 'None'}...")
+        except Exception as exc:
+            logger.error(f"Failed to call getConfig on contract: {exc}")
+            raise
 
     def _resolve_abi_path(self) -> Path:
         """Resolve the ABI path based on known locations."""
@@ -208,7 +246,7 @@ class BlockchainClient:
         w3 = self._ensure_web3()
         event_names = [
             "RoundCreated",
-            "RoundStateChanged",
+            "RoundStateChanged", 
             "BetPlaced",
             "EndTimeExtended",
             "RoundCompleted",
@@ -216,91 +254,86 @@ class BlockchainClient:
             "MinBetAmountUpdated",
             "BettingDurationUpdated",
             "MinParticipantsUpdated",
+            "OperatorUpdated",
         ]
 
         def _fetch() -> List[BlockchainEvent]:
             collected: List[BlockchainEvent] = []
-            for name in event_names:
-                event_klass = getattr(contract.events, name, None)
-                if not event_klass:
-                    continue
-                try:
-                    logs = []
-                    event_obj = None
-                    try:
-                        if callable(event_klass):
-                            event_obj = event_klass()
-                    except Exception:
-                        event_obj = None
+            logger.debug(f"Fetching events from block {from_block} for contract {self.contract_address}")
+            
+            # Get all logs in one call for efficiency
+            try:
+                filter_params = {
+                    "fromBlock": from_block,
+                    "toBlock": "latest",
+                    "address": self.contract_address
+                }
+                raw_logs = w3.eth.get_logs(filter_params)
+                logger.info(f"Found {len(raw_logs)} raw logs from block {from_block}")
+            except Exception as exc:
+                logger.error(f"Failed to get logs from blockchain: {exc}")
+                return []
 
-                    # Try createFilter on the instance first
-                    if event_obj is not None and hasattr(event_obj, 'createFilter'):
-                        event_filter = event_obj.createFilter(fromBlock=from_block, toBlock="latest")
-                        logs = event_filter.get_all_entries()
-                    elif hasattr(event_klass, 'createFilter'):
-                        event_filter = event_klass.createFilter(fromBlock=from_block, toBlock="latest")
-                        logs = event_filter.get_all_entries()
-                    else:
-                        # Fallback: use w3.eth.get_logs and try to decode using processLog if available
-                        if not hasattr(w3.eth, 'get_logs'):
-                            logger.warning("No compatible event log API available for %s", name)
+            # Process each log and try to decode it with matching event
+            for raw_log in raw_logs:
+                for event_name in event_names:
+                    try:
+                        event_klass = getattr(contract.events, event_name, None)
+                        logger.info(f"Processing log for event {event_name}")
+                        if not event_klass:
                             continue
-                        filter_params = {"fromBlock": from_block, "toBlock": "latest", "address": self.contract_address}
+                        
+                        # Try to process this log with this event type
                         try:
-                            raw_logs = w3.eth.get_logs(filter_params)
-                        except Exception as exc:
-                            logger.warning("Event fetch fallback failed for %s: %s", name, exc)
-                            continue
-                        decoded = []
-                        try:
-                            if event_obj is None and callable(event_klass):
-                                try:
-                                    event_obj = event_klass()
-                                except Exception:
-                                    event_obj = None
-                            if event_obj is not None and hasattr(event_obj, 'processLog'):
-                                for raw in raw_logs:
-                                    try:
-                                        processed = event_obj.processLog(raw)
-                                        decoded.append(processed)
-                                    except Exception:
-                                        decoded.append(raw)
-                                logs = decoded
-                            else:
-                                logs = list(raw_logs)
+                            decoded_log = event_klass().processLog(raw_log)
+                            block_number = decoded_log["blockNumber"]
+                            
+                            # show status for debugging
+                            logger.info(f"Decoded log for event {event_name} at block {block_number}")
+                            logger.debug(f"Decoded log details: {dict(decoded_log['args'])}")
+                            
+                            # Get block timestamp
+                            try:
+                                block = w3.eth.get_block(block_number)
+                                timestamp = int(block["timestamp"])
+                            except Exception:
+                                timestamp = int(decoded_log.get("timestamp", 0))
+                            
+                            collected.append(
+                                BlockchainEvent(
+                                    name=event_name,
+                                    args=dict(decoded_log["args"]),
+                                    block_number=block_number,
+                                    transaction_hash=decoded_log["transactionHash"].hex(),
+                                    timestamp=timestamp,
+                                )
+                            )
+                            logger.debug(f"Decoded {event_name} event: {dict(decoded_log['args'])}")
+                            break  # Found matching event, stop trying other event types
                         except Exception:
-                            logs = list(raw_logs)
-                except ValueError as exc:
-                    logger.warning("Event fetch failed for %s: %s", name, exc)
-                    continue
-                for log in logs:
-                    # Only process logs that have 'args' (decoded events)
-                    if "args" not in log:
+                            # This log doesn't match this event type, try next
+                            continue
+                    except Exception as exc:
+                        logger.debug(f"Failed to process {event_name}: {exc}")
                         continue
-                    block_number = log["blockNumber"]
-                    block = w3.eth.get_block(block_number)
-                    collected.append(
-                        BlockchainEvent(
-                            name=name,
-                            args=dict(log["args"]),
-                            block_number=block_number,
-                            transaction_hash=log["transactionHash"].hex(),
-                            timestamp=int(block["timestamp"]),
-                        )
-                    )
+            
             collected.sort(key=lambda evt: (evt.block_number, evt.transaction_hash))
+            logger.debug(f"Successfully decoded {len(collected)} events")
             return collected
 
         events = await asyncio.to_thread(_fetch)
         if events:
             self._latest_block = max(event.block_number for event in events)
+            logger.info(f"Retrieved {len(events)} events from block {from_block}, latest block: {self._latest_block}")
+        else:
+            logger.debug(f"No events found from block {from_block}")
         return events
 
     async def draw_round(self, round_id: int) -> str:
-        return await self._send_transaction("drawWinner", round_id)
+        return await self._send_transaction("drawWinner")
 
     async def refund_round(self, round_id: int) -> str:
-        return await self._send_transaction("refundRound", round_id)
+        return await self._send_transaction("refundRound")
 
     async def wait_for_transaction(self, tx_hash: str, timeout: int = 180) -> Dict[str, Any]:
         w3 = self._ensure_web3()
