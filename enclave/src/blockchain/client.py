@@ -326,7 +326,13 @@ class BlockchainClient:
             logger.info("Decoded %d events from block %s to %s", len(collected), from_block, self._latest_block)
             return collected
 
-        events: List[BlockchainEvent] = await asyncio.to_thread(_fetch)
+        try:
+            # Protect against a permanently blocking thread by bounding the await.
+            wait_timeout = max(15.0, float(getattr(self, "rpc_timeout", 10.0)) * 5)
+            events: List[BlockchainEvent] = await asyncio.wait_for(asyncio.to_thread(_fetch), timeout=wait_timeout)
+        except asyncio.TimeoutError:
+            logger.warning("get_events timed out after %ss", wait_timeout)
+            return []
         if events:
             self._latest_block = max(e.block_number for e in events)
         return events
