@@ -32,7 +32,7 @@ After=network.target
 [Service]
 User=${APP_USER}
 WorkingDirectory=${APP_HOME}
-ExecStart=${FOUNDRY_BIN}/anvil --host 0.0.0.0 --port 8545 --block-time 1
+ExecStart=${FOUNDRY_BIN}/anvil --host 0.0.0.0 --port 8545
 Restart=on-failure
 Environment=PATH=${FOUNDRY_BIN}:/usr/local/bin:/usr/bin:/bin
 StandardOutput=append:${APP_HOME}/anvil.log

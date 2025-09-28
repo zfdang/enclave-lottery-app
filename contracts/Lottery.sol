@@ -18,13 +18,13 @@ contract Lottery {
     }
     
     // =============== ROLES ===============
-    address public immutable publisher;        // Contract deployer, receives commission
+    address public immutable PUBLISHER;        // Contract deployer, receives commission
     address public sparsity;                   // Cloud manager, manages operator
     address public operator;                   // Round manager, handles lottery rounds
     
     // =============== IMMUTABLE CONFIGURATION BY PUBLISHER ===============
-    uint256 public immutable publisherCommissionRate; // Basis points (200 = 2%)
-    uint256 public immutable sparsityCommissionRate;  // Basis points (300 = 3%)
+    uint256 public immutable PUBLISHER_COMMISSION_RATE; // Basis points (200 = 2%)
+    uint256 public immutable SPARSITY_COMMISSION_RATE;  // Basis points (300 = 3%)
     
     // =============== CONFIGURATION BY OPERATOR ===============
     uint256 public minBetAmount;            // Minimum bet in wei (operator can modify in waiting state)
@@ -112,7 +112,7 @@ contract Lottery {
     
     // =============== MODIFIERS ===============
     modifier onlyPublisher() {
-        require(msg.sender == publisher, "Only publisher can call this function");
+        require(msg.sender == PUBLISHER, "Only publisher can call this function");
         _;
     }
     
@@ -143,18 +143,18 @@ contract Lottery {
         require(_sparsityCommissionRate <= 500, "Sparsity commission too high (max 5%)");
         require(_publisherCommissionRate + _sparsityCommissionRate <= 1000, "Total commission too high (max 10%)");
 
-        publisher = msg.sender;
+        PUBLISHER = msg.sender;
         sparsity = address(0);                    // Will be set by publisher
         operator = address(0);                    // Will be set by sparsity
-        publisherCommissionRate = _publisherCommissionRate;
-        sparsityCommissionRate = _sparsityCommissionRate;
+        PUBLISHER_COMMISSION_RATE = _publisherCommissionRate;
+        SPARSITY_COMMISSION_RATE = _sparsityCommissionRate;
 
         // Set sensible defaults for other config values
         minBetAmount = 0.01 ether;
-        bettingDuration = 20 minutes;
-        minDrawDelayAfterEnd = 1 minutes;
-        maxDrawDelayAfterEnd = 5 minutes;
-        minEndTimeExtension = 3 minutes;
+        bettingDuration = 120 seconds;
+        minDrawDelayAfterEnd = 30 seconds;
+        maxDrawDelayAfterEnd = 120 seconds;
+        minEndTimeExtension = 120 seconds;
         minParticipants = 2;
 
         // start with roundId = 1 and WAITING state
@@ -183,7 +183,7 @@ contract Lottery {
      */
     function setSparsity(address _sparsity) external onlyPublisher sparsityNotSet {
         require(_sparsity != address(0), "Invalid sparsity address");
-        require(_sparsity != publisher, "Sparsity cannot be publisher");
+        require(_sparsity != PUBLISHER, "Sparsity cannot be publisher");
         
         sparsity = _sparsity;
         
@@ -199,13 +199,13 @@ contract Lottery {
      */
     function updateOperator(address _operator) external onlySparsity {
         require(_operator != address(0), "Invalid operator address");
-        require(_operator != publisher, "Operator cannot be publisher");
+        require(_operator != PUBLISHER, "Operator cannot be publisher");
         require(_operator != sparsity, "Operator cannot be sparsity");
         require(round.state == RoundState.WAITING, "Cannot change operator when not in waiting state");
-        
+
         address oldOperator = operator;
         operator = _operator;
-        
+
         emit OperatorUpdated(oldOperator, _operator);
     }
     
@@ -367,8 +367,8 @@ contract Lottery {
      */
     function _distributePayout(address winner, uint256 randomSeed) internal {
         // Calculate commissions
-        uint256 publisherCommission = (round.totalPot * publisherCommissionRate) / 10000;
-        uint256 sparsityCommission = (round.totalPot * sparsityCommissionRate) / 10000;
+        uint256 publisherCommission = (round.totalPot * PUBLISHER_COMMISSION_RATE) / 10000;
+        uint256 sparsityCommission = (round.totalPot * SPARSITY_COMMISSION_RATE) / 10000;
         uint256 prize = round.totalPot - publisherCommission - sparsityCommission;
         
         // Update round state
@@ -383,7 +383,7 @@ contract Lottery {
         
         // Transfer funds
         if (publisherCommission > 0) {
-            payable(publisher).transfer(publisherCommission);
+            payable(PUBLISHER).transfer(publisherCommission);
         }
         if (sparsityCommission > 0 && sparsity != address(0)) {
             payable(sparsity).transfer(sparsityCommission);
@@ -563,11 +563,11 @@ contract Lottery {
         uint256 minPart
     ) {
         return (
-            publisher,
+            PUBLISHER,
             sparsity,
             operator,
-            publisherCommissionRate,
-            sparsityCommissionRate,
+            PUBLISHER_COMMISSION_RATE,
+            SPARSITY_COMMISSION_RATE,
             minBetAmount,
             bettingDuration,
             minDrawDelayAfterEnd,

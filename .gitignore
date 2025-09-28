@@ -72,6 +72,8 @@ enclave-image.eif
 lottery.eif
 
 # Contracts build
+cache/
+out/
 contracts/compiled/
 enclave/src/contracts/abi/
 enclave/src/frontend/public/contracts/abi/
