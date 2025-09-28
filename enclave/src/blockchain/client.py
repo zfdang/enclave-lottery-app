@@ -40,6 +40,11 @@ class BlockchainClient:
 
         blockchain_cfg = config.get("blockchain", {})
         self.rpc_url: str = blockchain_cfg.get("rpc_url", "http://localhost:8545")
+        # per-RPC timeout (seconds) to pass to HTTPProvider to avoid blocking requests
+        try:
+            self.rpc_timeout: float = float(blockchain_cfg.get("rpc_timeout", 10.0))
+        except Exception:
+            self.rpc_timeout = 10.0
         self.chain_id: int = int(blockchain_cfg.get("chain_id", 31337))
         self.contract_address: Optional[str] = blockchain_cfg.get("contract_address")
 
@@ -65,7 +70,13 @@ class BlockchainClient:
 
     async def initialize(self) -> None:
         """Establish the RPC connection and load the contract."""
-        self._w3 = Web3(Web3.HTTPProvider(self.rpc_url))
+        # configure provider with a request timeout so synchronous calls don't hang indefinitely
+        try:
+            self._w3 = Web3(Web3.HTTPProvider(self.rpc_url, request_kwargs={"timeout": self.rpc_timeout}))
+        except TypeError:
+            # older web3 may not accept request_kwargs, fall back to default provider
+            logger.debug("HTTPProvider does not accept request_kwargs; falling back without timeout")
+            self._w3 = Web3(Web3.HTTPProvider(self.rpc_url))
         if not self._w3.is_connected():  # pragma: no cover - depends on live RPC
             raise ConnectionError(f"Failed to connect to RPC at {self.rpc_url}")
 
