@@ -40,6 +40,7 @@ class OperatorSettings:
     max_draw_retries: int = 3
     refund_grace_period: float = 120.0
     tx_timeout_seconds: int = 180
+    rpc_call_timeout: float = 10.0
 
 
 class PassiveOperator:
@@ -458,7 +459,14 @@ class PassiveOperator:
         )
 
     async def _refresh_round_state(self, *, reset_participants: bool = True) -> Optional[LotteryRound]:
-        round_data = await self._client.get_current_round()
+        try:
+            round_data = await asyncio.wait_for(self._client.get_current_round(), timeout=self._settings.rpc_call_timeout)
+        except asyncio.TimeoutError:
+            logger.warning("_refresh_round_state: RPC call timed out after %ss", self._settings.rpc_call_timeout)
+            return None
+        except Exception as exc:
+            logger.warning("_refresh_round_state: RPC call failed: %s", exc)
+            return None
         if round_data:
             self._store.set_current_round(round_data, reset_participants=reset_participants)
         else:
