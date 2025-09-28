@@ -16,7 +16,9 @@ from web3.contract import Contract
 
 from lottery.models import ContractConfig, LotteryRound, ParticipantSummary, RoundState
 
-logger = logging.getLogger(__name__)
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -248,18 +250,18 @@ class BlockchainClient:
             "RoundCreated",
             "RoundStateChanged", 
             "BetPlaced",
-            "EndTimeExtended",
+            # "EndTimeExtended",
             "RoundCompleted",
             "RoundRefunded",
-            "MinBetAmountUpdated",
-            "BettingDurationUpdated",
-            "MinParticipantsUpdated",
-            "OperatorUpdated",
+            # "MinBetAmountUpdated",
+            # "BettingDurationUpdated",
+            # "MinParticipantsUpdated",
+            # "OperatorUpdated",
         ]
 
         def _fetch() -> List[BlockchainEvent]:
             collected: List[BlockchainEvent] = []
-            logger.debug(f"Fetching events from block {from_block} for contract {self.contract_address}")
+            logger.info(f"Fetching events from block {from_block} for contract {self.contract_address}")
             
             # Get all logs in one call for efficiency
             try:
@@ -276,10 +278,13 @@ class BlockchainClient:
 
             # Process each log and try to decode it with matching event
             for raw_log in raw_logs:
+                # show raw log for debugging
+                logger.info(f"Processing raw log, block = {raw_log['blockNumber']}: {raw_log}")
                 for event_name in event_names:
                     try:
-                        event_klass = getattr(contract.events, event_name, None)
                         logger.info(f"Processing log for event {event_name}")
+                        event_klass = getattr(contract.events, event_name, None)
+                        logger.debug(f"Retrieved event class for {event_name}: {event_klass}")
                         if not event_klass:
                             continue
                         
@@ -308,13 +313,14 @@ class BlockchainClient:
                                     timestamp=timestamp,
                                 )
                             )
-                            logger.debug(f"Decoded {event_name} event: {dict(decoded_log['args'])}")
+                            logger.info(f"Decoded {event_name} event: {dict(decoded_log['args'])}")
                             break  # Found matching event, stop trying other event types
                         except Exception:
                             # This log doesn't match this event type, try next
+                            logger.info(f"Log did not match event {event_name}, trying next")
                             continue
                     except Exception as exc:
-                        logger.debug(f"Failed to process {event_name}: {exc}")
+                        logger.info(f"Failed to process {event_name}: {exc}")
                         continue
             
             collected.sort(key=lambda evt: (evt.block_number, evt.transaction_hash))

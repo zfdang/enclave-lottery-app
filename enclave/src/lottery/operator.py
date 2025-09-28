@@ -23,7 +23,9 @@ from lottery.models import (
     RoundState,
 )
 
-logger = logging.getLogger(__name__)
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -174,7 +176,7 @@ class PassiveOperator:
 
         while not self._stop_event.is_set():
             from_block = self._event_from_block if self._event_cursor else max(self._event_from_block - 1, 0)
-            logger.debug(f"[event_loop] Polling events from block {from_block}")
+            logger.info(f"[event_loop] Polling events from block {from_block}")
             try:
                 events = await self._client.get_events(from_block)
                 logger.debug(f"[event_loop] Got {len(events)} events from block {from_block}")
@@ -182,7 +184,7 @@ class PassiveOperator:
                     logger.info(f"[event_loop] Processing {len(events)} events from block {from_block}")
                 for event in events:
                     cursor = (event.block_number, event.transaction_hash)
-                    logger.debug(f"[event_loop] Processing event {event.name} at block {event.block_number}, tx {event.transaction_hash}")
+                    logger.info(f"[event_loop] Processing event {event.name} at block {event.block_number}, tx {event.transaction_hash}")
                     if self._event_cursor and cursor <= self._event_cursor:
                         logger.debug(f"[event_loop] Skipping already-processed event at cursor {cursor}")
                         continue

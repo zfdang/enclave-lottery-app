@@ -1,10 +1,9 @@
 from __future__ import annotations
-import logging
 
-logger = logging.getLogger(__name__)
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 """In-memory state manager for the passive lottery backend."""
-
-import logging
 from collections import defaultdict, deque
 from threading import Lock
 from typing import Callable, Dict, Iterable, List, Optional
@@ -18,7 +17,6 @@ from lottery.models import (
     RoundSnapshot,
 )
 
-logger = logging.getLogger(__name__)
 
 
 class MemoryStore:
@@ -40,7 +38,7 @@ class MemoryStore:
     def add_listener(self, event_type: str, callback: Callable[[dict | None], None]) -> None:
         with self._lock:
             self._listeners[event_type].append(callback)
-            logger.info(f"[MemoryStore] Adding listener for event_type={event_type}, callback={callback}")
+            logger.debug(f"[MemoryStore] Adding listener for event_type={event_type}, callback={callback}")
 
     def _emit(self, event_type: str, payload: dict | None) -> None:
         listeners = list(self._listeners.get(event_type, []))
@@ -78,7 +76,7 @@ class MemoryStore:
         self._emit("history_update", self._serialize_history())
         if contract_config:
             self._emit("config_update", self._serialize_config(contract_config))
-        logger.debug(f"[MemoryStore] Bootstrapped with current_round={current_round}, participants={participants}, contract_config={contract_config}")
+        logger.info(f"[MemoryStore] Bootstrapped with current_round={current_round}, participants={participants}, contract_config={contract_config}")
 
     # ------------------------------------------------------------------
     # Round state management

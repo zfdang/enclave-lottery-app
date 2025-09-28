@@ -7,7 +7,7 @@ Coordinates the blockchain client, passive operator, and FastAPI server.
 """
 
 import asyncio
-import logging
+from utils.logger import get_logger
 import signal
 import sys
 import traceback
@@ -35,12 +35,7 @@ from lottery.operator import PassiveOperator
 from utils.config import load_config
 from utils.crypto import EnclaveAttestation
 
-# Configure logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class PassiveLotteryOperatorApp:

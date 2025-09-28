@@ -10,11 +10,13 @@ import secrets
 from datetime import datetime
 from typing import Dict, Optional
 
+from utils.logger import get_logger
+
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class EnclaveAttestation:

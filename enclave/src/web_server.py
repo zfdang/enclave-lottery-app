@@ -26,7 +26,9 @@ from lottery.models import (
 )
 from lottery.operator import PassiveOperator
 
-logger = logging.getLogger(__name__)
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class WalletConnectRequest(BaseModel):
