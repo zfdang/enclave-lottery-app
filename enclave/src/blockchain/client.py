@@ -123,7 +123,7 @@ class BlockchainClient:
                         self._event_abi_by_topic[topic] = item
                     except Exception as exc:  # pragma: no cover - defensive
                         logger.debug("Failed to derive topic for event %s: %s", item.get("name"), exc)
-            logger.debug("Prepared %d event ABI topics", len(self._event_abi_by_topic))
+            logger.info("Prepared %d event ABI topics", len(self._event_abi_by_topic))
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("Could not prepare event topic map: %s", exc)
         
@@ -265,9 +265,7 @@ class BlockchainClient:
         def _fetch() -> List[BlockchainEvent]:
             from web3._utils.events import get_event_data  # type: ignore
             collected: List[BlockchainEvent] = []
-            logger.info(
-                "Fetching events from block %s for contract %s", from_block, self.contract_address
-            )
+            logger.info("Fetching events from block %s for contract %s", from_block, self.contract_address)
             try:
                 filter_params = {
                     "fromBlock": from_block,
@@ -275,12 +273,13 @@ class BlockchainClient:
                     "address": self.contract_address,
                 }
                 raw_logs = w3.eth.get_logs(filter_params)
-                logger.debug("Fetched %d logs", len(raw_logs))
+                logger.info("Fetched %d logs", len(raw_logs))
             except Exception as exc:
                 logger.error("Failed to fetch logs: %s", exc)
                 return []
 
             for raw in raw_logs:
+                logger.info("Block %d, Raw log: %s", raw.get("blockNumber"), raw)
                 topics = [t.hex() if isinstance(t, (bytes, bytearray)) else t for t in raw.get("topics", [])]
                 if not topics:
                     logger.debug("Skipping log without topics: %s", raw)
@@ -288,8 +287,9 @@ class BlockchainClient:
                 sig = topics[0]
                 abi = getattr(self, "_event_abi_by_topic", {}).get(sig)
                 if not abi:
-                    logger.debug("Unknown event topic %s", sig)
+                    logger.info("Unknown event topic %s", sig)
                     continue
+                logger.info("Decoding event with topic %s using ABI %s", sig, abi.get("name"))
                 try:
                     decoded = get_event_data(w3.codec, abi, raw)
                     block_no = int(decoded["blockNumber"])
@@ -307,11 +307,12 @@ class BlockchainClient:
                             timestamp=ts,
                         )
                     )
+                    logger.debug("Decoded event %s", decoded["args"])
                 except Exception as exc:  # pragma: no cover - decode failures
-                    logger.debug("Failed to decode log %s: %s", raw, exc)
+                    logger.info("Failed to decode log %s: %s", raw, exc)
                     continue
             collected.sort(key=lambda evt: (evt.block_number, evt.transaction_hash))
-            logger.info("Decoded %d events from block %s", len(collected), from_block)
+            logger.info("Decoded %d events from block %s to %s", len(collected), from_block, self._latest_block)
             return collected
 
         events: List[BlockchainEvent] = await asyncio.to_thread(_fetch)
