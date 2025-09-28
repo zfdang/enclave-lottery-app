@@ -151,6 +151,15 @@ function App() {
 
   const formatAddress = (address: string): string => `${address.slice(0, 6)}...${address.slice(-4)}`
 
+  const formatTime = (t?: number | null) => {
+    if (!t || Number(t) <= 0) return 'N/A'
+    try {
+      return new Date(Number(t) * 1000).toLocaleString()
+    } catch (e) {
+      return 'N/A'
+    }
+  }
+
   const roundStateLabel = (state: number) => {
     switch (state) {
       case 0:
@@ -651,8 +660,8 @@ function App() {
                   <>
                     <Typography variant="h6" sx={{ mt: 2 }}>Current Round</Typography>
                     <Typography variant="body2"><strong>Round ID:</strong> {roundInfo.roundId}</Typography>
-                    <Typography variant="body2"><strong>Betting Time:</strong> {new Date(roundInfo.startTime * 1000).toLocaleString()} ~ {new Date(roundInfo.endTime * 1000).toLocaleString()}</Typography>
-                    <Typography variant="body2"><strong>Draw Time:</strong> {new Date(roundInfo.minDrawTime * 1000).toLocaleString()} ~ {new Date(roundInfo.maxDrawTime  * 1000).toLocaleString()}</Typography>
+                    <Typography variant="body2"><strong>Betting Time:</strong> {formatTime(roundInfo.startTime)} ~ {formatTime(roundInfo.endTime)}</Typography>
+                    <Typography variant="body2"><strong>Draw Time:</strong> {formatTime(roundInfo.minDrawTime)} ~ {formatTime(roundInfo.maxDrawTime)}</Typography>
                     <Typography variant="body2"><strong>Total Pot (ETH):</strong> {roundInfo.totalPotEth}</Typography>
                     <Typography variant="body2"><strong>Participants:</strong> {roundInfo.participantCount}</Typography>
                     <Typography variant="body2"><strong>State:</strong> {roundStateLabel(roundInfo.state)}</Typography>
