@@ -13,7 +13,7 @@ import { Casino, Add, Remove } from '@mui/icons-material'
 import { useWalletStore } from '../services/wallet'
 import { useLotteryStore } from '../services/lottery'
 import { contractService } from '../services/contract'
-import api, { getPlayerTotal } from '../services/api'
+import api, { getPlayerInfo } from '../services/api'
 import { isAddress } from 'ethers'
 import WalletConnection from './WalletConnection'
 
@@ -27,6 +27,7 @@ const BettingPanel: React.FC = () => {
   const [notificationMessage, setNotificationMessage] = useState('')
   const [notificationSeverity, setNotificationSeverity] = useState<'success' | 'error' | 'info' | 'warning'>('info')
   const [userBetAmount, setUserBetAmount] = useState(0)
+  const [userWinRate, setUserWinRate] = useState<number | null>(null)
   // default value for BASE_BET
   const BASE_BET = '0.01' // Fixed base bet amount in ETH
   const [minBetAmount, setMinBetAmount] = useState<string | null>(null)
@@ -40,13 +41,16 @@ const BettingPanel: React.FC = () => {
     const loadUserBetAmount = async () => {
       if (roundStatus && address) {
         try {
-          // Use backend API to get player's total bet in the current round (wei)
-          const resp = await getPlayerTotal(address)
+          // Use backend API to get player's total bet in the current round (wei) and win rate
+          const resp = await getPlayerInfo(address)
           const wei = Number(resp?.totalAmountWei ?? 0)
           const eth = wei / 1e18
           setUserBetAmount(eth)
+          // winRate returned as percentage (0-100)
+          setUserWinRate(typeof resp?.winRate === 'number' ? resp.winRate : null)
         } catch (error) {
-          console.error('Failed to load user bet amount:', error)
+          console.error('Failed to load user bet info:', error)
+          setUserWinRate(null)
         }
       }
     }
@@ -79,6 +83,8 @@ const BettingPanel: React.FC = () => {
   }
 
   const calculateWinRate = (): number => {
+    // Prefer server-provided estimate when available
+    if (typeof userWinRate === 'number') return userWinRate
     if (!roundStatus || !isConnected || userBetAmount === 0) return 0
     const totalPot = parseFloat(roundStatus.total_pot?.toString() || '0')
     const base = minBetAmount ?? BASE_BET

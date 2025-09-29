@@ -230,29 +230,40 @@ class LotteryWebServer:
                 "timestamp": datetime.utcnow().isoformat(),
             }
 
-        @self.app.get("/api/round/player_total")
-        async def get_player_total(address: Optional[str] = None) -> Dict[str, Any]:
-            """Return the total amount (in wei) a given player has bet in the current round.
+        @self.app.get("/api/round/player")
+        async def get_player_info(player: Optional[str] = None) -> Dict[str, Any]:
+            """Return the total amount (in wei) a given player has bet in the current round and an estimated win rate.
 
-            Query parameter: address (string) - the player's ETH address (required).
-            Response: { address, round_id, totalAmountWei, timestamp }
+            Query parameter: player (string) - the player's ETH address (required).
+            Response: { player, round_id, totalAmountWei, winRate, timestamp }
             """
-            if not address:
-                raise HTTPException(status_code=400, detail="Missing required query parameter: address")
+            if not player:
+                raise HTTPException(status_code=400, detail="Missing required query parameter: player")
 
             current = self._store.get_current_round()
             participants = self._store.get_participants()
             total = 0
-            addr_l = address.lower()
+            addr_l = player.lower()
             for p in participants:
                 if (p.address or "").lower() == addr_l:
                     total = int(p.total_amount)
                     break
 
+            # Compute simple win rate as player's share of the current pot (percentage).
+            win_rate = 0.0
+            try:
+                if current and getattr(current, "total_pot", 0):
+                    pot = int(current.total_pot or 0)
+                    if pot > 0:
+                        win_rate = (float(total) / float(pot)) * 100.0
+            except Exception:  # pragma: no cover - defensive
+                win_rate = 0.0
+
             return {
-                "address": address,
+                "player": player,
                 "round_id": current.round_id if current else 0,
                 "totalAmountWei": total,
+                "winRate": win_rate,
                 "timestamp": datetime.utcnow().isoformat(),
             }
 

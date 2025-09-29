@@ -50,8 +50,8 @@ export const getParticipants = async () => {
 }
 
 // Get total amount (wei) a player has bet in the current round
-export const getPlayerTotal = async (address: string) => {
-  const response = await api.get('/api/round/player_total', { params: { address } })
+export const getPlayerInfo = async (address: string) => {
+  const response = await api.get('/api/round/player', { params: { player: address } })
   return response.data
 }
 

@@ -181,27 +181,27 @@ class ContractService {
   /**
    * Get a player's bet amount for the current round (returns ETH string)
    */
-  async getPlayerBet(player: string): Promise<string> {
-    if (!isAddress(player)) throw new Error('Invalid player address')
+  // async getPlayerBet(player: string): Promise<string> {
+  //   if (!isAddress(player)) throw new Error('Invalid player address')
 
-    const contractAddress = this.contractAddress
-    const rpcUrl = this.rpcUrl
-    const chainId = this.chainId
+  //   const contractAddress = this.contractAddress
+  //   const rpcUrl = this.rpcUrl
+  //   const chainId = this.chainId
 
-    try {
-      const abi = await this.loadAbi()
+  //   try {
+  //     const abi = await this.loadAbi()
 
-      if (contractAddress && rpcUrl) {
-        const provider = new ethers.JsonRpcProvider(rpcUrl, chainId ? Number(chainId) : undefined)
-        const rpcContract = new ethers.Contract(contractAddress, abi, provider)
-        const amt = await rpcContract.getBetAmount(player)
-        return ethers.formatEther(amt)
-      }
-      throw new Error('Contract address or RPC URL not configured for getPlayerBet')
-    } catch (error: any) {
-      throw new Error('Failed to get player bet: ' + (error.message || 'Unknown error'))
-    }
-  }
+  //     if (contractAddress && rpcUrl) {
+  //       const provider = new ethers.JsonRpcProvider(rpcUrl, chainId ? Number(chainId) : undefined)
+  //       const rpcContract = new ethers.Contract(contractAddress, abi, provider)
+  //       const amt = await rpcContract.getBetAmount(player)
+  //       return ethers.formatEther(amt)
+  //     }
+  //     throw new Error('Contract address or RPC URL not configured for getPlayerBet')
+  //   } catch (error: any) {
+  //     throw new Error('Failed to get player bet: ' + (error.message || 'Unknown error'))
+  //   }
+  // }
 
 
   
@@ -211,112 +211,114 @@ class ContractService {
    * If `contractAddress` and `rpcUrl` are provided, this will perform a read-only
    * RPC call (like `getContractConfig`) so it doesn't require a connected wallet.
    */
-  async getRound(): Promise<LotteryRound> {
-    const contractAddress = this.contractAddress
-    const rpcUrl = this.rpcUrl
-    const chainId = this.chainId
+  // async getRound(): Promise<LotteryRound> {
+  //   const contractAddress = this.contractAddress
+  //   const rpcUrl = this.rpcUrl
+  //   const chainId = this.chainId
 
-    if (!contractAddress) throw new Error('Contract address not configured for getRound')
-    if (!rpcUrl) throw new Error('RPC URL not configured for getRound')
+  //   if (!contractAddress) throw new Error('Contract address not configured for getRound')
+  //   if (!rpcUrl) throw new Error('RPC URL not configured for getRound')
 
-    try {
-      const abi = await this.loadAbi()
-      const provider = new ethers.JsonRpcProvider(rpcUrl, chainId ? Number(chainId) : undefined)
-      const contract = new ethers.Contract(contractAddress, abi, provider)
-      const result = await contract.getRound()
+  //   try {
+  //     const abi = await this.loadAbi()
+  //     const provider = new ethers.JsonRpcProvider(rpcUrl, chainId ? Number(chainId) : undefined)
+  //     const contract = new ethers.Contract(contractAddress, abi, provider)
+  //     const result = await contract.getRound()
 
-      return {
-        roundId: Number(result.roundId),
-        startTime: Number(result.startTime),
-        endTime: Number(result.endTime),
-        minDrawTime: Number(result.minDrawTime),
-        maxDrawTime: Number(result.maxDrawTime),
-        totalPot: ethers.formatEther(result.totalPot),
-        participantCount: Number(result.participantCount),
-        winner: result.winner,
-        publisherCommission: ethers.formatEther(result.publisherCommission),
-        sparsityCommission: ethers.formatEther(result.sparsityCommission),
-        winnerPrize: ethers.formatEther(result.winnerPrize),
-        state: result.state as RoundState
-      }
-    } catch (error: any) {
-      throw new Error('Failed to get round information: ' + (error.message || 'Unknown error'))
-    }
-  }
+  //     return {
+  //       roundId: Number(result.roundId),
+  //       startTime: Number(result.startTime),
+  //       endTime: Number(result.endTime),
+  //       minDrawTime: Number(result.minDrawTime),
+  //       maxDrawTime: Number(result.maxDrawTime),
+  //       totalPot: ethers.formatEther(result.totalPot),
+  //       participantCount: Number(result.participantCount),
+  //       winner: result.winner,
+  //       publisherCommission: ethers.formatEther(result.publisherCommission),
+  //       sparsityCommission: ethers.formatEther(result.sparsityCommission),
+  //       winnerPrize: ethers.formatEther(result.winnerPrize),
+  //       state: result.state as RoundState
+  //     }
+  //   } catch (error: any) {
+  //     throw new Error('Failed to get round information: ' + (error.message || 'Unknown error'))
+  //   }
+  // }
 
   /**
    * Get contract configuration using getConfig()
    */
-  async getContractConfig(): Promise<{
-    publisherAddr: string
-    sparsityAddr: string
-    operatorAddr: string
-    publisherCommission: string
-    sparsityCommission: string
-    minBet: string
-    bettingDur: string
-    minDrawDelay: string
-    maxDrawDelay: string
-    minEndTimeExt: string
-    minPart: string
-    sparsityIsSet: boolean
-  }> {
-    const contractAddress = this.contractAddress
-    const rpcUrl = this.rpcUrl
-    const chainId = this.chainId
+  // async getContractConfig(): Promise<{
+  //   publisherAddr: string
+  //   sparsityAddr: string
+  //   operatorAddr: string
+  //   publisherCommission: string
+  //   sparsityCommission: string
+  //   minBet: string
+  //   bettingDur: string
+  //   minDrawDelay: string
+  //   maxDrawDelay: string
+  //   minEndTimeExt: string
+  //   minPart: string
+  //   sparsityIsSet: boolean
+  // }> {
+  //   const contractAddress = this.contractAddress
+  //   const rpcUrl = this.rpcUrl
+  //   const chainId = this.chainId
 
-    if (!contractAddress) throw new Error('Contract address not configured for getContractConfig')
-    if (!rpcUrl) throw new Error('RPC URL not configured for getContractConfig')
+  //   if (!contractAddress) throw new Error('Contract address not configured for getContractConfig')
+  //   if (!rpcUrl) throw new Error('RPC URL not configured for getContractConfig')
 
-    try {
-      // Load ABI and create read-only provider for this call
-      const abi = await this.loadAbi()
-      const provider = new ethers.JsonRpcProvider(rpcUrl, chainId ? Number(chainId) : undefined)
-      const contract = new ethers.Contract(contractAddress, abi, provider)
-      const cfg = await contract.getConfig()
+  //   try {
+  //     // Load ABI and create read-only provider for this call
+  //     const abi = await this.loadAbi()
+  //     const provider = new ethers.JsonRpcProvider(rpcUrl, chainId ? Number(chainId) : undefined)
+  //     const contract = new ethers.Contract(contractAddress, abi, provider)
+  //     const cfg = await contract.getConfig()
 
-      // getConfig() returns 11 values in this order:
-      // 0 publisherAddr, 1 sparsityAddr, 2 operatorAddr,
-      // 3 publisherCommission, 4 sparsityCommission,
-      // 5 minBet, 6 bettingDur, 7 minDrawDelay, 8 maxDrawDelay,
-      // 9 minEndTimeExt, 10 minPart (sparsityIsSet removed)
-      const sparsityAddr = cfg.sparsityAddr ?? cfg[1]
-      const sparsityIsSet = sparsityAddr !== "0x0000000000000000000000000000000000000000"
+  //     // getConfig() returns 11 values in this order:
+  //     // 0 publisherAddr, 1 sparsityAddr, 2 operatorAddr,
+  //     // 3 publisherCommission, 4 sparsityCommission,
+  //     // 5 minBet, 6 bettingDur, 7 minDrawDelay, 8 maxDrawDelay,
+  //     // 9 minEndTimeExt, 10 minPart (sparsityIsSet removed)
+  //     const sparsityAddr = cfg.sparsityAddr ?? cfg[1]
+  //     const sparsityIsSet = sparsityAddr !== "0x0000000000000000000000000000000000000000"
       
-      const minBetVal = cfg.minBet ?? cfg[5]
-      let minBetStr: string
-      try {
-        // If minBetVal is a BigNumber-like, format it
-        minBetStr = ethers.formatEther(minBetVal)
-      } catch (e) {
-        minBetStr = String(minBetVal)
-      }
+  //     const minBetVal = cfg.minBet ?? cfg[5]
+  //     let minBetStr: string
+  //     try {
+  //       // If minBetVal is a BigNumber-like, format it
+  //       minBetStr = ethers.formatEther(minBetVal)
+  //     } catch (e) {
+  //       minBetStr = String(minBetVal)
+  //     }
 
-      // Cache numeric min bet in ETH
-      try {
-        this.minBetAmount = Number(minBetStr)
-      } catch (e) {
-        // ignore parse errors
-      }
+  //     // Cache numeric min bet in ETH
+  //     try {
+  //       this.minBetAmount = Number(minBetStr)
+  //     } catch (e) {
+  //       // ignore parse errors
+  //     }
 
-      return {
-        publisherAddr: cfg.publisherAddr ?? cfg[0],
-        sparsityAddr: sparsityAddr,
-        operatorAddr: cfg.operatorAddr ?? cfg[2],
-        publisherCommission: cfg.publisherCommission?.toString?.() ?? String(cfg[3]),
-        sparsityCommission: cfg.sparsityCommission?.toString?.() ?? String(cfg[4]),
-        minBet: cfg.minBet?.toString?.() ?? String(cfg[5]),
-        bettingDur: cfg.bettingDur?.toString?.() ?? String(cfg[6]),
-        minDrawDelay: cfg.minDrawDelay?.toString?.() ?? String(cfg[7]),
-        maxDrawDelay: cfg.maxDrawDelay?.toString?.() ?? String(cfg[8]),
-        minEndTimeExt: cfg.minEndTimeExt?.toString?.() ?? String(cfg[9]),
-        minPart: cfg.minPart?.toString?.() ?? String(cfg[10]),
-        sparsityIsSet: sparsityIsSet
-      }
-    } catch (error: any) {
-      throw new Error('Failed to load contract config: ' + (error.message || 'Unknown error'))
-    }
-  }
+  //     return {
+  //       publisherAddr: cfg.publisherAddr ?? cfg[0],
+  //       sparsityAddr: sparsityAddr,
+  //       operatorAddr: cfg.operatorAddr ?? cfg[2],
+  //       publisherCommission: cfg.publisherCommission?.toString?.() ?? String(cfg[3]),
+  //       sparsityCommission: cfg.sparsityCommission?.toString?.() ?? String(cfg[4]),
+  //       minBet: cfg.minBet?.toString?.() ?? String(cfg[5]),
+  //       bettingDur: cfg.bettingDur?.toString?.() ?? String(cfg[6]),
+  //       minDrawDelay: cfg.minDrawDelay?.toString?.() ?? String(cfg[7]),
+  //       maxDrawDelay: cfg.maxDrawDelay?.toString?.() ?? String(cfg[8]),
+  //       minEndTimeExt: cfg.minEndTimeExt?.toString?.() ?? String(cfg[9]),
+  //       minPart: cfg.minPart?.toString?.() ?? String(cfg[10]),
+  //       sparsityIsSet: sparsityIsSet
+  //     }
+  //   } catch (error: any) {
+  //     throw new Error('Failed to load contract config: ' + (error.message || 'Unknown error'))
+  //   }
+  // }
+
+
 }
 export const contractService = new ContractService()
 
