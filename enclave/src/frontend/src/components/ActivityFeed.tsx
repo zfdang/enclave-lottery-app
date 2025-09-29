@@ -226,18 +226,10 @@ const ActivityFeed: React.FC = () => {
   return (
     <Box
       sx={{
-        height: '30%',
+        height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        overflowX: 'hidden',
-        overflowY: 'auto',
-        '&::-webkit-scrollbar': {
-          width: '6px',
-        },
-        '&::-webkit-scrollbar-thumb': {
-          backgroundColor: 'rgba(255, 255, 255, 0.3)',
-          borderRadius: '3px',
-        }
+        overflow: 'hidden'
       }}
     >
       <Box display="flex" alignItems="center" mb={1} justifyContent="center">
