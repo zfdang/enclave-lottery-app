@@ -226,7 +226,7 @@ const ActivityFeed: React.FC = () => {
   return (
     <Box
       sx={{
-        height: '35%',
+        height: '30%',
         display: 'flex',
         flexDirection: 'column',
         overflowX: 'hidden',

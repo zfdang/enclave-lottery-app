@@ -164,7 +164,6 @@ class MemoryStore:
         self._emit("history_update", self._serialize_history())
         self._emit("participants_update", self._serialize_participants())
         self._emit("live_feed", payload_feed)
-        logger.debug(f"[MemoryStore] record_round_completion: snapshot={snapshot}")
 
     # ------------------------------------------------------------------
     # Configuration and status
@@ -293,12 +292,6 @@ class MemoryStore:
         }
 
     def _serialize_history(self) -> dict:
-        logger.info("[MemoryStore] Serializing history")
-        snapshots = list(self.get_round_history())
-        for snapshot in snapshots:
-            logger.debug(f"[MemoryStore] Snapshot: {snapshot}")
-            snapshot_data = self._serialize_round(snapshot)
-        
         rounds = [
             {
                 "roundId": snapshot.round_id,

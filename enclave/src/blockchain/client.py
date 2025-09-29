@@ -66,7 +66,10 @@ class BlockchainClient:
                 logger.warning("Unable to parse gas price '%s': %s", gas_price_setting, exc)
 
         self._gas_multiplier = float(blockchain_cfg.get("gas_multiplier", 1.15))
+        
+        # latest_block is the latest block number from the chain
         self._latest_block: Optional[int] = None
+        self._last_seen_block: Optional[int] = None
 
     async def initialize(self) -> None:
         """Establish the RPC connection and load the contract."""
@@ -272,6 +275,8 @@ class BlockchainClient:
     async def get_events(self, from_block: int) -> List[BlockchainEvent]:
         w3 = self._ensure_web3()
         self._ensure_contract()  # ensure loaded
+        
+        logger.info("get_events: start from block %s", from_block)
 
         def _fetch() -> List[BlockchainEvent]:
             from web3._utils.events import get_event_data  # type: ignore
@@ -286,8 +291,8 @@ class BlockchainClient:
             if from_block >= self._latest_block:
                 logger.info("Requested block %s is ahead of latest block %s, skip", from_block, self._latest_block)
                 return []
-            
-            logger.info("Fetching events from block %s for contract %s", from_block, self.contract_address)
+
+            logger.info("Fetching events from block %s to %d for contract %s", from_block, self._latest_block, self.contract_address)
             try:
                 filter_params = {
                     "fromBlock": from_block,
@@ -301,7 +306,11 @@ class BlockchainClient:
                 return []
 
             for raw in raw_logs:
-                logger.info("Block %d, Raw log: %s", raw.get("blockNumber"), raw)
+                logger.info("Block %d ...", raw.get("blockNumber"))
+                logger.debug("Block %d, Raw log: %s", raw.get("blockNumber"), raw)
+                # track the last seen block for future fetches
+                self._last_seen_block = raw.get("blockNumber")
+                
                 topics = [t.hex() if isinstance(t, (bytes, bytearray)) else t for t in raw.get("topics", [])]
                 if not topics:
                     logger.debug("Skipping log without topics: %s", raw)
@@ -333,6 +342,8 @@ class BlockchainClient:
                 except Exception as exc:  # pragma: no cover - decode failures
                     logger.info("Failed to decode log %s: %s", raw, exc)
                     continue
+    
+            # sort by block number, then transaction hash for deterministic order
             collected.sort(key=lambda evt: (evt.block_number, evt.transaction_hash))
             logger.info("Decoded %d events from block %s to %s", len(collected), from_block, self._latest_block)
             return collected

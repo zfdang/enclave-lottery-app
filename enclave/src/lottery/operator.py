@@ -176,7 +176,11 @@ class PassiveOperator:
                        self._event_from_block, latest_block, self._settings.event_replay_blocks)
 
         while not self._stop_event.is_set():
-            from_block = self._event_from_block if self._event_cursor else max(self._event_from_block - 1, 0)
+            # Determine the block range to poll
+            # if self.client._last_seen_block is None, start from 0; else, start from _last_seen_block + 1
+            from_block = 0
+            if self._client._last_seen_block is not None:
+                from_block = self._client._last_seen_block + 1
             logger.info(f"[event_loop] Polling events from block {from_block}")
             try:
                 events = await self._client.get_events(from_block)
