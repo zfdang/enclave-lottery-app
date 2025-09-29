@@ -185,13 +185,11 @@ function App() {
     setAttestationLoading(true);
     setAttestationError('');
     try {
-      // Fetch attestation from backend
-      const response = await fetch('/api/attestation');
-      if (!response.ok) throw new Error('Failed to fetch attestation');
-      const data = await response.json();
+      // Fetch attestation from backend via centralized API helper
+      const data = await (await import('./services/api')).getAttestation();
       setAttestation(JSON.stringify(data, null, 2));
     } catch (err: any) {
-      setAttestationError(err.message || 'Error fetching attestation');
+      setAttestationError(err?.message || 'Error fetching attestation');
     } finally {
       setAttestationLoading(false);
     }
