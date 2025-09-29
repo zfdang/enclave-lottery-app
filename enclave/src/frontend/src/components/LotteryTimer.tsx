@@ -34,30 +34,29 @@ const LotteryTimer: React.FC = () => {
   }
 
   useEffect(() => {
-    // Ensure we have the latest roundStatus from the backend. Use the store's fetch method
-    // to keep network logic centralized.
+    // Poll backend every FETCH_POLL_MS for round status, and update local timers
+    // once per second by reading the latest store state. Reading the store
+    // inside the timer prevents the effect from re-running on each store update
+    // (which previously caused an immediate refetch loop).
     const FETCH_POLL_MS = 5000
     const fetchNow = async () => {
       try {
         await useLotteryStore.getState().fetchRoundStatus()
       } catch (e) {
-        // fetchRoundStatus handles its own errors; nothing to do here
+        // fetchRoundStatus handles its own errors
       }
     }
 
+    // Start the periodic fetch and timer-driven UI updates
     fetchNow()
-
-    // const poll = setInterval(fetchNow, FETCH_POLL_MS)
-
-    if (!roundStatus) {
-      // still allow timers to wait until roundStatus arrives
-    }
+    const poll = setInterval(fetchNow, FETCH_POLL_MS)
 
     const updateTimers = () => {
-      if (!roundStatus) return
+      const current = useLotteryStore.getState().roundStatus
+      if (!current) return
       const now = Date.now()
-      const drawTime = parseUtcMillis((roundStatus as any).min_draw_time)
-      const endTime = parseUtcMillis((roundStatus as any).end_time)
+      const drawTime = parseUtcMillis((current as any).min_draw_time)
+      const endTime = parseUtcMillis((current as any).end_time)
 
       // Calculate time remaining until draw
       const drawDiffRaw = drawTime - now
@@ -77,13 +76,13 @@ const LotteryTimer: React.FC = () => {
     }
 
     updateTimers()
-    // const timer = setInterval(updateTimers, 1000)
+    const timer = setInterval(updateTimers, 1000)
 
     return () => {
-      // clearInterval(timer)
-      // clearInterval(poll)
+      clearInterval(timer)
+      clearInterval(poll)
     }
-  }, [roundStatus])
+  }, [])
 
   if (!roundStatus) {
     return (
