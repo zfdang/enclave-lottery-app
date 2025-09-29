@@ -16,14 +16,9 @@ import { getParticipants } from '../services/api'
 
 interface Participant {
   address: string
-  bets: Array<{
-    amount: number
-    ticket_numbers: number[]
-    timestamp: string
-  }>
-  total_bet_amount: number
-  bet_count: number
-  ticket_numbers: number[]
+  // backend now provides aggregated fields:
+  totalAmountWei: number
+  betCount: number
 }
 
 interface ParticipantsResponse {
@@ -32,7 +27,8 @@ interface ParticipantsResponse {
   participants: Participant[]
   total_participants: number
   total_bets: number
-  total_bet_amount: number
+  // backend uses snake_case for aggregates
+  total_amount_wei: number
   current_time: number
   message?: string
 }
@@ -65,7 +61,7 @@ const UserList: React.FC = () => {
   }
 
   const formatEth = (wei: number): string => {
-    return (wei / 1e18).toFixed(4)
+    return (wei / 1e18).toFixed(2)
   }
 
   const getAvatarColor = (address: string): string => {
@@ -79,24 +75,9 @@ const UserList: React.FC = () => {
   }
 
   const getTotalTickets = (): number => {
+    // convert to a simple total of bets across participants (betCount)
     const participants = participantsData?.participants || []
-    return participants.reduce((total: number, participant: Participant) => {
-      // participant.ticket_numbers may be undefined if backend uses a different shape.
-      if (Array.isArray((participant as any).ticket_numbers)) {
-        return total + (participant as any).ticket_numbers.length
-      }
-      // Fallback to bets array length or bet_count if present
-      if (Array.isArray((participant as any).bets)) {
-        return total + (participant as any).bets.length
-      }
-      return total + ((participant as any).bet_count ?? 0)
-    }, 0)
-  }
-
-  const getWinChance = (ticketCount: number): string => {
-    const total = getTotalTickets()
-    if (total === 0) return '0%'
-    return ((ticketCount / total) * 100).toFixed(1) + '%'
+    return participants.reduce((total: number, p: Participant) => total + (p.betCount ?? 0), 0)
   }
 
   const safeParticipants = participantsData?.participants || []
@@ -114,7 +95,7 @@ const UserList: React.FC = () => {
       {participantsData?.round_id && (
         <Box mb={1} p={1} sx={{ bgcolor: 'rgba(255, 255, 255, 0.1)', borderRadius: 1 }}>
           <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.8)' }}>
-            Round #{participantsData.round_id} • {participantsData.total_bets} bets • {formatEth(participantsData.total_bet_amount)} ETH total
+            Round #{participantsData.round_id} • {participantsData.total_bets} bets • {formatEth((participantsData as any).total_amount_wei ?? 0)} ETH total
           </Typography>
         </Box>
       )}
@@ -178,7 +159,7 @@ const UserList: React.FC = () => {
                           />
                           <Chip
                             icon={<ConfirmationNumber sx={{ fontSize: '0.7rem !important' }} />}
-                            label={(Array.isArray((participant as any).ticket_numbers) ? (participant as any).ticket_numbers.length : Array.isArray((participant as any).bets) ? (participant as any).bets.length : ((participant as any).bet_count ?? 0)) + ' tickets'}
+                            label={(participant as any).betCount + ' bets'}
                             size="small"
                             sx={{ 
                               height: 18, 
@@ -188,9 +169,7 @@ const UserList: React.FC = () => {
                             }}
                           />
                         </Box>
-                        <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
-                          Win chance: {getWinChance(Array.isArray((participant as any).ticket_numbers) ? (participant as any).ticket_numbers.length : Array.isArray((participant as any).bets) ? (participant as any).bets.length : ((participant as any).bet_count ?? 0))}
-                        </Typography>
+                        {/* removed win chance/ticket-number based UI; keeping only totals */}
                       </Box>
                     }
                     primaryTypographyProps={{ component: 'div' }}

@@ -7,20 +7,18 @@ import { getLotteryHistory } from '../services/api'
 interface HistoryItem {
   round_id: number
   final_state: string
-  final_state_value: number
   start_time: number
   end_time: number
-  total_pot: number
+  // backend uses wei-suffixed fields
+  total_pot_wei: number
   participant_count: number
-  total_bets_placed: number
-  winner: string | null
-  winner_prize: number
-  publisher_commission: number
-  sparsity_commission: number
-  total_commission: number
-  is_completed: boolean
-  is_refunded: boolean
-  has_winner: boolean
+  // optional fields provided by backend
+  winner?: string | null
+  winner_prize_wei?: number
+  publisher_commission_wei?: number
+  sparsity_commission_wei?: number
+  finished_at?: number
+  refund_reason?: string | null
 }
 
 interface HistoryResponse {
@@ -29,16 +27,13 @@ interface HistoryResponse {
     total_rounds: number
     completed_rounds: number
     refunded_rounds: number
-    completion_rate: number
-    total_volume: number
-    total_prizes_awarded: number
-    average_pot_size: number
+    total_volume_wei: number
   }
   pagination: {
     limit: number
-    returned_count: number
+    returned: number
   }
-  timestamp: number
+  timestamp: string
 }
 
 const HistoryPanel: React.FC = () => {
@@ -68,8 +63,11 @@ const HistoryPanel: React.FC = () => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`
   }
 
-  const formatDate = (timestamp: number): string => {
-    const date = new Date(timestamp * 1000) // Convert from Unix timestamp
+  const formatDate = (timestamp: number | undefined): string => {
+    if (!timestamp) return ''
+    // backend uses seconds or milliseconds inconsistently; normalize: if > 1e12 assume ms else seconds
+    const asMs = timestamp > 1e12 ? timestamp : timestamp * 1000
+    const date = new Date(asMs)
     return `${date.toLocaleDateString()} ${date.toLocaleTimeString().slice(0, 5)}`
   }
 
@@ -102,7 +100,7 @@ const HistoryPanel: React.FC = () => {
       {historyData?.summary && (
         <Box mb={1} p={1} sx={{ bgcolor: 'rgba(255, 255, 255, 0.1)', borderRadius: 1 }}>
           <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.8)' }}>
-            {historyData.summary.total_rounds} rounds • {(historyData.summary.completion_rate ?? 0).toFixed(1)}% completed
+            {historyData.summary.total_rounds} rounds • {((historyData.summary.completed_rounds / Math.max(1, historyData.summary.total_rounds)) * 100).toFixed(1)}% completed
           </Typography>
         </Box>
       )}
@@ -133,17 +131,17 @@ const HistoryPanel: React.FC = () => {
               <React.Fragment key={item.round_id}>
                 <ListItem sx={{ px: 1, py: 0.5 }}>
                   <ListItemIcon sx={{ minWidth: 35 }}>
-                    {item.has_winner ? (
+                    {((item as any).winner) ? (
                       <Avatar 
                         sx={{ 
-                          bgcolor: getAvatarColor(item.winner!),
+                          bgcolor: getAvatarColor((item as any).winner || '0x0'),
                           width: 28, 
                           height: 28,
                         }}
                       >
                         <EmojiEvents sx={{ fontSize: '0.9rem' }} />
                       </Avatar>
-                    ) : item.is_refunded ? (
+                    ) : ((item as any).refund_reason) ? (
                       <Avatar 
                         sx={{ 
                           bgcolor: 'rgba(255, 152, 0, 0.5)',
@@ -170,11 +168,11 @@ const HistoryPanel: React.FC = () => {
                   <ListItemText
                     primary={
                       <Box>
-                        {item.has_winner ? (
+                        {((item as any).winner) ? (
                           <Typography variant="body2" sx={{ color: 'white', fontWeight: 'bold' }}>
-                            Winner: {formatAddress(item.winner!)}
+                            Winner: {formatAddress((item as any).winner)}
                           </Typography>
-                        ) : item.is_refunded ? (
+                        ) : ((item as any).refund_reason) ? (
                           <Typography variant="body2" sx={{ color: 'rgba(255, 152, 0, 0.8)' }}>
                             Refunded
                           </Typography>
@@ -190,12 +188,12 @@ const HistoryPanel: React.FC = () => {
                         <Box display="flex" alignItems="center" gap={0.5} mt={0.5} flexWrap="wrap">
                           <Chip
                             icon={<AttachMoney sx={{ fontSize: '0.7rem !important' }} />}
-                            label={`${formatEth(item.total_pot)} ETH`}
+                            label={`${formatEth((item as any).total_pot_wei ?? 0)} ETH`}
                             size="small"
                             sx={{ 
                               height: 18, 
                               fontSize: '0.65rem',
-                              bgcolor: item.has_winner ? 'rgba(76, 175, 80, 0.3)' : item.is_refunded ? 'rgba(255, 152, 0, 0.3)' : 'rgba(255, 255, 255, 0.2)',
+                              bgcolor: (item as any).winner ? 'rgba(76, 175, 80, 0.3)' : (item as any).refund_reason ? 'rgba(255, 152, 0, 0.3)' : 'rgba(255, 255, 255, 0.2)',
                               color: 'white'
                             }}
                           />
@@ -211,14 +209,14 @@ const HistoryPanel: React.FC = () => {
                             }}
                           />
                         </Box>
-                        {item.has_winner && (
+                        {(item as any).winner && (
                           <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
-                            Prize: {formatEth(item.winner_prize)} ETH
+                            Prize: {formatEth((item as any).winner_prize_wei ?? 0)} ETH
                           </Typography>
                         )}
                         <br />
                         <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.6)' }}>
-                          Round #{item.round_id} • {formatDate(item.end_time)}
+                          Round #{item.round_id} • {formatDate((item as any).finished_at ?? item.end_time)}
                         </Typography>
                       </Box>
                     }

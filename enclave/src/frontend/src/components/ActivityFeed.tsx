@@ -26,6 +26,8 @@ interface Activity {
   user_address: string
   activity_type: string
   details: any
+  message?: string
+  severity?: string
   timestamp: string
 }
 
@@ -152,14 +154,14 @@ const ActivityFeed: React.FC = () => {
     
     switch (activity.activity_type) {
       case 'connect':
-  return `🔗 ${address} joined the lottery`
+        return `🔗 ${address} joined the lottery`
       case 'bet':
         const tickets = activity.details.tickets?.length || 0
-  return `💰 ${address} placed ${tickets} ticket(s) (${activity.details.amount} ETH)`
+        return `💰 ${address} placed ${tickets} ticket(s) (${activity.details.amount} ETH)`
       case 'win':
-  return `🎉 ${address} won ${activity.details.amount} ETH!`
+        return `🎉 ${address} won ${activity.details.amount} ETH!`
       default:
-  return `${address} performed an action`
+        return `${address} performed an action`
     }
   }
 
@@ -216,20 +218,30 @@ const ActivityFeed: React.FC = () => {
     ...safeActivities.map(activity => ({
       id: activity.activity_id,
       type: activity.activity_type,
-      message: getActivityMessage(activity),
+      // Prefer server-provided message when present; otherwise fall back to client-formatted text
+      message: activity.message ? activity.message : getActivityMessage(activity as Activity),
       timestamp: new Date(activity.timestamp),
       activity,
-      isSystem: false
+      isSystem: false,
+      severity: activity.severity ?? 'info',
     }))
   ].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
 
   return (
     <Box
       sx={{
-        height: '100%',
+        height: '25%',
         display: 'flex',
         flexDirection: 'column',
-        overflow: 'hidden'
+        overflowX: 'hidden',
+        overflowY: 'auto',
+        '&::-webkit-scrollbar': {
+          width: '6px',
+        },
+        '&::-webkit-scrollbar-thumb': {
+          backgroundColor: 'rgba(255, 255, 255, 0.3)',
+          borderRadius: '3px',
+        }
       }}
     >
       <Box display="flex" alignItems="center" mb={1} justifyContent="center">

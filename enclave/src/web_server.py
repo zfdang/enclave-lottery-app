@@ -221,6 +221,8 @@ class LotteryWebServer:
                 }
                 for item in participants
             ]
+            logger.info("Serialized %d participants for round %d", len(serialized), current.round_id)
+            logger.debug("Participants data: %s", serialized)
             return {
                 "round_id": current.round_id,
                 "round_state": current.state.name,
