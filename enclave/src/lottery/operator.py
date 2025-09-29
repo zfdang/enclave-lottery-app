@@ -356,6 +356,7 @@ class PassiveOperator:
             refund_reason=reason,
             participant_count_override=participant_count,
         )
+        logger.info("Round %s refunded: %s", round_id, reason)
 
         self._store.record_round_completion(snapshot)
         self._store.set_current_round(None)

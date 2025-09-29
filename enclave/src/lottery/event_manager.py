@@ -160,7 +160,7 @@ class MemoryStore:
             self._append_feed(feed_item)
             self._participant_summaries = {}
             payload_feed = self._serialize_feed_item(feed_item)
-            history_payload = self._serialize_history()
+            # history_payload = self._serialize_history()
 
         self._emit("history_update", history_payload)
         self._emit("participants_update", self._serialize_participants())

@@ -1,8 +1,9 @@
 import axios from 'axios'
 
-const API_BASE_URL = import.meta.env.MODE === 'production' 
-  ? '' // Same origin in production
-  : 'http://localhost:6080'
+// Prefer Vite-style env var, then CRA-style REACT_APP env, then same-origin in production,
+// otherwise fall back to the old hardcoded host used in development.
+const VITE_API = (import.meta.env as any).VITE_API_BASE_URL
+const API_BASE_URL = VITE_API
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -71,25 +72,6 @@ export const getContractConfig = async () => {
 // Get only the configured lottery contract address
 export const getContractAddress = async () => {
   const response = await api.get('/api/contract/address')
-  return response.data
-}
-
-// Connect wallet
-export const connectWallet = async (address: string, signature: string) => {
-  const response = await api.post('/api/auth/connect', {
-    address,
-    signature,
-  })
-  return response.data
-}
-
-// Place bet
-export const placeBet = async (betData: {
-  user_address: string
-  amount: number
-  transaction_hash: string
-}) => {
-  const response = await api.post('/api/bet', betData)
   return response.data
 }
 

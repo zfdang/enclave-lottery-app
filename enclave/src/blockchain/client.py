@@ -39,7 +39,7 @@ class BlockchainClient:
         self._config = config
 
         blockchain_cfg = config.get("blockchain", {})
-        self.rpc_url: str = blockchain_cfg.get("rpc_url", "http://localhost:8545")
+        self.rpc_url: str = blockchain_cfg.get("rpc_url", "http://18.144.124.66:8545")
         # per-RPC timeout (seconds) to pass to HTTPProvider to avoid blocking requests
         try:
             self.rpc_timeout: float = float(blockchain_cfg.get("rpc_timeout", 10.0))

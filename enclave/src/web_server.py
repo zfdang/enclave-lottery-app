@@ -540,9 +540,19 @@ class LotteryWebServer:
         }
 
     def _serialize_activity(self, item: LiveFeedItem, index: int) -> Dict[str, Any]:
+        # Ensure user_address is always a string for the frontend.
+        # Prefer explicit player addresses, then winner, then fall back to a readable round id or 'system'.
+        user_val = item.details.get("player") or item.details.get("winner")
+        if not user_val:
+            # Prefer roundId when no participant address is present; coerce to string for consistency
+            round_id = item.details.get("roundId")
+            user_val = f"round:{round_id}" if round_id is not None else "system"
+        # Final coercion to string to avoid runtime errors like `address.slice is not a function` in the UI
+        user_address_str = str(user_val)
+
         return {
             "activity_id": f"{item.created_at.isoformat()}-{index}",
-            "user_address": item.details.get("player") or item.details.get("roundId") or "system",
+            "user_address": user_address_str,
             "activity_type": self._map_feed_type(item.event_type),
             "details": item.details,
             "message": item.message,

@@ -37,11 +37,11 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:6080',
+        target: 'http://18.144.124.66:6080',
         changeOrigin: true,
       },
       '/ws': {
-        target: 'ws://localhost:6080',
+        target: 'ws://18.144.124.66:6080',
         ws: true,
       },
     },

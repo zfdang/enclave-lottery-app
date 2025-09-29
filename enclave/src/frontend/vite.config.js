@@ -12,11 +12,11 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api': {
-        target: 'http://localhost:6080',
+        target: process.env.VITE_API_BASE_URL || 'http://127.0.0.1:6080/api',
         changeOrigin: true,
       },
       '/ws': {
-        target: 'ws://localhost:6080',
+        target: process.env.VITE_WEBSOCKET_URL || 'ws://127.0.0.1:6080/ws/lottery',
         ws: true,
       },
     },

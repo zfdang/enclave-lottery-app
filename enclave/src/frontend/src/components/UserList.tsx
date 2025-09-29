@@ -80,8 +80,17 @@ const UserList: React.FC = () => {
 
   const getTotalTickets = (): number => {
     const participants = participantsData?.participants || []
-    return participants.reduce((total: number, participant: Participant) => 
-      total + participant.ticket_numbers.length, 0)
+    return participants.reduce((total: number, participant: Participant) => {
+      // participant.ticket_numbers may be undefined if backend uses a different shape.
+      if (Array.isArray((participant as any).ticket_numbers)) {
+        return total + (participant as any).ticket_numbers.length
+      }
+      // Fallback to bets array length or bet_count if present
+      if (Array.isArray((participant as any).bets)) {
+        return total + (participant as any).bets.length
+      }
+      return total + ((participant as any).bet_count ?? 0)
+    }, 0)
   }
 
   const getWinChance = (ticketCount: number): string => {
@@ -138,19 +147,19 @@ const UserList: React.FC = () => {
                   <ListItemIcon sx={{ minWidth: 35 }}>
                     <Avatar 
                       sx={{ 
-                        bgcolor: getAvatarColor(participant.address),
+                        bgcolor: getAvatarColor(participant.address ?? '0x0'),
                         width: 28, 
                         height: 28,
                         fontSize: '0.75rem'
                       }}
                     >
-                      {participant.address.slice(-4).toUpperCase()}
+                      {(participant.address ?? '0x0').slice(-4).toUpperCase()}
                     </Avatar>
                   </ListItemIcon>
                   <ListItemText
                     primary={
                       <Typography variant="body2" sx={{ color: 'white', fontWeight: 'bold' }}>
-                        {formatAddress(participant.address)}
+                        {formatAddress(participant.address ?? '0x0')}
                       </Typography>
                     }
                     secondary={
@@ -158,7 +167,7 @@ const UserList: React.FC = () => {
                         <Box display="flex" alignItems="center" gap={0.5} mt={0.5} flexWrap="wrap">
                           <Chip
                             icon={<ConfirmationNumber sx={{ fontSize: '0.7rem !important' }} />}
-                            label={formatEth(participant.total_bet_amount) + ' ETH'}
+                            label={formatEth((participant as any).total_bet_amount ?? (participant as any).totalAmountWei ?? 0) + ' ETH'}
                             size="small"
                             sx={{ 
                               height: 18, 
@@ -169,7 +178,7 @@ const UserList: React.FC = () => {
                           />
                           <Chip
                             icon={<ConfirmationNumber sx={{ fontSize: '0.7rem !important' }} />}
-                            label={participant.ticket_numbers.length + ' tickets'}
+                            label={(Array.isArray((participant as any).ticket_numbers) ? (participant as any).ticket_numbers.length : Array.isArray((participant as any).bets) ? (participant as any).bets.length : ((participant as any).bet_count ?? 0)) + ' tickets'}
                             size="small"
                             sx={{ 
                               height: 18, 
@@ -180,10 +189,12 @@ const UserList: React.FC = () => {
                           />
                         </Box>
                         <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
-                          Win chance: {getWinChance(participant.ticket_numbers.length)}
+                          Win chance: {getWinChance(Array.isArray((participant as any).ticket_numbers) ? (participant as any).ticket_numbers.length : Array.isArray((participant as any).bets) ? (participant as any).bets.length : ((participant as any).bet_count ?? 0))}
                         </Typography>
                       </Box>
                     }
+                    primaryTypographyProps={{ component: 'div' }}
+                    secondaryTypographyProps={{ component: 'div' }}
                   />
                 </ListItem>
                 {index < safeParticipants.length - 1 && (

@@ -74,7 +74,10 @@ function App() {
   }, [checkBackendHealth])
   
   // WebSocket connection for real-time updates
-  useWebSocket('ws://localhost:6080/ws/lottery', {
+  const rawWs = import.meta.env.VITE_WEBSOCKET_URL
+  let wsUrl = rawWs || "ws://127.0.0.1/ws/lottery"
+
+  useWebSocket(wsUrl, {
     onMessage: (data) => {
       if (data.type === 'bet_placed') {
         setSnackbar({

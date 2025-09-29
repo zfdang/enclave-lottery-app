@@ -311,6 +311,8 @@ const ActivityFeed: React.FC = () => {
                       {formatTime(message.timestamp)}
                     </Typography>
                   }
+                  primaryTypographyProps={{ component: 'div' }}
+                  secondaryTypographyProps={{ component: 'div' }}
                 />
               </ListItem>
             ))}

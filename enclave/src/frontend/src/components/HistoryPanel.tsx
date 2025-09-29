@@ -222,6 +222,8 @@ const HistoryPanel: React.FC = () => {
                         </Typography>
                       </Box>
                     }
+                    primaryTypographyProps={{ component: 'div' }}
+                    secondaryTypographyProps={{ component: 'div' }}
                   />
                 </ListItem>
                 {index < safeHistory.length - 1 && (
