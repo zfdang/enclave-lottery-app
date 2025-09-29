@@ -221,10 +221,25 @@ const ActivityFeed: React.FC = () => {
       activity,
       isSystem: false
     }))
-  ].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()).slice(0, 20)
+  ].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
 
   return (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <Box
+      sx={{
+        height: '35%',
+        display: 'flex',
+        flexDirection: 'column',
+        overflowX: 'hidden',
+        overflowY: 'auto',
+        '&::-webkit-scrollbar': {
+          width: '6px',
+        },
+        '&::-webkit-scrollbar-thumb': {
+          backgroundColor: 'rgba(255, 255, 255, 0.3)',
+          borderRadius: '3px',
+        }
+      }}
+    >
       <Box display="flex" alignItems="center" mb={1} justifyContent="center">
         <Notifications sx={{ mr: 1, color: 'white' }} />
         <Typography variant="subtitle1" sx={{ color: 'white' }}>
@@ -262,23 +277,15 @@ const ActivityFeed: React.FC = () => {
           </Typography>
         </Box>
       ) : (
-        <Box flex={1} overflow="hidden" sx={{ 
-          background: 'rgba(0, 0, 0, 0.2)', 
-          borderRadius: 1,
-          border: '1px solid rgba(255, 255, 255, 0.1)'
-        }}>
-          <List sx={{ 
-            overflow: 'auto', 
-            maxHeight: '100%', 
-            p: 0.5,
-            '&::-webkit-scrollbar': {
-              width: '6px',
-            },
-            '&::-webkit-scrollbar-thumb': {
-              backgroundColor: 'rgba(255, 255, 255, 0.3)',
-              borderRadius: '3px',
-            }
-          }}>
+        <Box
+          sx={{
+            flexGrow: 1,
+            background: 'rgba(0, 0, 0, 0.2)',
+            borderRadius: 1,
+            border: '1px solid rgba(255, 255, 255, 0.1)'
+          }}
+        >
+          <List sx={{ p: 0.5 }}>
             {allMessages.map((message) => (
               <ListItem key={message.id} sx={{ px: 1, py: 0.5 }}>
                 <ListItemIcon sx={{ minWidth: 35 }}>
