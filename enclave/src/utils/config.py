@@ -30,6 +30,27 @@ def load_config() -> Dict[str, Any]:
 
     # Override with environment variables, defined in .env
     config = _apply_env_overrides(config)
+
+    # Normalize and apply sensible defaults for event manager (event_manager / polling)
+    # Defaults are configurable via ENV vars prefixed with EVENTMGR_ or BLOCKCHAIN_
+    eventmgr = config.setdefault('event_manager', {})
+
+    # Default intervals (seconds)
+    eventmgr.setdefault('contract_config_interval_sec', int(eventmgr.get('contract_config_interval_sec', 10)))
+    eventmgr.setdefault('round_status_interval_sec', int(eventmgr.get('round_status_interval_sec', 5)))
+    eventmgr.setdefault('participants_interval_sec', int(eventmgr.get('participants_interval_sec', 5)))
+
+    # Event polling options
+    eventmgr.setdefault('event_source', eventmgr.get('event_source', 'eth_getLogs'))
+    eventmgr.setdefault('start_block_offset', int(eventmgr.get('start_block_offset', 500)))
+
+    # Retention sizes
+    eventmgr.setdefault('live_feed_max_entries', int(eventmgr.get('live_feed_max_entries', 1000)))
+    eventmgr.setdefault('round_history_max', int(eventmgr.get('round_history_max', 100)))
+
+    # Blockchain node / provider
+    blockchain = config.setdefault('blockchain', {})
+    blockchain.setdefault('rpc_url', blockchain.get('rpc_url', os.environ.get('BLOCKCHAIN_RPC_URL', 'http://localhost:8545')))
     
     # show config again
     logger.info(f"Configuration after applying environment overrides: {json.dumps(config, indent=2)}")
@@ -47,6 +68,9 @@ def _apply_env_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
         elif key.startswith("BLOCKCHAIN_"):
             section = "blockchain"
             key = key[len("BLOCKCHAIN_"):].lower()
+        elif key.startswith("EVENTMGR_"):
+            section = "event_manager"
+            key = key[len("EVENTMGR_"):].lower()
         elif key.startswith("ENCLAVE_"):
             section = "enclave"
             key = key[len("ENCLAVE_"):].lower()

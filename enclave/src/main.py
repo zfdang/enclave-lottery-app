@@ -34,6 +34,7 @@ from lottery.event_manager import memory_store
 from lottery.operator import PassiveOperator
 from utils.config import load_config
 from utils.crypto import EnclaveAttestation
+from lottery.event_manager import EventManager
 
 logger = get_logger(__name__)
 
@@ -109,6 +110,10 @@ class PassiveLotteryOperatorApp:
 
         # Passive operator
         logger.info("🎯 Initializing passive operator service...")
+        # Initialize EventManager which will keep the memory store up-to-date
+        self.event_manager = EventManager(self.blockchain_client, self.config)
+        await self.event_manager.initialize()
+
         self.operator = PassiveOperator(self.blockchain_client, self.config)
         await self.operator.initialize()
 
@@ -137,6 +142,11 @@ class PassiveLotteryOperatorApp:
                 raise RuntimeError("Passive operator failed to initialize")
 
             logger.info("🤖 Starting passive operator service...")
+            # Start event manager first so the store is actively refreshed
+            try:
+                await self.event_manager.start()
+            except Exception:
+                logger.warning("EventManager failed to start; continuing")
             self._operator_task = asyncio.create_task(self.operator.start())
 
             if not self.web_server:
@@ -219,6 +229,14 @@ class PassiveLotteryOperatorApp:
                 logger.info("✅ Blockchain client connections closed")
             except Exception as exc:
                 logger.error(f"❌ Error closing blockchain client: {exc}")
+
+        # Stop event manager if running
+        if hasattr(self, 'event_manager') and self.event_manager:
+            try:
+                await self.event_manager.stop()
+                logger.info("✅ Event manager stopped")
+            except Exception as exc:
+                logger.error(f"❌ Error stopping event manager: {exc}")
 
         # Clear memory store
         try:

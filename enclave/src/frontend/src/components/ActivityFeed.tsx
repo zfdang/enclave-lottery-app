@@ -174,9 +174,9 @@ const ActivityFeed: React.FC = () => {
   return (
     <Box
       sx={{
-        height: '25%',
         display: 'flex',
         flexDirection: 'column',
+        height: '50%',
         overflowX: 'hidden',
         overflowY: 'auto',
         '&::-webkit-scrollbar': {

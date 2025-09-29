@@ -15,6 +15,7 @@ from lottery.models import (
     OperatorStatus,
     ParticipantSummary,
     RoundSnapshot,
+    RoundState,
 )
 
 
@@ -31,6 +32,8 @@ class MemoryStore:
         self._operator_status = OperatorStatus()
         self._contract_config: Optional[ContractConfig] = None
         self._listeners: Dict[str, List[Callable[[dict | None], None]]] = defaultdict(list)
+        self._feed_capacity = feed_capacity
+        self._history_capacity = history_capacity
 
     # ------------------------------------------------------------------
     # Listener management
@@ -367,6 +370,297 @@ class MemoryStore:
         self._emit("history_update", self._serialize_history())
         logger.debug("[MemoryStore] clear_all_data called")
 
+    # ------------------------------------------------------------------
+    # Runtime resizing helpers
+    # ------------------------------------------------------------------
+    def set_feed_capacity(self, capacity: int) -> None:
+        """Resize the live feed capacity (max entries)."""
+        with self._lock:
+            if capacity == self._feed_capacity:
+                return
+            old_items = list(self._live_feed)
+            self._live_feed = deque(old_items[-capacity:], maxlen=capacity)
+            self._feed_capacity = capacity
+        logger.info(f"[MemoryStore] live feed capacity set to {capacity}")
+
+    def set_history_capacity(self, capacity: int) -> None:
+        """Resize the round history capacity (max snapshots)."""
+        with self._lock:
+            if capacity == self._history_capacity:
+                return
+            old_items = list(self._history)
+            self._history = deque(old_items[-capacity:], maxlen=capacity)
+            self._history_capacity = capacity
+        logger.info(f"[MemoryStore] history capacity set to {capacity}")
+
 
 # Global singleton used across the backend.
 memory_store = MemoryStore()
+
+
+import asyncio
+from typing import Any, Dict, List, Optional
+
+from blockchain.client import BlockchainClient
+from utils.config import load_config
+
+
+class EventManager:
+    """Polls chain state and events and writes into the MemoryStore.
+
+    Responsibilities:
+    - Periodically refresh contract config, current round, and participants.
+    - Poll eth_getLogs for new events and translate them into live_feed entries
+      and round history snapshots.
+
+    This class is intentionally lightweight and in-memory only. It expects an
+    initialized BlockchainClient instance (its `initialize()` must have been
+    called) and a MemoryStore singleton to write into.
+    """
+
+    def __init__(self, client: BlockchainClient, config: Optional[Dict[str, Any]] = None, store: MemoryStore = memory_store) -> None:
+        self.client = client
+        self.config = config or load_config()
+        self.store = store
+
+        em_cfg = self.config.get("event_manager", {})
+        self._contract_config_interval = float(em_cfg.get("contract_config_interval_sec", 10.0))
+        self._round_status_interval = float(em_cfg.get("round_status_interval_sec", 5.0))
+        self._participants_interval = float(em_cfg.get("participants_interval_sec", 5.0))
+        self._start_block_offset = int(em_cfg.get("start_block_offset", 500))
+
+        self._feed_capacity = int(em_cfg.get("live_feed_max_entries", 1000))
+        self._history_capacity = int(em_cfg.get("round_history_max", 100))
+
+        # Event polling state
+        self._from_block: Optional[int] = None
+        self._tasks: List[asyncio.Task] = []
+        self._stop_event = asyncio.Event()
+
+    async def initialize(self) -> None:
+        # Ensure client is available and determine initial from_block
+        try:
+            latest = await self.client.get_latest_block()
+        except Exception:
+            latest = 0
+        start = max(0, latest - self._start_block_offset)
+        self._from_block = start
+
+        # Ensure store capacities match config
+        try:
+            self.store.set_feed_capacity(self._feed_capacity)
+            self.store.set_history_capacity(self._history_capacity)
+        except Exception:
+            pass
+
+    async def start(self) -> None:
+        """Create background tasks for polling loops."""
+        if self._tasks:
+            return
+        self._stop_event.clear()
+        loop = asyncio.get_running_loop()
+        self._tasks = [
+            loop.create_task(self._contract_config_loop()),
+            loop.create_task(self._round_status_loop()),
+            loop.create_task(self._participants_loop()),
+            loop.create_task(self._events_loop()),
+        ]
+
+    async def stop(self) -> None:
+        """Stop background tasks and wait for termination."""
+        self._stop_event.set()
+        for t in self._tasks:
+            t.cancel()
+        for t in self._tasks:
+            try:
+                await t
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                pass
+        self._tasks = []
+
+    async def _contract_config_loop(self) -> None:
+        while not self._stop_event.is_set():
+            try:
+                cfg = await self.client.get_contract_config()
+                self.store.set_contract_config(cfg)
+            except Exception as exc:
+                logger.debug("EventManager contract_config_loop error: %s", exc)
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=self._contract_config_interval)
+                break
+            except asyncio.TimeoutError:
+                continue
+
+    async def _round_status_loop(self) -> None:
+        while not self._stop_event.is_set():
+            try:
+                round_data = await self.client.get_current_round()
+                self.store.set_current_round(round_data, reset_participants=False)
+            except Exception as exc:
+                logger.debug("EventManager round_status_loop error: %s", exc)
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=self._round_status_interval)
+                break
+            except asyncio.TimeoutError:
+                continue
+
+    async def _participants_loop(self) -> None:
+        while not self._stop_event.is_set():
+            try:
+                current = self.store.get_current_round()
+                if current:
+                    summaries = await self.client.get_participant_summaries(current.round_id)
+                    self.store.sync_participants(summaries)
+            except Exception as exc:
+                logger.debug("EventManager participants_loop error: %s", exc)
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=self._participants_interval)
+                break
+            except asyncio.TimeoutError:
+                continue
+
+    async def _events_loop(self) -> None:
+        # Continuously poll for events using the client.get_events(from_block)
+        while not self._stop_event.is_set():
+            if self._from_block is None:
+                try:
+                    latest = await self.client.get_latest_block()
+                    self._from_block = max(0, latest - self._start_block_offset)
+                except Exception:
+                    await asyncio.sleep(1.0)
+                    continue
+
+            try:
+                events = await self.client.get_events(self._from_block)
+            except Exception as exc:
+                logger.debug("EventManager events_loop get_events error: %s", exc)
+                events = []
+
+            if events:
+                for evt in events:
+                    try:
+                        await self._handle_event(evt)
+                    except Exception as exc:
+                        logger.debug("EventManager failed to handle event %s: %s", getattr(evt, 'name', None), exc)
+                # advance from_block to last seen + 1
+                last_block = max(e.block_number for e in events)
+                self._from_block = last_block + 1
+            else:
+                # back off briefly when no events
+                await asyncio.sleep(1.0)
+
+            # small sleep to avoid tight loop
+            await asyncio.sleep(0.2)
+
+    async def _handle_event(self, evt: Any) -> None:
+        name = getattr(evt, "name", "")
+        args = getattr(evt, "args", {}) or {}
+        logger.info("EventManager handling event %s args=%s", name, args)
+
+        # BetPlaced: roundId (indexed), player (indexed), amount, newTotal, timestamp
+        if name == "BetPlaced":
+            try:
+                round_id = int(args.get("roundId", 0))
+                player = args.get("player")
+                amount = int(args.get("amount", 0))
+                new_total = int(args.get("newTotal", 0))
+                # Try to fetch participant_count from current round if available
+                participant_count = 0
+                current = self.store.get_current_round()
+                if current and current.round_id == round_id:
+                    participant_count = current.participant_count
+                self.store.record_bet(round_id=round_id, player=player, amount=amount, new_total_pot=new_total, participant_count=participant_count)
+            except Exception:
+                # Fallback to calling record_bet with available fields
+                try:
+                    self.store.record_bet(round_id=int(args.get("roundId", 0)), player=args.get("player"), amount=int(args.get("amount", 0)), new_total_pot=int(args.get("newTotal", 0)), participant_count=0)
+                except Exception:
+                    logger.debug("Failed to record BetPlaced event")
+
+        elif name == "RoundCompleted":
+            try:
+                round_id = int(args.get("roundId", 0))
+                winner = args.get("winner")
+                total_pot = int(args.get("totalPot", 0))
+                winner_prize = int(args.get("winnerPrize", 0))
+                publisher_comm = int(args.get("publisherCommission", 0))
+                sparsity_comm = int(args.get("sparsityCommission", 0))
+                finished_at = int(getattr(evt, "timestamp", 0) or 0)
+                # Try to populate start/end/min/max from current round if it matches
+                start_time = 0
+                end_time = 0
+                min_draw = 0
+                max_draw = 0
+                participant_count = 0
+                current = self.store.get_current_round()
+                if current and current.round_id == round_id:
+                    start_time = current.start_time
+                    end_time = current.end_time
+                    min_draw = current.min_draw_time
+                    max_draw = current.max_draw_time
+                    participant_count = current.participant_count
+
+                snapshot = RoundSnapshot(
+                    round_id=round_id,
+                    start_time=start_time,
+                    end_time=end_time,
+                    min_draw_time=min_draw,
+                    max_draw_time=max_draw,
+                    total_pot=total_pot,
+                    participant_count=participant_count,
+                    winner=winner,
+                    winner_prize=winner_prize,
+                    publisher_commission=publisher_comm,
+                    sparsity_commission=sparsity_comm,
+                    state=RoundState.COMPLETED,
+                    finished_at=finished_at,
+                )
+                self.store.record_round_completion(snapshot)
+            except Exception as exc:
+                logger.debug("Failed to process RoundCompleted: %s", exc)
+
+        elif name == "RoundRefunded":
+            try:
+                round_id = int(args.get("roundId", 0))
+                total_refunded = int(args.get("totalRefunded", 0))
+                participant_count = int(args.get("participantCount", 0))
+                reason = args.get("reason")
+                finished_at = int(getattr(evt, "timestamp", 0) or 0)
+
+                snapshot = RoundSnapshot(
+                    round_id=round_id,
+                    start_time=0,
+                    end_time=0,
+                    min_draw_time=0,
+                    max_draw_time=0,
+                    total_pot=total_refunded,
+                    participant_count=participant_count,
+                    winner=None,
+                    winner_prize=0,
+                    publisher_commission=0,
+                    sparsity_commission=0,
+                    state=RoundState.REFUNDED,
+                    finished_at=finished_at,
+                    refund_reason=reason,
+                )
+                self.store.record_round_completion(snapshot)
+            except Exception as exc:
+                logger.debug("Failed to process RoundRefunded: %s", exc)
+
+        else:
+            # Other events: operator/config updates; refresh config/round/participants locally
+            if name in ("SparsitySet", "OperatorUpdated", "MinBetAmountUpdated", "BettingDurationUpdated"):
+                try:
+                    cfg = await self.client.get_contract_config()
+                    self.store.set_contract_config(cfg)
+                except Exception:
+                    pass
+            # For bet-related state changes, trigger a local refresh
+            if name in ("BetPlaced", "RoundCreated", "EndTimeExtended"):
+                try:
+                    round_data = await self.client.get_current_round()
+                    self.store.set_current_round(round_data, reset_participants=False)
+                except Exception:
+                    pass

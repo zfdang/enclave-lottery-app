@@ -212,7 +212,26 @@ class BlockchainClient:
                 }
             )
             signed = self.account.sign_transaction(txn)
-            tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
+            # signed may expose the raw bytes under different attribute names
+            raw = None
+            for attr in ("rawTransaction", "raw_transaction", "raw", "rawTx"):
+                raw = getattr(signed, attr, None)
+                if raw is not None:
+                    logger.debug("Using signed transaction attribute '%s'", attr)
+                    break
+
+            # fallback: if signed itself looks like bytes/hex, try to use it
+            if raw is None:
+                raw = signed
+
+            # normalize to raw bytes
+            if isinstance(raw, str):
+                # hex string
+                raw_bytes = bytes.fromhex(raw[2:]) if raw.startswith("0x") else bytes.fromhex(raw)
+            else:
+                raw_bytes = raw
+
+            tx_hash = w3.eth.send_raw_transaction(raw_bytes)
             return tx_hash.hex()
 
         tx_hash = await asyncio.to_thread(_send)
