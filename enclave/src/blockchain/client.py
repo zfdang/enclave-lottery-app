@@ -276,11 +276,22 @@ class BlockchainClient:
         def _fetch() -> List[BlockchainEvent]:
             from web3._utils.events import get_event_data  # type: ignore
             collected: List[BlockchainEvent] = []
+            
+            # get last block number first, then fetch logs from from_block to latest
+            try:
+                self._latest_block = int(w3.eth.block_number)
+            except Exception as exc:
+                logger.error("Failed to get latest block number: %s", exc)
+                return []
+            if from_block >= self._latest_block:
+                logger.info("Requested block %s is ahead of latest block %s, skip", from_block, self._latest_block)
+                return []
+            
             logger.info("Fetching events from block %s for contract %s", from_block, self.contract_address)
             try:
                 filter_params = {
                     "fromBlock": from_block,
-                    "toBlock": "latest",
+                    "toBlock": self._latest_block,
                     "address": self.contract_address,
                 }
                 raw_logs = w3.eth.get_logs(filter_params)

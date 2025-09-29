@@ -20,7 +20,7 @@ def _ensure_configured() -> None:
     if _configured:
         return
 
-    LOG_LEVEL = os.getenv('LOG_LEVEL', 'DEBUG')
+    LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
     LOG_FILE = os.getenv('LOG_FILE', '')
 
     level = getattr(logging, LOG_LEVEL.upper(), logging.INFO)
