@@ -57,6 +57,8 @@ contract Lottery {
     LotteryRound public round;
     mapping(address => uint256) public bets; // player => betAmount for current round
     address[] public participants; // participants array for current round
+    // Pull-payment balances for addresses (publisher, sparsity, etc.)
+    mapping(address => uint256) public pendingWithdrawals;
     
     // =============== EVENTS ===============
     event RoundCreated(
@@ -109,6 +111,7 @@ contract Lottery {
     event MinParticipantsUpdated(uint256 oldMin, uint256 newMin);
     event SparsitySet(address indexed sparsity);
     event OperatorUpdated(address indexed oldOperator, address indexed newOperator);
+    event Withdrawn(address indexed to, uint256 amount);
     
     // =============== MODIFIERS ===============
     modifier onlyPublisher() {
@@ -381,13 +384,15 @@ contract Lottery {
         emit RoundCompleted(round.roundId, winner, round.totalPot, prize, publisherCommission, sparsityCommission, randomSeed);
         _changeState(RoundState.COMPLETED);
         
-        // Transfer funds
+        // Credit publisher and sparsity commissions to pending withdrawals (pull-payment)
         if (publisherCommission > 0) {
-            payable(PUBLISHER).transfer(publisherCommission);
+            pendingWithdrawals[PUBLISHER] += publisherCommission;
         }
         if (sparsityCommission > 0 && sparsity != address(0)) {
-            payable(sparsity).transfer(sparsityCommission);
+            pendingWithdrawals[sparsity] += sparsityCommission;
         }
+
+        // Transfer prize to winner immediately (keep existing behavior)
         payable(winner).transfer(prize);
     }
     
@@ -535,6 +540,18 @@ contract Lottery {
      */
     function getParticipants() external view returns (address[] memory) {
         return participants;
+    }
+
+    /**
+     * @dev Withdraw pending balance (pull-payment)
+     */
+    function withdraw() external nonReentrant {
+        uint256 amount = pendingWithdrawals[msg.sender];
+        require(amount > 0, "No funds available");
+        pendingWithdrawals[msg.sender] = 0;
+        (bool ok, ) = payable(msg.sender).call{value: amount}("");
+        require(ok, "Withdraw failed");
+        emit Withdrawn(msg.sender, amount);
     }
 
     /**
