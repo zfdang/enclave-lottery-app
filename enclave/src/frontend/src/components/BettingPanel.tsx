@@ -11,9 +11,8 @@ import {
 import { Casino, Add, Remove } from '@mui/icons-material'
 
 import { useWalletStore } from '../services/wallet'
-import { useLotteryStore } from '../services/lottery'
 import { contractService } from '../services/contract'
-import api, { getPlayerInfo } from '../services/api'
+import { getPlayerInfo } from '../services/api'
 import { isAddress } from 'ethers'
 import WalletConnection from './WalletConnection'
 
@@ -21,7 +20,6 @@ const BettingPanel: React.FC = () => {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [unmetConditions, setUnmetConditions] = useState<string[]>([])
   const { isConnected, address } = useWalletStore()
-  const { roundStatus, fetchRoundStatus } = useLotteryStore()
   const [isPlacingBet, setIsPlacingBet] = useState(false)
   const [notificationOpen, setNotificationOpen] = useState(false)
   const [notificationMessage, setNotificationMessage] = useState('')
@@ -32,31 +30,30 @@ const BettingPanel: React.FC = () => {
   const BASE_BET = '0.01' // Fixed base bet amount in ETH
   const [minBetAmount, setMinBetAmount] = useState<string | null>(null)
   const [ones, setOnes] = useState(1)
-  const [tens, setTens] = useState(0)
-  const [hundreds, setHundreds] = useState(0)
+  const [tens, setTens] = useState(1)
+  const [hundreds, setHundreds] = useState(1)
 
   
-  useEffect(() => {
-    // Load user's bet amount for current draw
-    const loadUserBetAmount = async () => {
-      if (roundStatus && address) {
-        try {
-          // Use backend API to get player's total bet in the current round (wei) and win rate
-          const resp = await getPlayerInfo(address)
-          const wei = Number(resp?.totalAmountWei ?? 0)
-          const eth = wei / 1e18
-          setUserBetAmount(eth)
-          // winRate returned as percentage (0-100)
-          setUserWinRate(typeof resp?.winRate === 'number' ? resp.winRate : null)
-        } catch (error) {
-          console.error('Failed to load user bet info:', error)
-          setUserWinRate(null)
-        }
-      }
+  // Load user's bet amount for current draw
+  const loadUserBetStats = async () => {
+    if (!address) return
+    try {
+      // Use backend API to get player's total bet in the current round (wei) and win rate
+      const resp = await getPlayerInfo(address)
+      const wei = Number(resp?.totalAmountWei ?? 0)
+      const eth = wei / 1e18
+      setUserBetAmount(eth)
+      // winRate returned as percentage (0-100)
+      setUserWinRate(typeof resp?.winRate === 'number' ? resp.winRate : null)
+    } catch (error) {
+      console.error('Failed to load user bet info:', error)
+      setUserWinRate(null)
     }
+  }
 
-    loadUserBetAmount()
-  }, [roundStatus, address])
+  useEffect(() => {
+    loadUserBetStats()
+  }, [address])
 
   // Load min bet amount from contract (RPC getter)
   useEffect(() => {
@@ -71,7 +68,7 @@ const BettingPanel: React.FC = () => {
     }
 
     loadMinBet()
-  }, [isConnected, roundStatus])
+  }, [isConnected])
 
   const getTotalMultiplier = (): number => {
     return ones + tens * 10 + hundreds * 100
@@ -83,16 +80,12 @@ const BettingPanel: React.FC = () => {
   }
 
   const calculateWinRate = (): number => {
-    // Prefer server-provided estimate when available
+    // Use server-provided winRate when available (percentage 0-100)
     if (typeof userWinRate === 'number') return userWinRate
-    if (!roundStatus || !isConnected || userBetAmount === 0) return 0
-    const totalPot = parseFloat(roundStatus.total_pot?.toString() || '0')
-    const base = minBetAmount ?? BASE_BET
-    const userTickets = userBetAmount / parseFloat(base)
-    const totalTickets = totalPot / parseFloat(base)
-    return totalTickets > 0 ? (userTickets / totalTickets) * 100 : 0
+    return 0
   }
 
+  
   const handlePlaceBet = async () => {
     // Collect unmet conditions
     const unmet: string[] = []
@@ -139,19 +132,14 @@ const BettingPanel: React.FC = () => {
       setNotificationSeverity('success')
       setNotificationOpen(true)
       setUserBetAmount(prev => prev + betAmount)
-      
-      // Notify backend for verification (optional)
+
+      // Refresh user's bet stats from backend (best-effort)
       try {
-        await api.post('/api/verify-bet', {
-          user_address: address,
-          transaction_hash: transactionHash,
-          draw_id: roundStatus ? roundStatus.round_id : ''
-        })
-      } catch (err) {
-        console.warn('Backend verification failed:', err)
+        await loadUserBetStats()
+      } catch (e) {
+        // ignore refresh errors - we already showed success optimistically
       }
-      // Refresh current draw
-      fetchRoundStatus()
+
     } catch (err: any) {
       const msg = err?.message || 'Bet failed'
       setNotificationMessage(msg)

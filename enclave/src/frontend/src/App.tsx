@@ -27,7 +27,6 @@ import ActivityFeed from './components/ActivityFeed'
 
 import { useWebSocket } from './services/websocket'
 import { useWalletStore } from './services/wallet'
-import { useLotteryStore } from './services/lottery'
 import { getContractAddress, getHealth, getAttestation } from './services/api'
 import { contractService } from './services/contract'
 import { log } from 'console'
@@ -45,7 +44,6 @@ function App() {
   })
 
   const { isConnected } = useWalletStore()
-  const { roundStatus, fetchRoundStatus, error: lotteryError } = useLotteryStore()
   
   // Health check function
   const checkBackendHealth = useCallback(async () => {
@@ -76,36 +74,7 @@ function App() {
   // WebSocket connection for real-time updates
   const rawWs = import.meta.env.VITE_WEBSOCKET_URL
   let wsUrl = rawWs || "ws://127.0.0.1/ws/lottery"
-
-  useWebSocket(wsUrl, {
-    onMessage: (data) => {
-      if (data.type === 'bet_placed') {
-        setSnackbar({
-          open: true,
-          message: `New bet placed by ${data.data.user.slice(0, 8)}...`,
-          severity: 'info'
-        })
-        fetchRoundStatus()
-      } else if (data.type === 'draw_completed') {
-        setSnackbar({
-          open: true,
-          message: data.data.winner ? 
-            `Draw completed! Winner: ${data.data.winner.slice(0, 8)}...` :
-            'Draw completed with no participants',
-          severity: 'success'
-        })
-        fetchRoundStatus()
-      }
-    },
-    // Remove onError and onClose handlers since we use health checks only
-    onError: () => {},
-    onClose: () => {}
-  })
-
-  useEffect(() => {
-    // Fetch current draw on component mount
-    fetchRoundStatus()
-  }, [fetchRoundStatus])
+          
 
   const handleCloseSnackbar = () => {
     setSnackbar({ ...snackbar, open: false })

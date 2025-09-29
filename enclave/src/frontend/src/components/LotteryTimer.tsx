@@ -21,21 +21,43 @@ const LotteryTimer: React.FC = () => {
   const [timeRemaining, setTimeRemaining] = useState<TimeRemaining>({ hours: 0, minutes: 0, seconds: 0 })
   const [bettingTimeRemaining, setBettingTimeRemaining] = useState<TimeRemaining>({ hours: 0, minutes: 0, seconds: 0 })
 
-  // Robust UTC parser: if no timezone is present, treat as UTC by appending 'Z'
-  const parseUtcMillis = (iso: string | undefined | null): number => {
-    if (!iso) return NaN
+  // Robust UTC parser: accepts ISO strings or numeric timestamps (seconds or ms).
+  const parseUtcMillis = (iso: string | number | undefined | null): number => {
+    if (iso === undefined || iso === null) return NaN
+    if (typeof iso === 'number') {
+      // Normalize seconds -> ms
+      return iso > 1e12 ? iso : iso * 1000
+    }
     const s = String(iso)
     const hasTZ = /[Zz]|[+-]\d{2}:\d{2}$/.test(s)
     return new Date(hasTZ ? s : `${s}Z`).getTime()
   }
 
   useEffect(() => {
-    if (!roundStatus) return
+    // Ensure we have the latest roundStatus from the backend. Use the store's fetch method
+    // to keep network logic centralized.
+    const FETCH_POLL_MS = 5000
+    const fetchNow = async () => {
+      try {
+        await useLotteryStore.getState().fetchRoundStatus()
+      } catch (e) {
+        // fetchRoundStatus handles its own errors; nothing to do here
+      }
+    }
+
+    fetchNow()
+
+    // const poll = setInterval(fetchNow, FETCH_POLL_MS)
+
+    if (!roundStatus) {
+      // still allow timers to wait until roundStatus arrives
+    }
 
     const updateTimers = () => {
+      if (!roundStatus) return
       const now = Date.now()
-      const drawTime = parseUtcMillis(roundStatus.min_draw_time)
-      const endTime = parseUtcMillis(roundStatus.end_time)
+      const drawTime = parseUtcMillis((roundStatus as any).min_draw_time)
+      const endTime = parseUtcMillis((roundStatus as any).end_time)
 
       // Calculate time remaining until draw
       const drawDiffRaw = drawTime - now
@@ -55,9 +77,12 @@ const LotteryTimer: React.FC = () => {
     }
 
     updateTimers()
-    const interval = setInterval(updateTimers, 1000)
+    // const timer = setInterval(updateTimers, 1000)
 
-    return () => clearInterval(interval)
+    return () => {
+      // clearInterval(timer)
+      // clearInterval(poll)
+    }
   }, [roundStatus])
 
   if (!roundStatus) {
@@ -97,8 +122,8 @@ const LotteryTimer: React.FC = () => {
 
   const getTotalTimeSeconds = () => {
     if (!roundStatus) return 0
-    const start = parseUtcMillis(roundStatus.start_time)
-    const end = parseUtcMillis(roundStatus.draw_time)
+    const start = parseUtcMillis((roundStatus as any).start_time)
+    const end = parseUtcMillis((roundStatus as any).max_draw_time ?? (roundStatus as any).end_time)
     const diff = end - start
     return Number.isNaN(diff) ? 0 : diff / 1000
   }
@@ -174,7 +199,7 @@ const LotteryTimer: React.FC = () => {
       </Grid>
 
   {/* Betting cutoff reminder: only show when time until draw < minimum_interval_minutes */}
-      {roundStatus.status === 'betting' && (() => {
+  {roundStatus.state_name === 'betting' && (() => {
         const minMin = (roundStatus as any).minimum_interval_minutes ?? 3
         const secsUntilDraw = timeRemaining.hours * 3600 + timeRemaining.minutes * 60 + timeRemaining.seconds
         return secsUntilDraw > 0 && secsUntilDraw < minMin * 60

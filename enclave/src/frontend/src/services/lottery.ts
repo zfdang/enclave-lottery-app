@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { getCurrentDraw } from './api'
+import { getRoundStatus } from './api'
 
 interface RoundStatus {
   round_id: number
@@ -18,8 +18,6 @@ interface RoundStatus {
   winner_prize: number
 }
 
-
-
 interface LotteryState {
   roundStatus: RoundStatus | null
   loading: boolean
@@ -37,7 +35,7 @@ export const useLotteryStore = create<LotteryState>((set, get) => ({
     set({ loading: true, error: null })
     
     try {
-      const data = await getCurrentDraw()
+      const data = await getRoundStatus()
       set({ roundStatus: data, loading: false, error: null })
     } catch (error: any) {
       console.warn('Backend connection failed:', error.message)
@@ -53,10 +51,3 @@ export const useLotteryStore = create<LotteryState>((set, get) => ({
     set({ roundStatus: round })
   },
 }))
-
-// Auto-fetch current draw every 30 seconds
-if (typeof window !== 'undefined') {
-  setInterval(() => {
-    useLotteryStore.getState().fetchRoundStatus()
-  }, 30000)
-}

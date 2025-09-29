@@ -35,7 +35,6 @@ const ActivityFeed: React.FC = () => {
   const [activities, setActivities] = useState<Activity[]>([])
   const [loading, setLoading] = useState(false)
   const [systemMessages, setSystemMessages] = useState<Array<{id: string, message: string, timestamp: Date}>>([])
-  const { roundStatus } = useLotteryStore()
 
   const fetchActivities = async () => {
     setLoading(true)
@@ -58,46 +57,7 @@ const ActivityFeed: React.FC = () => {
     return () => clearInterval(interval)
   }, [])
 
-  // Add system messages (countdown reminders, etc.)
-  useEffect(() => {
-    if (!roundStatus) return
-
-    const addSystemMessage = (message: string) => {
-      const newMsg = {
-        id: Date.now().toString(),
-        message,
-        timestamp: new Date()
-      }
-  setSystemMessages(prev => [newMsg, ...prev.slice(0, 9)]) // keep latest 10
-    }
-
-    const checkDrawTime = () => {
-      if (roundStatus.state_name === 'betting') {
-        const now = new Date()
-        const drawTime = new Date(roundStatus.min_draw_time)
-        const endTime = new Date(roundStatus.end_time)
-        const secsUntilDraw = Math.floor((drawTime.getTime() - now.getTime()) / 1000)
-        const msUntilClose = endTime.getTime() - now.getTime()
-        const minMin = (roundStatus as any).minimum_interval_minutes ?? 3
-
-        if (secsUntilDraw > 0 && secsUntilDraw < minMin * 60) {
-          // Compose a friendly countdown to betting close (endTime)
-          const mins = Math.floor(msUntilClose / 60000)
-          const secs = Math.max(0, Math.floor((msUntilClose % 60000) / 1000))
-          const label = mins >= 1 ? `${mins} minute${mins !== 1 ? 's' : ''}` : `${secs} seconds`
-          addSystemMessage(`⚠️ Betting closes in ${label}!`)
-        } else if (msUntilClose <= 0) {
-          addSystemMessage('🔒 Betting closed, awaiting draw...')
-        }
-      }
-    }
-
-    // Check once per minute
-    const systemInterval = setInterval(checkDrawTime, 60000)
-  checkDrawTime() // initial check
-
-    return () => clearInterval(systemInterval)
-  }, [roundStatus])
+  // systemMessages can be pushed manually by other UI interactions if needed.
 
   const formatAddress = (address: string): string => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`
@@ -179,24 +139,8 @@ const ActivityFeed: React.FC = () => {
   // Merge system messages (including derived persistent messages) and user activities
   const safeActivities = Array.isArray(activities) ? activities : []
 
-  // Derive persistent system messages from roundStatus so important state
-  // (like betting closed) remains visible after a page refresh.
+  // No derived persistent messages; system messages are user-driven or server-provided.
   const derivedSystemMessages: Array<{id: string, message: string, timestamp: Date}> = []
-  if (roundStatus) {
-    try {
-      const endTime = new Date((roundStatus as any).end_time)
-      // If the draw is no longer in betting state, show a persistent closed message
-      if ((roundStatus as any).status !== 'betting') {
-        derivedSystemMessages.push({
-          id: 'persistent-betting-closed',
-          message: '🔒 Betting closed, awaiting draw...',
-          timestamp: isNaN(endTime.getTime()) ? new Date() : endTime
-        })
-      }
-    } catch (e) {
-      // ignore parsing errors
-    }
-  }
 
   // Combine derived messages with ephemeral systemMessages and deduplicate by message text
   const combinedSystem = [...derivedSystemMessages, ...systemMessages]

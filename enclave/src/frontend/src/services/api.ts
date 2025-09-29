@@ -38,10 +38,13 @@ export const getAttestation = async () => {
 }
 
 // Current draw information
-export const getCurrentDraw = async () => {
+export const getRoundStatus = async () => {
   const response = await api.get('/api/round/status')
   return response.data
 }
+
+// Backwards-compatible alias for older callers
+// alias removed: prefer getRoundStatus
 
 // Get current participants
 export const getParticipants = async () => {
