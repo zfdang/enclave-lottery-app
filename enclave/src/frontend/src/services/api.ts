@@ -49,6 +49,12 @@ export const getParticipants = async () => {
   return response.data
 }
 
+// Get total amount (wei) a player has bet in the current round
+export const getPlayerTotal = async (address: string) => {
+  const response = await api.get('/api/round/player_total', { params: { address } })
+  return response.data
+}
+
 // Get lottery history with pagination
 export const getLotteryHistory = async (limit: number = 50) => {
   const response = await api.get('/api/history', {

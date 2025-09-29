@@ -230,6 +230,32 @@ class LotteryWebServer:
                 "timestamp": datetime.utcnow().isoformat(),
             }
 
+        @self.app.get("/api/round/player_total")
+        async def get_player_total(address: Optional[str] = None) -> Dict[str, Any]:
+            """Return the total amount (in wei) a given player has bet in the current round.
+
+            Query parameter: address (string) - the player's ETH address (required).
+            Response: { address, round_id, totalAmountWei, timestamp }
+            """
+            if not address:
+                raise HTTPException(status_code=400, detail="Missing required query parameter: address")
+
+            current = self._store.get_current_round()
+            participants = self._store.get_participants()
+            total = 0
+            addr_l = address.lower()
+            for p in participants:
+                if (p.address or "").lower() == addr_l:
+                    total = int(p.total_amount)
+                    break
+
+            return {
+                "address": address,
+                "round_id": current.round_id if current else 0,
+                "totalAmountWei": total,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+
         @self.app.get("/api/history")
         async def get_round_history(limit: int = 50) -> Dict[str, Any]:
             limit = max(1, min(limit, 200))
@@ -289,23 +315,6 @@ class LotteryWebServer:
                 "timestamp": datetime.utcnow().isoformat(),
             }
 
-        # ------------------------------------------------------------------
-        # Compatibility stubs for legacy front-end calls
-        # ------------------------------------------------------------------
-        @self.app.post("/api/auth/connect")
-        async def connect_wallet(request: WalletConnectRequest) -> Dict[str, Any]:
-            logger.info("Wallet connected: %s", request.address)
-            return {"status": "connected", "address": request.address}
-
-        @self.app.post("/api/bet")
-        async def record_bet(request: BetRecordRequest) -> Dict[str, Any]:
-            logger.debug("Received bet webhook: %s", request.dict())
-            return {"status": "accepted", "transaction_hash": request.transaction_hash}
-
-        @self.app.post("/api/verify-bet")
-        async def verify_bet(request: VerifyBetRequest) -> Dict[str, Any]:
-            logger.debug("Verify bet request: %s", request.dict())
-            return {"status": "verified", "transaction_hash": request.transaction_hash}
 
         # ------------------------------------------------------------------
         # WebSocket endpoint

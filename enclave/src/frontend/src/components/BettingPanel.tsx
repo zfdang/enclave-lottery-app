@@ -13,7 +13,7 @@ import { Casino, Add, Remove } from '@mui/icons-material'
 import { useWalletStore } from '../services/wallet'
 import { useLotteryStore } from '../services/lottery'
 import { contractService } from '../services/contract'
-import api from '../services/api'
+import api, { getPlayerTotal } from '../services/api'
 import { isAddress } from 'ethers'
 import WalletConnection from './WalletConnection'
 
@@ -40,8 +40,11 @@ const BettingPanel: React.FC = () => {
     const loadUserBetAmount = async () => {
       if (roundStatus && address) {
         try {
-          const userBetAmount = await contractService.getPlayerBet(address)
-          setUserBetAmount(parseFloat(userBetAmount))
+          // Use backend API to get player's total bet in the current round (wei)
+          const resp = await getPlayerTotal(address)
+          const wei = Number(resp?.totalAmountWei ?? 0)
+          const eth = wei / 1e18
+          setUserBetAmount(eth)
         } catch (error) {
           console.error('Failed to load user bet amount:', error)
         }
