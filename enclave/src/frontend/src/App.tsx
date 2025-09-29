@@ -28,7 +28,7 @@ import ActivityFeed from './components/ActivityFeed'
 import { useWebSocket } from './services/websocket'
 import { useWalletStore } from './services/wallet'
 import { useLotteryStore } from './services/lottery'
-import { getContractAddress, getHealth } from './services/api'
+import { getContractAddress, getHealth, getAttestation } from './services/api'
 import { contractService } from './services/contract'
 import { log } from 'console'
 
@@ -186,7 +186,7 @@ function App() {
     setAttestationError('');
     try {
       // Fetch attestation from backend via centralized API helper
-      const data = await (await import('./services/api')).getAttestation();
+      const data = await getAttestation();
       setAttestation(JSON.stringify(data, null, 2));
     } catch (err: any) {
       setAttestationError(err?.message || 'Error fetching attestation');
