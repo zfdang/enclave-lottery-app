@@ -32,21 +32,26 @@ def load_config() -> Dict[str, Any]:
     config = _apply_env_overrides(config)
 
     # Normalize and apply sensible defaults for event manager (event_manager / polling)
-    # Defaults are configurable via ENV vars prefixed with EVENTMGR_ or BLOCKCHAIN_
+    # event_manager top-level configuration (used at runtime)
+    # If `enclave/config/enclave.conf` provides an `event_manager` section, treat those
+    # values as repository-level defaults (they will be used only when explicit runtime
+    # `event_manager` keys are not present or when env vars do not override them).
+    file_eventmgr = config.get('event_manager', {}) or {}
     eventmgr = config.setdefault('event_manager', {})
 
     # Default intervals (seconds)
-    eventmgr.setdefault('contract_config_interval_sec', int(eventmgr.get('contract_config_interval_sec', 10)))
-    eventmgr.setdefault('round_status_interval_sec', int(eventmgr.get('round_status_interval_sec', 5)))
-    eventmgr.setdefault('participants_interval_sec', int(eventmgr.get('participants_interval_sec', 5)))
+    # Use file-provided event_manager defaults when present, otherwise fall back to hardcoded defaults
+    eventmgr.setdefault('contract_config_interval_sec', int(eventmgr.get('contract_config_interval_sec', file_eventmgr.get('contract_config_interval_sec', 10))))
+    eventmgr.setdefault('round_status_interval_sec', int(eventmgr.get('round_status_interval_sec', file_eventmgr.get('round_status_interval_sec', 5))))
+    eventmgr.setdefault('participants_interval_sec', int(eventmgr.get('participants_interval_sec', file_eventmgr.get('participants_interval_sec', 5))))
 
     # Event polling options
-    eventmgr.setdefault('event_source', eventmgr.get('event_source', 'eth_getLogs'))
-    eventmgr.setdefault('start_block_offset', int(eventmgr.get('start_block_offset', 500)))
+    eventmgr.setdefault('event_source', eventmgr.get('event_source', file_eventmgr.get('event_source', 'eth_getLogs')))
+    eventmgr.setdefault('start_block_offset', int(eventmgr.get('start_block_offset', file_eventmgr.get('start_block_offset', 500))))
 
     # Retention sizes
-    eventmgr.setdefault('live_feed_max_entries', int(eventmgr.get('live_feed_max_entries', 1000)))
-    eventmgr.setdefault('round_history_max', int(eventmgr.get('round_history_max', 100)))
+    eventmgr.setdefault('live_feed_max_entries', int(eventmgr.get('live_feed_max_entries', file_eventmgr.get('live_feed_max_entries', 1000))))
+    eventmgr.setdefault('round_history_max', int(eventmgr.get('round_history_max', file_eventmgr.get('round_history_max', 100))))
 
     # Blockchain node / provider
     blockchain = config.setdefault('blockchain', {})

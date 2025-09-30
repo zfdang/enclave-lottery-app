@@ -38,7 +38,7 @@ const LotteryTimer: React.FC = () => {
     // once per second by reading the latest store state. Reading the store
     // inside the timer prevents the effect from re-running on each store update
     // (which previously caused an immediate refetch loop).
-    const FETCH_POLL_MS = 5000
+    const FETCH_POLL_MS = 3000
     const fetchNow = async () => {
       try {
         await useLotteryStore.getState().fetchRoundStatus()
@@ -47,10 +47,11 @@ const LotteryTimer: React.FC = () => {
       }
     }
 
-    // Start the periodic fetch and timer-driven UI updates
+    // Start the periodic fetching immediately
     fetchNow()
     const poll = setInterval(fetchNow, FETCH_POLL_MS)
 
+    // Timer update function
     const updateTimers = () => {
       const current = useLotteryStore.getState().roundStatus
       if (!current) return
@@ -188,7 +189,7 @@ const LotteryTimer: React.FC = () => {
           <Box textAlign="center">
             <People sx={{ color: 'white', mb: 0.5, fontSize: '1rem' }} />
             <Typography variant="h6" sx={{ color: '#2196f3', fontWeight: 'bold' }}>
-              {roundStatus.participants}
+              {roundStatus.participant_count}
             </Typography>
             <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.8)' }}>
               Participants

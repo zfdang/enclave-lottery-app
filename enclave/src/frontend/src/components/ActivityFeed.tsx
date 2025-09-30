@@ -19,7 +19,6 @@ import {
 } from '@mui/icons-material'
 
 import { getActivities } from '../services/api'
-import { useLotteryStore } from '../services/lottery'
 
 interface Activity {
   activity_id: string

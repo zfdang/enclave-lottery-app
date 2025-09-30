@@ -61,16 +61,34 @@ const UserList: React.FC = () => {
   }
 
   const formatEth = (wei: number): string => {
-    return (wei / 1e18).toFixed(2)
+    return (wei / 1e18).toFixed(4)
   }
 
   const getAvatarColor = (address: string): string => {
+    // Expanded palette to reduce color collisions for many participants
     const colors = [
       '#f44336', '#e91e63', '#9c27b0', '#673ab7',
       '#3f51b5', '#2196f3', '#03a9f4', '#00bcd4',
-      '#009688', '#4caf50', '#8bc34a', '#cddc39'
+      '#009688', '#4caf50', '#8bc34a', '#cddc39',
+      '#ffeb3b', '#ffc107', '#ff9800', '#ff5722',
+      '#795548', '#9e9e9e', '#607d8b', '#ff4081',
+      '#7c4dff', '#536dfe', '#448aff', '#00bfa5'
     ]
-    const index = parseInt(address.slice(-2), 16) % colors.length
+
+    // Safely extract last two hex chars from address; fallback to stable value
+    let tail = '00'
+    try {
+      if (typeof address === 'string' && address.length > 0) {
+        tail = address.replace(/^0x/i, '').slice(-2)
+        if (!/^[0-9a-fA-F]{1,2}$/.test(tail)) {
+          tail = '00'
+        }
+      }
+    } catch (e) {
+      tail = '00'
+    }
+
+    const index = parseInt(tail, 16) % colors.length
     return colors[index]
   }
 
@@ -88,14 +106,14 @@ const UserList: React.FC = () => {
       <Box display="flex" alignItems="center" mb={1} justifyContent="center">
         <People sx={{ mr: 1, color: 'white' }} />
         <Typography variant="subtitle1" sx={{ color: 'white' }}>
-          Participants ({count})
+          ({count})
         </Typography>
       </Box>
 
       {participantsData?.round_id && (
         <Box mb={1} p={1} sx={{ bgcolor: 'rgba(255, 255, 255, 0.1)', borderRadius: 1 }}>
           <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.8)' }}>
-            Round #{participantsData.round_id} • {participantsData.total_bets} bets • {formatEth((participantsData as any).total_amount_wei ?? 0)} ETH total
+            Round #{participantsData.round_id} : {participantsData.total_bets} {formatEth((participantsData as any).total_amount_wei ?? 0)} ETH total bets
           </Typography>
         </Box>
       )}
@@ -157,19 +175,7 @@ const UserList: React.FC = () => {
                               color: 'white'
                             }}
                           />
-                          <Chip
-                            icon={<ConfirmationNumber sx={{ fontSize: '0.7rem !important' }} />}
-                            label={(participant as any).betCount + ' bets'}
-                            size="small"
-                            sx={{ 
-                              height: 18, 
-                              fontSize: '0.65rem',
-                              bgcolor: 'rgba(33, 150, 243, 0.3)',
-                              color: 'white'
-                            }}
-                          />
                         </Box>
-                        {/* removed win chance/ticket-number based UI; keeping only totals */}
                       </Box>
                     }
                     primaryTypographyProps={{ component: 'div' }}
