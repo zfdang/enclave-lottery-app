@@ -216,7 +216,7 @@ const HistoryPanel: React.FC = () => {
                         )}
                         <br />
                         <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.6)' }}>
-                          Round #{item.round_id} • {formatDate((item as any).finished_at ?? item.end_time)}
+                          Round #{item.round_id} • {formatDate(item.start_time)}
                         </Typography>
                       </Box>
                     }

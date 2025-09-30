@@ -51,8 +51,20 @@ const BettingPanel: React.FC = () => {
     }
   }
 
+  // Poll user bet stats every 2 seconds while an address is connected
   useEffect(() => {
+    if (!address) return undefined
+    let mounted = true
+    // immediately load once
     loadUserBetStats()
+    const id = setInterval(() => {
+      if (!mounted) return
+      loadUserBetStats()
+    }, 2000)
+    return () => {
+      mounted = false
+      clearInterval(id)
+    }
   }, [address])
 
   // Load min bet amount from contract (RPC getter)

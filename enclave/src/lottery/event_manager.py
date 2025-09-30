@@ -314,6 +314,9 @@ class MemoryStore:
             }
             for snapshot in self.get_round_history()
         ]
+        # sort history by round_id descending
+        rounds.sort(key=lambda x: x["roundId"], reverse=True)
+
         logger.info(f"[MemoryStore] _serialize_history: {len(rounds)} rounds serialized")
         return {"rounds": rounds}
 
