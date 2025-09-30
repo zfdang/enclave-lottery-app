@@ -18,7 +18,7 @@ interface Participant {
   address: string
   // backend now provides aggregated fields:
   totalAmountWei: number
-  betCount: number
+  // betCount removed from backend; it may be omitted
 }
 
 interface ParticipantsResponse {
@@ -95,7 +95,9 @@ const UserList: React.FC = () => {
   const getTotalTickets = (): number => {
     // convert to a simple total of bets across participants (betCount)
     const participants = participantsData?.participants || []
-    return participants.reduce((total: number, p: Participant) => total + (p.betCount ?? 0), 0)
+    // If backend provides a per-participant betCount, sum it; otherwise approximate by
+    // counting participants (1 ticket each) as a conservative fallback.
+    return participants.reduce((total: number, p: Participant) => total + ((p as any).betCount ?? 1), 0)
   }
 
   const safeParticipants = participantsData?.participants || []

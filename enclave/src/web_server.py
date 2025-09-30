@@ -217,7 +217,7 @@ class LotteryWebServer:
                 {
                     "address": item.address,
                     "totalAmountWei": item.total_amount,
-                    "betCount": item.bet_count,
+                    # betCount removed; frontend can derive counts from bets or use totals
                 }
                 for item in participants
             ]
@@ -538,7 +538,7 @@ class LotteryWebServer:
             {
                 "address": participant.address,
                 "totalAmountWei": participant.total_amount,
-                "betCount": participant.bet_count,
+                # betCount removed; expose total_amount and other aggregates
             }
             for participant in participants
         ]

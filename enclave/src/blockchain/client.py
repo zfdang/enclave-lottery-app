@@ -288,7 +288,7 @@ class BlockchainClient:
         for address in addresses:
             amount = int(await self._call_view("getBetAmount", address))
             if amount > 0:
-                summaries.append(ParticipantSummary(address=address, total_amount=amount, bet_count=1))
+                summaries.append(ParticipantSummary(address=address, total_amount=amount))
         return summaries
 
     async def get_events(self, from_block: int) -> List[BlockchainEvent]:

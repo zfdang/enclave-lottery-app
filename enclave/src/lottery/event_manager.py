@@ -285,7 +285,6 @@ class MemoryStore:
             {
                 "address": summary.address,
                 "totalAmountWei": summary.total_amount,
-                "betCount": summary.bet_count,
             }
             for summary in self.get_participants()
         ]
