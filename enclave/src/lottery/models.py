@@ -60,9 +60,6 @@ class ParticipantSummary:
     address: str
     total_amount: int = 0
     
-    def add_bet(self, amount: int) -> None:
-        self.total_amount += amount
-
 
 @dataclass
 class RoundSnapshot:

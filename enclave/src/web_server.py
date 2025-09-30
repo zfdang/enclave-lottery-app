@@ -217,7 +217,6 @@ class LotteryWebServer:
                 {
                     "address": item.address,
                     "totalAmountWei": item.total_amount,
-                    # betCount removed; frontend can derive counts from bets or use totals
                 }
                 for item in participants
             ]
