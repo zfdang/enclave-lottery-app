@@ -42,8 +42,7 @@ def load_config() -> Dict[str, Any]:
     # Default intervals (seconds)
     # Use file-provided event_manager defaults when present, otherwise fall back to hardcoded defaults
     eventmgr.setdefault('contract_config_interval_sec', int(eventmgr.get('contract_config_interval_sec', file_eventmgr.get('contract_config_interval_sec', 10))))
-    eventmgr.setdefault('round_status_interval_sec', int(eventmgr.get('round_status_interval_sec', file_eventmgr.get('round_status_interval_sec', 5))))
-    eventmgr.setdefault('participants_interval_sec', int(eventmgr.get('participants_interval_sec', file_eventmgr.get('participants_interval_sec', 5))))
+    eventmgr.setdefault('round_and_participants_interval_sec', int(eventmgr.get('round_and_participants_interval_sec', file_eventmgr.get('round_and_participants_interval_sec', 2))))
 
     # Event polling options
     eventmgr.setdefault('event_source', eventmgr.get('event_source', file_eventmgr.get('event_source', 'eth_getLogs')))

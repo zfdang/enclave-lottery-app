@@ -424,8 +424,7 @@ class EventManager:
 
         em_cfg = self.config.get("event_manager", {})
         self._contract_config_interval = float(em_cfg.get("contract_config_interval_sec", 10.0))
-        self._round_status_interval = float(em_cfg.get("round_status_interval_sec", 5.0))
-        self._participants_interval = float(em_cfg.get("participants_interval_sec", 5.0))
+        self._round_and_participants_interval_sec = float(em_cfg.get("round_and_participants_interval_sec", 2.0))
         self._start_block_offset = int(em_cfg.get("start_block_offset", 500))
 
         self._feed_capacity = int(em_cfg.get("live_feed_max_entries", 1000))
@@ -460,8 +459,7 @@ class EventManager:
         loop = asyncio.get_running_loop()
         self._tasks = [
             loop.create_task(self._contract_config_loop()),
-            loop.create_task(self._round_status_loop()),
-            loop.create_task(self._participants_loop()),
+            loop.create_task(self._round_and_participants_loop()),
             loop.create_task(self._events_loop()),
         ]
 
@@ -492,30 +490,34 @@ class EventManager:
             except asyncio.TimeoutError:
                 continue
 
-    async def _round_status_loop(self) -> None:
+    # Deprecated individual loops removed. Use the combined loop below.
+
+    async def _round_and_participants_loop(self) -> None:
+        """Single-interval loop that refreshes the current round and participants.
+
+        Both refreshes run once per configured interval (shared). The
+        participants refresh only runs when a current round exists.
+        """
+        interval = float(self._round_status_interval)
         while not self._stop_event.is_set():
             try:
+                # Refresh round status
                 round_data = await self.client.get_current_round()
                 self.store.set_current_round(round_data, reset_participants=False)
-            except Exception as exc:
-                logger.debug("EventManager round_status_loop error: %s", exc)
-            try:
-                await asyncio.wait_for(self._stop_event.wait(), timeout=self._round_status_interval)
-                break
-            except asyncio.TimeoutError:
-                continue
+            except Exception as exc:  # pragma: no cover
+                logger.debug("EventManager round refresh error: %s", exc)
 
-    async def _participants_loop(self) -> None:
-        while not self._stop_event.is_set():
             try:
+                # Refresh participants if a round is active
                 current = self.store.get_current_round()
                 if current:
                     summaries = await self.client.get_participant_summaries(current.round_id)
                     self.store.sync_participants(summaries)
-            except Exception as exc:
-                logger.debug("EventManager participants_loop error: %s", exc)
+            except Exception as exc:  # pragma: no cover
+                logger.debug("EventManager participants refresh error: %s", exc)
+
             try:
-                await asyncio.wait_for(self._stop_event.wait(), timeout=self._participants_interval)
+                await asyncio.wait_for(self._stop_event.wait(), timeout=interval)
                 break
             except asyncio.TimeoutError:
                 continue
