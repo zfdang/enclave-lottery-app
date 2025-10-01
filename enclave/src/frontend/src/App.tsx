@@ -459,7 +459,7 @@ function App() {
               </Box>
 
               {/* Separator between timer and activity feed */}
-              <Divider sx={{ my: 0, bgcolor: 'rgba(255, 255, 255, 0.2)' }} />
+              <Divider sx={{ my: 1, bgcolor: 'rgba(255, 255, 255, 0.2)' }} />
 
               {/* ActivityFeed should scroll independently */}
               <Box sx={{
