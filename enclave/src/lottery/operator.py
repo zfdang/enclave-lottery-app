@@ -34,7 +34,6 @@ class OperatorSettings:
     draw_check_interval: float = 10.0
     draw_retry_delay: float = 45.0
     max_draw_retries: int = 3
-    refund_grace_period: float = 120.0
     tx_timeout_seconds: int = 180
 
 
@@ -273,22 +272,29 @@ class PassiveOperator:
             return
 
         now = int(time.time())
-        # New contract semantics: operator should call drawWinner when the round
-        # is still in BETTING and the current time is between min_draw_time and
-        # max_draw_time. If the draw window has passed plus a grace period, issue
-        # a refund.
+        # Contract semantics: operator must call drawWinner when the round
+        # is in BETTING state and current time is between min_draw_time and
+        # max_draw_time. If the draw window expires, issue a refund.
         logger.info(f"Checking if draw/refund needed for round {current.round_id} in state {current.state.name} at time {now}")
         if current.state == RoundState.BETTING:
+            min_draw = int(current.min_draw_time)
+            max_draw = int(current.max_draw_time)
+            
+            # Check if we're before the draw window
+            if now < min_draw:
+                time_until_draw = min_draw - now
+                logger.debug(f"Round {current.round_id}: waiting for draw window (starts in {time_until_draw}s)")
+                return
+            
             # If we're inside the draw window, attempt the draw.
-            if now >= int(current.min_draw_time) and now <= int(current.max_draw_time):
-                logger.info(f"Attempting draw for round {current.round_id}")
+            if now >= min_draw and now <= max_draw:
+                logger.info(f"Round {current.round_id}: inside draw window [{min_draw}, {max_draw}], attempting draw")
                 await self._attempt_draw(current)
                 return
 
-            # If we've passed the max draw time + grace period, attempt refund.
-            refund_deadline = int(current.max_draw_time) + int(self._settings.refund_grace_period)
-            if now >= refund_deadline:
-                logger.info(f"Draw window passed for round {current.round_id}, attempting refund")
+            # If we've passed the max draw time, issue a refund immediately
+            if now > max_draw:
+                logger.warning(f"Round {current.round_id}: draw window expired at {max_draw}, attempting refund")
                 await self._attempt_refund(current)
                 return
         elif current.state in {RoundState.COMPLETED, RoundState.REFUNDED}:
@@ -391,7 +397,6 @@ class PassiveOperator:
             draw_check_interval=to_float(get_value("draw_check_interval", 10.0), 10.0),
             draw_retry_delay=to_float(get_value("draw_retry_delay", 45.0), 45.0),
             max_draw_retries=to_int(get_value("max_draw_retries", 3), 3),
-            refund_grace_period=to_float(get_value("refund_grace_period", 120.0), 120.0),
             tx_timeout_seconds=to_int(get_value("tx_timeout_seconds", 180), 180),
         )
 

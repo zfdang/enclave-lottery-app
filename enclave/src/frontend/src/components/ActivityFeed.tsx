@@ -227,7 +227,7 @@ const ActivityFeed: React.FC = () => {
         flexDirection: 'column',
         height: '100%',
         minHeight: '400px',
-        maxHeight: '600px',
+        maxHeight: '400px',
       }}
     >
       <Box display="flex" alignItems="center" mb={1} justifyContent="center" sx={{ flexShrink: 0 }}>
