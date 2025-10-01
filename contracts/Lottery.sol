@@ -66,9 +66,10 @@ contract Lottery {
         uint256 startTime,
         uint256 endTime,
         uint256 minDrawTime,
-        uint256 maxDrawTime
+        uint256 maxDrawTime,
+        uint256 timestamp
     );
-    
+
     event BetPlaced(
         uint256 indexed roundId,
         address indexed player,
@@ -76,19 +77,21 @@ contract Lottery {
         uint256 newTotal,
         uint256 timestamp
     );
-    
+
     event EndTimeExtended(
         uint256 indexed roundId,
         uint256 oldEndTime,
-        uint256 newEndTime
+        uint256 newEndTime,
+        uint256 timestamp
     );
-    
+
     event RoundStateChanged(
         uint256 indexed roundId,
         RoundState oldState,
-        RoundState newState
+        RoundState newState,
+        uint256 timestamp
     );
-    
+
     event RoundCompleted(
         uint256 indexed roundId,
         address indexed winner,
@@ -96,22 +99,24 @@ contract Lottery {
         uint256 winnerPrize,
         uint256 publisherCommission,
         uint256 sparsityCommission,
-        uint256 randomSeed
+        uint256 randomSeed,
+        uint256 timestamp
     );
-    
+
     event RoundRefunded(
         uint256 indexed roundId,
         uint256 totalRefunded,
         uint256 participantCount,
-        string reason
+        string reason,
+        uint256 timestamp
     );
-    
-    event MinBetAmountUpdated(uint256 oldAmount, uint256 newAmount);
-    event BettingDurationUpdated(uint256 oldDuration, uint256 newDuration);
-    event MinParticipantsUpdated(uint256 oldMin, uint256 newMin);
-    event SparsitySet(address indexed sparsity);
-    event OperatorUpdated(address indexed oldOperator, address indexed newOperator);
-    event Withdrawn(address indexed to, uint256 amount);
+
+    event MinBetAmountUpdated(uint256 oldAmount, uint256 newAmount, uint256 timestamp);
+    event BettingDurationUpdated(uint256 oldDuration, uint256 newDuration, uint256 timestamp);
+    event MinParticipantsUpdated(uint256 oldMin, uint256 newMin, uint256 timestamp);
+    event SparsitySet(address indexed sparsity, uint256 timestamp);
+    event OperatorUpdated(address indexed oldOperator, address indexed newOperator, uint256 timestamp);
+    event Withdrawn(address indexed to, uint256 amount, uint256 timestamp);
     
     // =============== MODIFIERS ===============
     modifier onlyPublisher() {
@@ -189,8 +194,7 @@ contract Lottery {
         require(_sparsity != PUBLISHER, "Sparsity cannot be publisher");
         
         sparsity = _sparsity;
-        
-        emit SparsitySet(_sparsity);
+        emit SparsitySet(_sparsity, block.timestamp);
     }
     
     // =============== SPARSITY FUNCTIONS ===============
@@ -208,8 +212,7 @@ contract Lottery {
 
         address oldOperator = operator;
         operator = _operator;
-
-        emit OperatorUpdated(oldOperator, _operator);
+        emit OperatorUpdated(oldOperator, _operator, block.timestamp);
     }
     
     // =============== OPERATOR FUNCTIONS ===============
@@ -224,8 +227,7 @@ contract Lottery {
         
         uint256 oldAmount = minBetAmount;
         minBetAmount = _newMinBetAmount;
-        
-        emit MinBetAmountUpdated(oldAmount, _newMinBetAmount);
+        emit MinBetAmountUpdated(oldAmount, _newMinBetAmount, block.timestamp);
     }
 
     /**
@@ -245,8 +247,7 @@ contract Lottery {
 
         uint256 oldDuration = bettingDuration;
         bettingDuration = _newDuration;
-
-        emit BettingDurationUpdated(oldDuration, _newDuration);
+        emit BettingDurationUpdated(oldDuration, _newDuration, block.timestamp);
     }
 
     /**
@@ -259,8 +260,7 @@ contract Lottery {
 
         uint256 oldMin = minParticipants;
         minParticipants = _newMinParticipants;
-
-        emit MinParticipantsUpdated(oldMin, _newMinParticipants);
+        emit MinParticipantsUpdated(oldMin, _newMinParticipants, block.timestamp);
     }
     
     /**
@@ -288,8 +288,7 @@ contract Lottery {
         round.endTime = _newEndTime;
         round.minDrawTime = _newEndTime + minDrawDelayAfterEnd;
         round.maxDrawTime = _newEndTime + maxDrawDelayAfterEnd;
-
-        emit EndTimeExtended(round.roundId, oldEndTime, _newEndTime);
+        emit EndTimeExtended(round.roundId, oldEndTime, _newEndTime, block.timestamp);
     }
     
     /**
@@ -381,7 +380,7 @@ contract Lottery {
         round.winnerPrize = prize;
         
         // Emit completion event
-        emit RoundCompleted(round.roundId, winner, round.totalPot, prize, publisherCommission, sparsityCommission, randomSeed);
+        emit RoundCompleted(round.roundId, winner, round.totalPot, prize, publisherCommission, sparsityCommission, randomSeed, block.timestamp);
         _changeState(RoundState.COMPLETED);
         
         // Credit publisher and sparsity commissions to pending withdrawals (pull-payment)
@@ -402,7 +401,7 @@ contract Lottery {
     function _changeState(RoundState newState) internal {
         RoundState oldState = round.state;
         round.state = newState;
-        emit RoundStateChanged(round.roundId, oldState, newState);
+        emit RoundStateChanged(round.roundId, oldState, newState, block.timestamp);
     }
     
     /**
@@ -422,8 +421,8 @@ contract Lottery {
             }
         }
                 
-        emit RoundRefunded(round.roundId, totalRefunded, round.participantCount, reason);
-        _changeState(RoundState.REFUNDED);        
+        emit RoundRefunded(round.roundId, totalRefunded, round.participantCount, reason, block.timestamp);
+        _changeState(RoundState.REFUNDED);
     }
     
     // =============== PLAYER FUNCTIONS ===============
@@ -454,7 +453,6 @@ contract Lottery {
         // Update bet amount and total pot
         bets[msg.sender] += msg.value;
         round.totalPot += msg.value;
-        
         emit BetPlaced(round.roundId, msg.sender, msg.value, round.totalPot, block.timestamp);
     }
     
@@ -521,9 +519,8 @@ contract Lottery {
             state: RoundState.WAITING
         });
 
-        emit RoundCreated(newRoundId, 0, 0, 0, 0);
+        emit RoundCreated(newRoundId, 0, 0, 0, 0, block.timestamp);
         _changeState(RoundState.WAITING);
-
     }
     
     // =============== VIEW FUNCTIONS ===============
@@ -551,11 +548,11 @@ contract Lottery {
         pendingWithdrawals[msg.sender] = 0;
         (bool ok, ) = payable(msg.sender).call{value: amount}("");
         require(ok, "Withdraw failed");
-        emit Withdrawn(msg.sender, amount);
+        emit Withdrawn(msg.sender, amount, block.timestamp);
     }
 
     /**
-    $ @dev Get bet amount for a specific player in the current round
+     * @dev Get bet amount for a specific player in the current round
      */
     function getBetAmount(address player) external view returns (uint256) {
         return bets[player];

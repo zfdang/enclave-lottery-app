@@ -20,11 +20,18 @@ import {
 
 import { getActivities } from '../services/api'
 
+type ActivityType =
+  | 'BetPlaced'
+  | 'RoundCompleted'
+  | 'RoundRefunded'
+  | 'RoundCreated'
+  | 'other'
+
 interface Activity {
   activity_id: string
   user_address: string
-  activity_type: string
-  details: any
+  activity_type: ActivityType
+  details: Record<string, any>
   message?: string
   severity?: string
   timestamp: string
@@ -52,7 +59,7 @@ const ActivityFeed: React.FC = () => {
     fetchActivities()
     
     // Refresh activities every 5 seconds
-    const interval = setInterval(fetchActivities, 5000)
+    const interval = setInterval(fetchActivities, 2000)
     return () => clearInterval(interval)
   }, [])
 
@@ -78,49 +85,75 @@ const ActivityFeed: React.FC = () => {
     }
   }
 
-  const getActivityIcon = (type: string) => {
+  const getActivityIcon = (type: ActivityType) => {
     switch (type) {
-      case 'connect':
-        return <PersonAdd />
-      case 'bet':
+      case 'BetPlaced':
         return <Casino />
-      case 'win':
+      case 'RoundCompleted':
         return <EmojiEvents />
-      case 'system':
-        return <Schedule />
+      case 'RoundRefunded':
+        return <EmojiEvents />
+      case 'RoundCreated':
+        return <Notifications />
       default:
         return <AccessTime />
     }
   }
 
-  const getActivityColor = (type: string) => {
+  const getActivityColor = (type: ActivityType) => {
     switch (type) {
-      case 'connect':
-        return '#2196f3'
-      case 'bet':
+      case 'BetPlaced':
         return '#ff9800'
-      case 'win':
+      case 'RoundCompleted':
         return '#4caf50'
-      case 'system':
-        return '#9c27b0'
+      case 'RoundRefunded':
+        return '#f44336'
+      case 'RoundCreated':
+        return '#03a9f4'
       default:
         return '#9e9e9e'
     }
   }
 
   const getActivityMessage = (activity: Activity): string => {
-    const address = formatAddress(activity.user_address)
-    
-    switch (activity.activity_type) {
-      case 'connect':
-        return `🔗 ${address} joined the lottery`
-      case 'bet':
-        const tickets = activity.details.tickets?.length || 0
-        return `💰 ${address} placed ${tickets} ticket(s) (${activity.details.amount} ETH)`
-      case 'win':
-        return `🎉 ${address} won ${activity.details.amount} ETH!`
+  const type = (activity.activity_type as ActivityType) ?? 'other'
+  const details = activity.details || {}
+  const user = activity.user_address || ''
+  const address = user ? formatAddress(String(user)) : 'unknown'
+
+    const weiToEth = (wei: any) => {
+      try {
+        const n = typeof wei === 'string' ? parseFloat(wei) : Number(wei)
+        if (Number.isNaN(n)) return String(wei)
+        return (n / 1e18).toFixed(4)
+      } catch (e) {
+        return String(wei)
+      }
+    }
+
+    switch (type) {
+      case 'BetPlaced': {
+        const player = details.player || activity.user_address || ''
+        const amt = details.amount || details.amountWei || details.totalAmountWei || 0
+        return `💰 ${formatAddress(String(player || address))} placed ${weiToEth(amt)} ETH`
+      }
+      case 'RoundCompleted': {
+        const winner = details.winner || activity.user_address || ''
+        const amt = details.winnerPrize || details.totalPotWei || details.totalPot || 0
+        return `🎉 ${formatAddress(String(winner || address))} won ${weiToEth(amt)} ETH!`
+      }
+      case 'RoundRefunded': {
+        const rid = details.roundId
+        const refunded = details.totalRefundedWei || details.totalRefunded || 0
+        return `↩️ Round ${rid} refunded ${weiToEth(refunded)} ETH`
+      }
+      case 'RoundCreated': {
+        const rid = details.roundId
+        return `🔔 Round ${rid} created`
+      }
       default:
-        return `${address} performed an action`
+        // For 'other' and any unexpected types, prefer server message or a generic text.
+        return activity.message ? activity.message : `${address} performed ${String(type)}`
     }
   }
 
@@ -153,7 +186,7 @@ const ActivityFeed: React.FC = () => {
   const allMessages = [
     ...uniqueSystem.map(msg => ({
       id: msg.id,
-      type: 'system',
+      type: 'other',
       message: msg.message,
       timestamp: msg.timestamp,
       isSystem: true
@@ -238,13 +271,13 @@ const ActivityFeed: React.FC = () => {
                 <ListItemIcon sx={{ minWidth: 35 }}>
                   <Avatar 
                     sx={{ 
-                      bgcolor: message.isSystem ? getActivityColor('system') : getActivityColor(message.type),
+                      bgcolor: message.isSystem ? getActivityColor('other') : getActivityColor((message.type as ActivityType) ?? 'other'),
                       width: 24, 
                       height: 24,
                       fontSize: '0.8rem'
                     }}
                   >
-                    {getActivityIcon(message.isSystem ? 'system' : message.type)}
+                    {getActivityIcon(message.isSystem ? 'other' : (message.type as ActivityType) ?? 'other')}
                   </Avatar>
                 </ListItemIcon>
                 <ListItemText

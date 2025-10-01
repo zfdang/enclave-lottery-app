@@ -293,12 +293,16 @@ class PassiveOperator:
         if current_round and current_round.round_id == round_id:
             participant_count = current_round.participant_count
 
-        self._store.record_bet(
-            round_id=round_id,
-            player=player,
-            amount=amount,
-            new_total_pot=new_total,
-            participant_count=participant_count,
+        # Post a live-feed entry for the bet; don't mutate history here.
+        self._store.add_live_feed(
+            event_type="bet_placed",
+            message=f"Bet placed by {player[:10]}",
+            details={
+                "roundId": round_id,
+                "player": player,
+                "amountWei": amount,
+                "totalPotWei": new_total,
+            },
         )
 
     async def _on_end_time_extended(self, event: BlockchainEvent) -> None:
@@ -334,7 +338,16 @@ class PassiveOperator:
             finished_at=timestamp,
         )
 
-        self._store.record_round_completion(snapshot)
+        # Post a live-feed item for the round completion and then update operator state.
+        self._store.add_live_feed(
+            event_type="round_completed",
+            message=f"Round {round_id} completed",
+            details={
+                "roundId": round_id,
+                "totalPotWei": total_pot,
+                "winner": winner,
+            },
+        )
         self._store.set_current_round(None)
         self._store.update_operator_status(self._clear_draw_schedule)
         await self._refresh_round_state()
@@ -362,7 +375,16 @@ class PassiveOperator:
         )
         logger.info("Round %s refunded: %s", round_id, reason)
 
-        self._store.record_round_completion(snapshot)
+        # Post a live-feed item for the refund, emit an operator alert, and update state.
+        self._store.add_live_feed(
+            event_type="round_refunded",
+            message=f"Round {round_id} refunded",
+            details={
+                "roundId": round_id,
+                "totalRefundedWei": total_refunded,
+                "reason": reason,
+            },
+        )
         self._store.set_current_round(None)
         self._store.add_operator_alert(
             message=f"Round {round_id} refunded",
@@ -381,20 +403,21 @@ class PassiveOperator:
             return
 
         now = int(time.time())
-        if current.state == RoundState.DRAWING:
-            status = self._store.get_operator_status()
-            if status.scheduled_draw_round_id != current.round_id:
-                self._schedule_draw(current.round_id, max(current.min_draw_time, now))
-                return
-
-            due_at = status.scheduled_draw_due_at or current.min_draw_time
-            if now >= due_at:
+        # New contract semantics: operator should call drawWinner when the round
+        # is still in BETTING and the current time is between min_draw_time and
+        # max_draw_time. If the draw window has passed plus a grace period, issue
+        # a refund.
+        if current.state == RoundState.BETTING:
+            # If we're inside the draw window, attempt the draw.
+            if now >= int(current.min_draw_time) and now <= int(current.max_draw_time):
                 await self._attempt_draw(current)
                 return
 
-            refund_deadline = current.max_draw_time + int(self._settings.refund_grace_period)
+            # If we've passed the max draw time + grace period, attempt refund.
+            refund_deadline = int(current.max_draw_time) + int(self._settings.refund_grace_period)
             if now >= refund_deadline:
                 await self._attempt_refund(current)
+                return
         elif current.state in {RoundState.COMPLETED, RoundState.REFUNDED}:
             self._store.update_operator_status(self._clear_draw_schedule)
 

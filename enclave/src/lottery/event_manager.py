@@ -26,13 +26,6 @@ class MemoryStore:
     def __init__(self, *, feed_capacity: int = 200, history_capacity: int = 200) -> None:
         self._lock = Lock()
         self._current_round: Optional[LotteryRound] = None
-        self._participant_summaries: Dict[str, ParticipantSummary] = {}
-        self._history: deque[RoundSnapshot] = deque(maxlen=history_capacity)
-        self._live_feed: deque[LiveFeedItem] = deque(maxlen=feed_capacity)
-        self._operator_status = OperatorStatus()
-        self._contract_config: Optional[ContractConfig] = None
-        self._listeners: Dict[str, List[Callable[[dict | None], None]]] = defaultdict(list)
-        self._feed_capacity = feed_capacity
         self._history_capacity = history_capacity
 
     # ------------------------------------------------------------------
@@ -106,67 +99,24 @@ class MemoryStore:
         self._emit("participants_update", self._serialize_participants())
         logger.debug(f"[MemoryStore] sync_participants called with {len(list(summaries))} participants")
 
-    def record_bet(
-        self,
-        *,
-        round_id: int,
-        player: str,
-        amount: int,
-        new_total_pot: int,
-        participant_count: int,
-    ) -> None:
-        player_key = player.lower()
+
+    def add_live_feed(self, *, event_type: str, message: str, details: Dict[str, int | str] | None = None, severity: str = "info") -> None:
+        """Public helper to append a simple live-feed item and emit it.
+
+        This avoids performing other side-effects (history/participants) when
+        callers only want to post a short live feed message.
+        """
+        feed_item = LiveFeedItem(
+            event_type=event_type,
+            message=message,
+            details=details or {},
+            severity=severity,
+        )
         with self._lock:
-            summary = self._participant_summaries.get(player_key)
-            if summary is None:
-                summary = ParticipantSummary(address=player)
-                self._participant_summaries[player_key] = summary
-            summary.add_bet(amount)
-
-            if self._current_round and self._current_round.round_id == round_id:
-                self._current_round.total_pot = new_total_pot
-                self._current_round.participant_count = participant_count
-
-            feed_item = LiveFeedItem(
-                event_type="bet_placed",
-                message=f"Bet placed by {player[:10]}",
-                details={
-                    "roundId": round_id,
-                    "player": player,
-                    "amountWei": amount,
-                    "totalPotWei": new_total_pot,
-                },
-            )
             self._append_feed(feed_item)
+            payload = self._serialize_feed_item(feed_item)
 
-            payload = self._serialize_round(self._current_round) if self._current_round else None
-
-        self._emit("round_update", payload)
-        self._emit("participants_update", self._serialize_participants())
-        self._emit("live_feed", self._serialize_feed_item(feed_item))
-        logger.debug(f"[MemoryStore] record_bet: round_id={round_id}, player={player}, amount={amount}, new_total_pot={new_total_pot}, participant_count={participant_count}")
-
-    def record_round_completion(self, snapshot: RoundSnapshot) -> None:
-        with self._lock:
-            self._append_history(snapshot)
-            feed_item = LiveFeedItem(
-                event_type="round_completed"
-                if snapshot.state.name == "COMPLETED"
-                else "round_refunded",
-                message=f"Round {snapshot.round_id} {snapshot.state.name.lower()}",
-                details={
-                    "roundId": snapshot.round_id,
-                    "totalPotWei": snapshot.total_pot,
-                    "winner": snapshot.winner or "",
-                },
-            )
-            self._append_feed(feed_item)
-            self._participant_summaries = {}
-            payload_feed = self._serialize_feed_item(feed_item)
-        
-        self._emit("history_update", self._serialize_history())
-        self._emit("participants_update", self._serialize_participants())
-        self._emit("live_feed", payload_feed)
+        self._emit("live_feed", payload)
 
     # ------------------------------------------------------------------
     # Configuration and status
@@ -257,6 +207,99 @@ class MemoryStore:
     # ------------------------------------------------------------------
     def _append_history(self, snapshot: RoundSnapshot) -> None:
         self._history.append(snapshot)
+
+    def add_history_snapshot(self, *, event_type: str, details: Dict[str, int | str]) -> None:
+        """Public helper to append a RoundSnapshot to history and emit update.
+
+        The EventManager may call this with event args (details) from contract
+        events; attempt to normalise common field names and fall back to the
+        current round when fields are missing.
+        """
+        try:
+            # Prefer explicit fields from details; fall back to current round
+            round_id = int(details.get("roundId") or details.get("round_id") or 0)
+            start_time = int(details.get("startTime") or details.get("start_time") or 0)
+            end_time = int(details.get("endTime") or details.get("end_time") or 0)
+            min_draw_time = int(details.get("minDrawTime") or details.get("min_draw_time") or 0)
+            max_draw_time = int(details.get("maxDrawTime") or details.get("max_draw_time") or 0)
+            total_pot = int(
+                details.get("totalPot")
+                or details.get("total_pot")
+                or details.get("total_pot_wei")
+                or details.get("totalPotWei")
+                or 0
+            )
+            participant_count = int(details.get("participantCount") or details.get("participant_count") or 0)
+            winner = details.get("winner")
+            winner_prize = int(
+                details.get("winnerPrize")
+                or details.get("winner_prize")
+                or details.get("winnerPrizeWei")
+                or details.get("winner_prize_wei")
+                or 0
+            )
+            publisher_commission = int(
+                details.get("publisherCommission")
+                or details.get("publisher_commission")
+                or details.get("publisherCommissionWei")
+                or details.get("publisher_commission_wei")
+                or 0
+            )
+            sparsity_commission = int(
+                details.get("sparsityCommission")
+                or details.get("sparsity_commission")
+                or details.get("sparsityCommissionWei")
+                or details.get("sparsity_commission_wei")
+                or 0
+            )
+            # Determine state enum if provided
+            state_val = details.get("state") or details.get("final_state")
+            if state_val is None:
+                # fallback: completed/refunded based on event_type
+                state = RoundState.COMPLETED if event_type == "RoundCompleted" else RoundState.REFUNDED
+            else:
+                try:
+                    # if numeric
+                    state = RoundState(int(state_val))
+                except Exception:
+                    try:
+                        state = RoundState[state_val]
+                    except Exception:
+                        state = RoundState.COMPLETED
+
+            finished_at = int(details.get("timestamp") or details.get("finishedAt") or details.get("finished_at") or 0)
+            refund_reason = details.get("refundReason") or details.get("refund_reason")
+
+            snapshot = RoundSnapshot(
+                round_id=round_id,
+                start_time=start_time,
+                end_time=end_time,
+                min_draw_time=min_draw_time,
+                max_draw_time=max_draw_time,
+                total_pot=total_pot,
+                participant_count=participant_count,
+                winner=winner,
+                winner_prize=winner_prize,
+                publisher_commission=publisher_commission,
+                sparsity_commission=sparsity_commission,
+                state=state,
+                finished_at=finished_at,
+                refund_reason=refund_reason,
+            )
+            with self._lock:
+                self._append_history(snapshot)
+                history_payload = self._serialize_history()
+
+            # Emit an update for listeners
+            self._emit("history_update", history_payload)
+            logger.info(f"[MemoryStore] added history snapshot for round {round_id}")
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("[MemoryStore] add_history_snapshot failed: %s", exc)
+            # Best-effort operator alert
+            try:
+                self.add_operator_alert(message="Failed to add history snapshot", details={"error": str(exc)}, severity="warning")
+            except Exception:
+                pass
 
     def _append_feed(self, item: LiveFeedItem) -> None:
         self._live_feed.append(item)
@@ -487,13 +530,12 @@ class EventManager:
                 self.store.set_contract_config(cfg)
             except Exception as exc:
                 logger.debug("EventManager contract_config_loop error: %s", exc)
+            
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=self._contract_config_interval)
                 break
             except asyncio.TimeoutError:
                 continue
-
-    # Deprecated individual loops removed. Use the combined loop below.
 
     async def _round_and_participants_loop(self) -> None:
         """Single-interval loop that refreshes the current round and participants.
@@ -501,7 +543,7 @@ class EventManager:
         Both refreshes run once per configured interval (shared). The
         participants refresh only runs when a current round exists.
         """
-        interval = float(self._round_status_interval)
+        interval = float(self._round_and_participants_interval_sec)
         while not self._stop_event.is_set():
             try:
                 # Refresh round status
@@ -544,6 +586,7 @@ class EventManager:
 
             if events:
                 for evt in events:
+                    logger.info("EventManager processing event %s", getattr(evt, 'name', None))
                     try:
                         await self._handle_event(evt)
                     except Exception as exc:
@@ -563,108 +606,74 @@ class EventManager:
         args = getattr(evt, "args", {}) or {}
         logger.info("EventManager handling event %s args=%s", name, args)
 
-        # BetPlaced: roundId (indexed), player (indexed), amount, newTotal, timestamp
-        if name == "BetPlaced":
-            try:
-                round_id = int(args.get("roundId", 0))
-                player = args.get("player")
-                amount = int(args.get("amount", 0))
-                new_total = int(args.get("newTotal", 0))
-                # Try to fetch participant_count from current round if available
-                participant_count = 0
-                current = self.store.get_current_round()
-                if current and current.round_id == round_id:
-                    participant_count = current.participant_count
-                self.store.record_bet(round_id=round_id, player=player, amount=amount, new_total_pot=new_total, participant_count=participant_count)
-            except Exception:
-                # Fallback to calling record_bet with available fields
-                try:
-                    self.store.record_bet(round_id=int(args.get("roundId", 0)), player=args.get("player"), amount=int(args.get("amount", 0)), new_total_pot=int(args.get("newTotal", 0)), participant_count=0)
-                except Exception:
-                    logger.debug("Failed to record BetPlaced event")
+        # Newer contract ABIs include timestamp as an event parameter. Prefer
+        # args['timestamp'] when present; fall back to evt.timestamp or 0.
+        raw_ts = args.get("timestamp") if isinstance(args, dict) else None
+        if raw_ts is None:
+            raw_ts = getattr(evt, "timestamp", 0)
+        try:
+            event_timestamp = int(raw_ts or 0)
+        except Exception:
+            event_timestamp = 0
 
-        elif name == "RoundCompleted":
-            try:
-                round_id = int(args.get("roundId", 0))
-                winner = args.get("winner")
-                total_pot = int(args.get("totalPot", 0))
-                winner_prize = int(args.get("winnerPrize", 0))
-                publisher_comm = int(args.get("publisherCommission", 0))
-                sparsity_comm = int(args.get("sparsityCommission", 0))
-                finished_at = int(getattr(evt, "timestamp", 0) or 0)
-                # Try to populate start/end/min/max from current round if it matches
-                start_time = 0
-                end_time = 0
-                min_draw = 0
-                max_draw = 0
-                participant_count = 0
-                current = self.store.get_current_round()
-                if current and current.round_id == round_id:
-                    start_time = current.start_time
-                    end_time = current.end_time
-                    min_draw = current.min_draw_time
-                    max_draw = current.max_draw_time
-                    participant_count = current.participant_count
+        # If event is RoundCompleted or RoundRefunded, also add a history snapshot
+        if name in ("RoundCompleted", "RoundRefunded"):
+            self.store.add_history_snapshot(
+                event_type=name,
+                details=details,
+            )
 
-                snapshot = RoundSnapshot(
-                    round_id=round_id,
-                    start_time=start_time,
-                    end_time=end_time,
-                    min_draw_time=min_draw,
-                    max_draw_time=max_draw,
-                    total_pot=total_pot,
-                    participant_count=participant_count,
-                    winner=winner,
-                    winner_prize=winner_prize,
-                    publisher_commission=publisher_comm,
-                    sparsity_commission=sparsity_comm,
-                    state=RoundState.COMPLETED,
-                    finished_at=finished_at,
+        # For events that should be posted to the live feed, follow the
+        # contract event definitions exactly: include each event parameter (as
+        # present in args) in the feed.details. Convert numeric-like values to
+        # ints when possible; otherwise keep the original value/string.
+        live_feed_events = {
+            "RoundCreated",
+            "BetPlaced",
+            "RoundCompleted",
+            "RoundRefunded",
+        }
+
+
+        if name in live_feed_events:
+            try:
+                details: dict = {}
+                # preserve insertion order from args when possible
+                if isinstance(args, dict):
+                    for k, v in args.items():
+                        try:
+                            details[k] = int(v)
+                        except Exception:
+                            # fallback to string representation (addresses, enums, strings)
+                            details[k] = v
+                else:
+                    # Unknown args shape - stringify
+                    details = {"args": str(args)}
+
+                # If timestamp isn't included in args, use normalized event_timestamp
+                if "timestamp" not in details:
+                    details["timestamp"] = event_timestamp
+
+                # Create a simple message: prefer roundId when present
+                msg_round = details.get("roundId")
+                message = f"{name}"
+                if msg_round is not None:
+                    message = f"{name} for round {msg_round}"
+
+                self.store.add_live_feed(
+                    event_type=name,
+                    message=message,
+                    details=details,
                 )
-                self.store.record_round_completion(snapshot)
             except Exception as exc:
-                logger.debug("Failed to process RoundCompleted: %s", exc)
-
-        elif name == "RoundRefunded":
-            try:
-                round_id = int(args.get("roundId", 0))
-                total_refunded = int(args.get("totalRefunded", 0))
-                participant_count = int(args.get("participantCount", 0))
-                reason = args.get("reason")
-                finished_at = int(getattr(evt, "timestamp", 0) or 0)
-
-                snapshot = RoundSnapshot(
-                    round_id=round_id,
-                    start_time=0,
-                    end_time=0,
-                    min_draw_time=0,
-                    max_draw_time=0,
-                    total_pot=total_refunded,
-                    participant_count=participant_count,
-                    winner=None,
-                    winner_prize=0,
-                    publisher_commission=0,
-                    sparsity_commission=0,
-                    state=RoundState.REFUNDED,
-                    finished_at=finished_at,
-                    refund_reason=reason,
-                )
-                self.store.record_round_completion(snapshot)
-            except Exception as exc:
-                logger.debug("Failed to process RoundRefunded: %s", exc)
+                logger.debug("Failed to post %s live feed: %s", name, exc)
 
         else:
-            # Other events: operator/config updates; refresh config/round/participants locally
+            # Other events: operator/config updates
             if name in ("SparsitySet", "OperatorUpdated", "MinBetAmountUpdated", "BettingDurationUpdated"):
-                try:
-                    cfg = await self.client.get_contract_config()
-                    self.store.set_contract_config(cfg)
-                except Exception:
-                    pass
-            # For bet-related state changes, trigger a local refresh
-            if name in ("BetPlaced", "RoundCreated", "EndTimeExtended"):
-                try:
-                    round_data = await self.client.get_current_round()
-                    self.store.set_current_round(round_data, reset_participants=False)
-                except Exception:
-                    pass
+                # do nothing
+                pass
+            # For bet-related state changes
+            if name in ("EndTimeExtended", "RoundStateChanged"):
+                # do nothing
+                pass
