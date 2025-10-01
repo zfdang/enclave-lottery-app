@@ -14,11 +14,10 @@ import {
   DialogContent,
   DialogActions,
   Button,
-  CircularProgress
+  CircularProgress,
+  Divider
 } from '@mui/material'
 import { Security, VerifiedUser, ErrorOutline } from '@mui/icons-material'
-import { ethers } from 'ethers'
-
 import LotteryTimer from './components/LotteryTimer'
 import BettingPanel from './components/BettingPanel'
 import UserList from './components/UserList'
@@ -29,7 +28,6 @@ import { useWebSocket } from './services/websocket'
 import { useWalletStore } from './services/wallet'
 import { getContractAddress, getHealth, getAttestation } from './services/api'
 import { contractService } from './services/contract'
-import { log } from 'console'
 
 function App() {
   const [backendOnline, setBackendOnline] = useState(false)
@@ -459,6 +457,9 @@ function App() {
               <Box sx={{ flex: '0 0 auto' }}>
                 <LotteryTimer />
               </Box>
+
+              {/* Separator between timer and activity feed */}
+              <Divider sx={{ my: 0, bgcolor: 'rgba(255, 255, 255, 0.2)' }} />
 
               {/* ActivityFeed should scroll independently */}
               <Box sx={{

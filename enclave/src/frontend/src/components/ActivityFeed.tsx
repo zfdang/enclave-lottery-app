@@ -33,7 +33,6 @@ interface Activity {
   activity_type: ActivityType
   details: Record<string, any>
   message?: string
-  severity?: string
   timestamp: string
 }
 
@@ -70,18 +69,37 @@ const ActivityFeed: React.FC = () => {
   }
 
   const formatTime = (timestamp: string | Date): string => {
-    const date = typeof timestamp === 'string' ? new Date(timestamp) : timestamp
-    const now = new Date()
-    const diffMs = now.getTime() - date.getTime()
-    const diffSecs = Math.floor(diffMs / 1000)
-    const diffMins = Math.floor(diffSecs / 60)
-
-    if (diffSecs < 60) {
-  return 'Just now'
-    } else if (diffMins < 60) {
-  return `${diffMins} minutes ago`
+    // Parse timestamp: if string without timezone, treat as GMT/UTC
+    let date: Date
+    if (typeof timestamp === 'string') {
+      const trimmed = timestamp.trim()
+      // Check if timestamp already has timezone info (Z or +/-offset)
+      const hasTimezone = /([zZ]|[+-]\d{2}:?\d{2})$/.test(trimmed)
+      // If no timezone, append 'Z' to treat as UTC
+      const utcString = hasTimezone ? trimmed : `${trimmed}Z`
+      date = new Date(utcString)
     } else {
-      return date.toLocaleTimeString().slice(0, 5)
+      date = timestamp
+    }
+
+    if (Number.isNaN(date.getTime())) {
+      return ''
+    }
+
+    // Format in user's local timezone and locale
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        timeZoneName: 'short'
+      }).format(date)
+    } catch (error) {
+      console.warn('Date formatting failed, using fallback:', error)
+      return date.toLocaleString()
     }
   }
 
@@ -199,7 +217,6 @@ const ActivityFeed: React.FC = () => {
       timestamp: new Date(activity.timestamp),
       activity,
       isSystem: false,
-      severity: activity.severity ?? 'info',
     }))
   ].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
 
@@ -208,19 +225,12 @@ const ActivityFeed: React.FC = () => {
       sx={{
         display: 'flex',
         flexDirection: 'column',
-        height: '50%',
-        overflowX: 'hidden',
-        overflowY: 'auto',
-        '&::-webkit-scrollbar': {
-          width: '6px',
-        },
-        '&::-webkit-scrollbar-thumb': {
-          backgroundColor: 'rgba(255, 255, 255, 0.3)',
-          borderRadius: '3px',
-        }
+        height: '100%',
+        minHeight: '400px',
+        maxHeight: '600px',
       }}
     >
-      <Box display="flex" alignItems="center" mb={1} justifyContent="center">
+      <Box display="flex" alignItems="center" mb={1} justifyContent="center" sx={{ flexShrink: 0 }}>
         <Notifications sx={{ mr: 1, color: 'white' }} />
         <Typography variant="subtitle1" sx={{ color: 'white' }}>
           Live Feed
@@ -246,7 +256,10 @@ const ActivityFeed: React.FC = () => {
           alignItems="center" 
           justifyContent="center" 
           flex={1}
-          sx={{ color: 'rgba(255, 255, 255, 0.7)' }}
+          sx={{ 
+            color: 'rgba(255, 255, 255, 0.7)',
+            minHeight: '300px'
+          }}
         >
           <Notifications sx={{ fontSize: 40, mb: 1 }} />
           <Typography variant="body2" textAlign="center">
@@ -260,12 +273,29 @@ const ActivityFeed: React.FC = () => {
         <Box
           sx={{
             flexGrow: 1,
+            height: 0, // Force flex child to respect parent's height constraints
             background: 'rgba(0, 0, 0, 0.2)',
             borderRadius: 1,
-            border: '1px solid rgba(255, 255, 255, 0.1)'
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            overflowY: 'scroll',
+            overflowX: 'hidden',
+            '&::-webkit-scrollbar': {
+              width: '8px',
+            },
+            '&::-webkit-scrollbar-track': {
+              backgroundColor: 'rgba(255, 255, 255, 0.1)',
+              borderRadius: '4px',
+            },
+            '&::-webkit-scrollbar-thumb': {
+              backgroundColor: 'rgba(255, 255, 255, 0.3)',
+              borderRadius: '4px',
+              '&:hover': {
+                backgroundColor: 'rgba(255, 255, 255, 0.5)',
+              }
+            }
           }}
         >
-          <List sx={{ p: 0.5 }}>
+          <List sx={{ p: 1, pb: 4 }}>
             {allMessages.map((message) => (
               <ListItem key={message.id} sx={{ px: 1, py: 0.5 }}>
                 <ListItemIcon sx={{ minWidth: 35 }}>

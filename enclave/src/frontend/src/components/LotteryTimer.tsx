@@ -139,9 +139,9 @@ const LotteryTimer: React.FC = () => {
   }
 
   return (
-    <Box sx={{ p: 1, mb: 1 }}>
+    <Box sx={{ p: 0.5 }}>
   {/* Title row */}
-      <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+      <Box display="flex" alignItems="center" justifyContent="space-between" mb={0.5}>
         <Box display="flex" alignItems="center">
           <Timer sx={{ mr: 1, color: 'white' }} />
           <Typography variant="h6" sx={{ color: 'white', fontWeight: 'bold' }}>
@@ -160,11 +160,11 @@ const LotteryTimer: React.FC = () => {
       </Box>
       
   {/* Main info row */}
-      <Grid container spacing={1} alignItems="center" mb={1}>
+      <Grid container spacing={0.5} alignItems="center" mb={0.5}>
         <Grid item xs={4}>
           <Box textAlign="center">
-            <Schedule sx={{ color: 'white', mb: 0.5, fontSize: '1rem' }} />
-            <Typography variant="h6" sx={{ color: '#ffeb3b', fontWeight: 'bold', fontFamily: 'monospace' }}>
+            <Schedule sx={{ color: 'white', mb: 0.25, fontSize: '1.2rem' }} />
+            <Typography variant="h6" sx={{ color: '#ffeb3b', fontWeight: 'bold', fontFamily: 'monospace', fontSize: '1.1rem' }}>
               {formatTime(timeRemaining)}
             </Typography>
             <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.8)' }}>
@@ -175,8 +175,8 @@ const LotteryTimer: React.FC = () => {
 
         <Grid item xs={4}>
           <Box textAlign="center">
-            <AttachMoney sx={{ color: 'white', mb: 0.5, fontSize: '1rem' }} />
-            <Typography variant="h6" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
+            <AttachMoney sx={{ color: 'white', mb: 0.25, fontSize: '1.2rem' }} />
+            <Typography variant="h6" sx={{ color: '#4caf50', fontWeight: 'bold', fontSize: '1.1rem' }}>
               {((roundStatus.total_pot ?? 0) / 1e18).toFixed(4)}
             </Typography>
             <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.8)' }}>
@@ -187,8 +187,8 @@ const LotteryTimer: React.FC = () => {
 
         <Grid item xs={4}>
           <Box textAlign="center">
-            <People sx={{ color: 'white', mb: 0.5, fontSize: '1rem' }} />
-            <Typography variant="h6" sx={{ color: '#2196f3', fontWeight: 'bold' }}>
+            <People sx={{ color: 'white', mb: 0.25, fontSize: '1.2rem' }} />
+            <Typography variant="h6" sx={{ color: '#2196f3', fontWeight: 'bold', fontSize: '1.1rem' }}>
               {roundStatus.participant_count}
             </Typography>
             <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.8)' }}>
@@ -204,8 +204,8 @@ const LotteryTimer: React.FC = () => {
         const secsUntilDraw = timeRemaining.hours * 3600 + timeRemaining.minutes * 60 + timeRemaining.seconds
         return secsUntilDraw > 0 && secsUntilDraw < minMin * 60
       })() && (
-        <Box mb={1} sx={{ 
-          p: 1, 
+        <Box mb={0.5} sx={{ 
+          p: 0.5, 
           bgcolor: 'rgba(255, 152, 0, 0.2)', 
           border: '1px solid rgba(255, 152, 0, 0.5)',
           borderRadius: 1 
@@ -216,29 +216,6 @@ const LotteryTimer: React.FC = () => {
         </Box>
       )}
 
-  {/* Progress bar */}
-      <Box>
-        <Box display="flex" justifyContent="space-between" mb={0.5}>
-          <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.8)' }}>
-            Draw progress
-          </Typography>
-          <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.8)' }}>
-            {getProgressValue().toFixed(1)}%
-          </Typography>
-        </Box>
-        <LinearProgress 
-          variant="determinate" 
-          value={getProgressValue()} 
-          sx={{ 
-            height: 6, 
-            borderRadius: 3,
-            bgcolor: 'rgba(255, 255, 255, 0.2)',
-            '& .MuiLinearProgress-bar': {
-              bgcolor: 'linear-gradient(90deg, #4caf50 0%, #81c784 100%)'
-            }
-          }}
-        />
-      </Box>
     </Box>
   )
 }

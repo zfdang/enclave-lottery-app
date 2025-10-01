@@ -19,7 +19,6 @@ from lottery.models import (
     LotteryRound,
     OperatorStatus,
     ParticipantSummary,
-    RoundSnapshot,
     RoundState,
 )
 
@@ -32,15 +31,11 @@ logger = get_logger(__name__)
 class OperatorSettings:
     """Runtime tunables for the passive operator loop."""
 
-    event_poll_interval: float = 6.0
-    state_refresh_interval: float = 30.0
     draw_check_interval: float = 10.0
-    event_replay_blocks: int = 500
     draw_retry_delay: float = 45.0
     max_draw_retries: int = 3
     refund_grace_period: float = 120.0
     tx_timeout_seconds: int = 180
-    rpc_call_timeout: float = 10.0
 
 
 class PassiveOperator:
@@ -60,18 +55,17 @@ class PassiveOperator:
         self._running = False
         self._stop_event = asyncio.Event()
         self._tasks: List[asyncio.Task[Any]] = []
-        self._event_from_block: Optional[int] = None
-        self._event_cursor: Optional[Tuple[int, str]] = None
 
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
     async def initialize(self) -> None:
-        """Prime the memory store from on-chain state."""
+        """Register as listener for blockchain events from EventManager."""
         logger.info("Initializing passive lottery operator")
-        await self._bootstrap_store()
+        # Register to receive blockchain events from EventManager
+        self._store.add_listener("blockchain_event", self._on_blockchain_event)
         self._store.update_operator_status(self._apply_initial_status)
-        logger.info("Passive lottery operator ready")
+        logger.info("Passive lottery operator registered for blockchain events")
 
     async def start(self) -> None:
         """Start background tasks that keep the store in sync."""
@@ -83,10 +77,8 @@ class PassiveOperator:
         self._stop_event.clear()
         self._store.update_operator_status(self._mark_running)
 
-        logger.info("Starting passive operator loops")
+        logger.info("Starting passive operator draw loop")
         self._tasks = [
-            asyncio.create_task(self._event_loop(), name="lottery-operator-events"),
-            asyncio.create_task(self._state_loop(), name="lottery-operator-state"),
             asyncio.create_task(self._draw_loop(), name="lottery-operator-draw"),
         ]
 
@@ -166,60 +158,22 @@ class PassiveOperator:
         raise NotImplementedError("Passive operator does not create rounds on-chain")
 
     # ------------------------------------------------------------------
-    # Event loop and state sync
+    # Event handling (receives events from EventManager)
     # ------------------------------------------------------------------
-    async def _event_loop(self) -> None:
-        if self._event_from_block is None:
-            latest_block = await self._client.get_latest_block()
-            self._event_from_block = max(latest_block - self._settings.event_replay_blocks, 0)
-            logger.info("Starting event sync from block %s (latest: %s, replay: %s)", 
-                       self._event_from_block, latest_block, self._settings.event_replay_blocks)
-
-        while not self._stop_event.is_set():
-            # Determine the block range to poll
-            # if self.client._last_seen_block is None, start from 0; else, start from _last_seen_block + 1
-            from_block = 0
-            if self._client._last_seen_block is not None:
-                from_block = self._client._last_seen_block + 1
-            logger.info(f"[event_loop] Polling events from block {from_block}")
-            try:
-                events = await self._client.get_events(from_block)
-                logger.debug(f"[event_loop] Got {len(events)} events from block {from_block}")
-                if events:
-                    logger.info(f"[event_loop] Processing {len(events)} events from block {from_block}")
-                for event in events:
-                    cursor = (event.block_number, event.transaction_hash)
-                    logger.info(f"[event_loop] Processing event {event.name} at block {event.block_number}, tx {event.transaction_hash}")
-                    if self._event_cursor and cursor <= self._event_cursor:
-                        logger.debug(f"[event_loop] Skipping already-processed event at cursor {cursor}")
-                        continue
-                    try:
-                        await self._handle_event(event)
-                    except Exception as exc:  # pragma: no cover - defensive logging
-                        logger.exception("Failed to handle event %s: %s", event.name, exc)
-                        self._store.add_operator_alert(
-                            message=f"Failed to handle event {event.name}",
-                            details={"error": str(exc)[:120]},
-                            severity="warning",
-                        )
-                    self._event_cursor = cursor
-                    self._event_from_block = max(self._event_from_block or 0, event.block_number)
-            except Exception as exc:  # pragma: no cover - relies on RPC
-                logger.exception("Event polling failed: %s", exc)
-                self._store.add_operator_alert(
-                    message="Blockchain event polling failed",
-                    details={"error": str(exc)[:120]},
-                    severity="error",
-                )
-            await self._wait_with_stop(self._settings.event_poll_interval)
-
-    async def _state_loop(self) -> None:
-        while not self._stop_event.is_set():
-            try:
-                await self._refresh_round_state()
-            except Exception as exc:  # pragma: no cover - depends on RPC
-                logger.debug("State refresh failed: %s", exc)
-            await self._wait_with_stop(self._settings.state_refresh_interval)
+    def _on_blockchain_event(self, payload: dict | None) -> None:
+        """Called by EventManager when a blockchain event occurs."""
+        if not payload:
+            return
+        
+        try:
+            event = payload.get("event")
+            if not event:
+                return
+            
+            # Schedule async event handling
+            asyncio.create_task(self._handle_event(event))
+        except Exception as exc:
+            logger.error("Failed to handle blockchain event: %s", exc)
 
     async def _draw_loop(self) -> None:
         while not self._stop_event.is_set():
@@ -256,7 +210,7 @@ class PassiveOperator:
             "OperatorUpdated",
         }:
             logger.info(f"[handle_event] Handling config update event: {event.name}")
-            await self._refresh_contract_config()
+            # EventManager will refresh contract config
 
     # ------------------------------------------------------------------
     # Event handlers
@@ -264,16 +218,18 @@ class PassiveOperator:
     async def _on_round_created(self, event: BlockchainEvent) -> None:
         round_id = int(event.args.get("roundId", 0))
         logger.info("Round %s created", round_id)
-        round_data = await self._refresh_round_state()
-        if round_data:
+        # Get round data from memory store (updated by EventManager)
+        round_data = self._store.get_current_round()
+        if round_data and round_data.round_id == round_id:
             self._schedule_draw(round_data.round_id, max(round_data.min_draw_time, int(time.time())))
 
     async def _on_round_state_changed(self, event: BlockchainEvent) -> None:
         round_id = int(event.args.get("roundId", 0))
         new_state = RoundState(int(event.args.get("newState", 0)))
         logger.info("Round %s transitioned to %s", round_id, new_state.name)
-        round_data = await self._refresh_round_state(reset_participants=new_state == RoundState.WAITING)
-        if new_state == RoundState.DRAWING and round_data:
+        # Get round data from memory store (updated by EventManager)
+        round_data = self._store.get_current_round()
+        if new_state == RoundState.DRAWING and round_data and round_data.round_id == round_id:
             self._schedule_draw(round_data.round_id, max(round_data.min_draw_time, int(time.time())))
         if new_state in {RoundState.COMPLETED, RoundState.REFUNDED}:
             self._store.update_operator_status(self._clear_draw_schedule)
@@ -281,118 +237,32 @@ class PassiveOperator:
     async def _on_bet_placed(self, event: BlockchainEvent) -> None:
         round_id = int(event.args.get("roundId", 0))
         player = str(event.args.get("player"))
-        amount = int(event.args.get("amount", 0))
-        new_total = int(event.args.get("newTotal", 0))
         logger.debug("Bet placed by %s for round %s", player, round_id)
-
-        current_round = await self._refresh_round_state(reset_participants=False)
-        participants = await self._client.get_participant_summaries(round_id)
-        self._store.sync_participants(participants)
-
-        participant_count = len(participants)
-        if current_round and current_round.round_id == round_id:
-            participant_count = current_round.participant_count
-
-        # Post a live-feed entry for the bet; don't mutate history here.
-        self._store.add_live_feed(
-            event_type="bet_placed",
-            message=f"Bet placed by {player[:10]}",
-            details={
-                "roundId": round_id,
-                "player": player,
-                "amountWei": amount,
-                "totalPotWei": new_total,
-            },
-        )
+        # EventManager already adds this to live feed, no additional action needed
 
     async def _on_end_time_extended(self, event: BlockchainEvent) -> None:
         round_id = int(event.args.get("roundId", 0))
         new_end_time = int(event.args.get("newEndTime", 0))
-        current = self._store.get_current_round()
-        if current and current.round_id == round_id:
-            current.end_time = new_end_time
-            self._store.set_current_round(current, reset_participants=False)
-        else:
-            await self._refresh_round_state(reset_participants=False)
         logger.info("Round %s betting end extended to %s", round_id, new_end_time)
+        # EventManager refreshes round state, no additional action needed
 
     async def _on_round_completed(self, event: BlockchainEvent) -> None:
         round_id = int(event.args.get("roundId", 0))
         winner = str(event.args.get("winner"))
-        total_pot = int(event.args.get("totalPot", 0))
-        winner_prize = int(event.args.get("winnerPrize", 0))
-        publisher_commission = int(event.args.get("publisherCommission", 0))
-        sparsity_commission = int(event.args.get("sparsityCommission", 0))
-        timestamp = int(event.timestamp)
-
-        current = self._store.get_current_round()
-        snapshot = self._build_snapshot(
-            source=current,
-            round_id=round_id,
-            total_pot=total_pot,
-            winner=winner,
-            winner_prize=winner_prize,
-            publisher_commission=publisher_commission,
-            sparsity_commission=sparsity_commission,
-            state=RoundState.COMPLETED,
-            finished_at=timestamp,
-        )
-
-        # Post a live-feed item for the round completion and then update operator state.
-        self._store.add_live_feed(
-            event_type="round_completed",
-            message=f"Round {round_id} completed",
-            details={
-                "roundId": round_id,
-                "totalPotWei": total_pot,
-                "winner": winner,
-            },
-        )
-        self._store.set_current_round(None)
+        logger.info("Round %s completed, winner: %s", round_id, winner)
+        
+        # Clear draw schedule now that round is completed
         self._store.update_operator_status(self._clear_draw_schedule)
-        await self._refresh_round_state()
+        # EventManager handles live feed and history snapshot
 
     async def _on_round_refunded(self, event: BlockchainEvent) -> None:
         round_id = int(event.args.get("roundId", 0))
-        total_refunded = int(event.args.get("totalRefunded", 0))
-        participant_count = int(event.args.get("participantCount", 0))
         reason = str(event.args.get("reason", "") or "refunded")
-        timestamp = int(event.timestamp)
-
-        current = self._store.get_current_round()
-        snapshot = self._build_snapshot(
-            source=current,
-            round_id=round_id,
-            total_pot=total_refunded,
-            winner=None,
-            winner_prize=0,
-            publisher_commission=0,
-            sparsity_commission=0,
-            state=RoundState.REFUNDED,
-            finished_at=timestamp,
-            refund_reason=reason,
-            participant_count_override=participant_count,
-        )
         logger.info("Round %s refunded: %s", round_id, reason)
-
-        # Post a live-feed item for the refund, emit an operator alert, and update state.
-        self._store.add_live_feed(
-            event_type="round_refunded",
-            message=f"Round {round_id} refunded",
-            details={
-                "roundId": round_id,
-                "totalRefundedWei": total_refunded,
-                "reason": reason,
-            },
-        )
-        self._store.set_current_round(None)
-        self._store.add_operator_alert(
-            message=f"Round {round_id} refunded",
-            details={"roundId": str(round_id), "reason": reason[:60]},
-            severity="warning",
-        )
+        
+        # Clear draw schedule now that round is refunded
         self._store.update_operator_status(self._clear_draw_schedule)
-        await self._refresh_round_state()
+        # EventManager handles live feed and history snapshot
 
     # ------------------------------------------------------------------
     # Draw / refund management
@@ -407,15 +277,18 @@ class PassiveOperator:
         # is still in BETTING and the current time is between min_draw_time and
         # max_draw_time. If the draw window has passed plus a grace period, issue
         # a refund.
+        logger.info(f"Checking if draw/refund needed for round {current.round_id} in state {current.state.name} at time {now}")
         if current.state == RoundState.BETTING:
             # If we're inside the draw window, attempt the draw.
             if now >= int(current.min_draw_time) and now <= int(current.max_draw_time):
+                logger.info(f"Attempting draw for round {current.round_id}")
                 await self._attempt_draw(current)
                 return
 
             # If we've passed the max draw time + grace period, attempt refund.
             refund_deadline = int(current.max_draw_time) + int(self._settings.refund_grace_period)
             if now >= refund_deadline:
+                logger.info(f"Draw window passed for round {current.round_id}, attempting refund")
                 await self._attempt_refund(current)
                 return
         elif current.state in {RoundState.COMPLETED, RoundState.REFUNDED}:
@@ -429,26 +302,14 @@ class PassiveOperator:
             await self._client.wait_for_transaction(tx_hash, timeout=self._settings.tx_timeout_seconds)
             logger.info("Draw transaction sent: %s", tx_hash)
             self._store.update_operator_status(self._reset_draw_failures)
-            self._store.add_operator_alert(
-                message=f"Draw submitted for round {round_data.round_id}",
-                details={"roundId": str(round_data.round_id), "txHash": tx_hash},
-                severity="info" if manual else "debug",
-            )
         except Exception as exc:  # pragma: no cover - depends on RPC
             logger.error("Draw attempt failed for round %s: %s", round_data.round_id, exc)
             status = self._store.update_operator_status(lambda s: s.increment_draw_failures())
-            self._store.add_operator_alert(
-                message=f"Draw attempt failed for round {round_data.round_id}",
-                details={"roundId": str(round_data.round_id), "error": str(exc)[:120]},
-                severity="error",
-            )
             next_due = int(time.time() + self._settings.draw_retry_delay)
             self._schedule_draw(round_data.round_id, next_due)
             if status.consecutive_draw_failures >= self._settings.max_draw_retries:
-                self._store.add_operator_alert(
-                    message="Maximum draw retries reached",
-                    details={"roundId": str(round_data.round_id)},
-                    severity="error",
+                logger.error(
+                    "Maximum draw retries reached for round %s", round_data.round_id
                 )
 
     async def _attempt_refund(self, round_data: LotteryRound, *, manual: bool = False) -> None:
@@ -456,56 +317,13 @@ class PassiveOperator:
         try:
             tx_hash = await self._client.refund_round(round_data.round_id)
             await self._client.wait_for_transaction(tx_hash, timeout=self._settings.tx_timeout_seconds)
-            self._store.add_operator_alert(
-                message=f"Refund submitted for round {round_data.round_id}",
-                details={"roundId": str(round_data.round_id), "txHash": tx_hash},
-                severity="warning" if manual else "info",
-            )
             self._store.update_operator_status(self._clear_draw_schedule)
         except Exception as exc:  # pragma: no cover - depends on RPC
             logger.error("Refund attempt failed for round %s: %s", round_data.round_id, exc)
-            self._store.add_operator_alert(
-                message=f"Refund attempt failed for round {round_data.round_id}",
-                details={"roundId": str(round_data.round_id), "error": str(exc)[:120]},
-                severity="error",
-            )
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
-    async def _bootstrap_store(self) -> None:
-        config = await self._client.get_contract_config()
-        current_round = await self._client.get_current_round()
-        participants: List[ParticipantSummary] = []
-        if current_round:
-            participants = await self._client.get_participant_summaries(current_round.round_id)
-        self._store.bootstrap(
-            current_round=current_round,
-            participants=participants,
-            history=(),
-            contract_config=config,
-        )
-
-    async def _refresh_round_state(self, *, reset_participants: bool = True) -> Optional[LotteryRound]:
-        try:
-            round_data = await asyncio.wait_for(self._client.get_current_round(), timeout=self._settings.rpc_call_timeout)
-        except asyncio.TimeoutError:
-            logger.warning("_refresh_round_state: RPC call timed out after %ss", self._settings.rpc_call_timeout)
-            return None
-        except Exception as exc:
-            logger.warning("_refresh_round_state: RPC call failed: %s", exc)
-            return None
-        if round_data:
-            self._store.set_current_round(round_data, reset_participants=reset_participants)
-        else:
-            self._store.set_current_round(None)
-        # dump the current round data for debugging purpose
-        logger.info("Current round data: %s", round_data)
-        return round_data
-
-    async def _refresh_contract_config(self) -> None:
-        config = await self._client.get_contract_config()
-        self._store.set_contract_config(config)
 
     def _schedule_draw(self, round_id: int, due_at: int) -> None:
         due_at = max(due_at, int(time.time()))
@@ -548,56 +366,6 @@ class PassiveOperator:
         except asyncio.TimeoutError:
             pass
 
-    def _build_snapshot(
-        self,
-        *,
-        source: Optional[LotteryRound],
-        round_id: int,
-        total_pot: int,
-        winner: Optional[str],
-        winner_prize: int,
-        publisher_commission: int,
-        sparsity_commission: int,
-        state: RoundState,
-        finished_at: int,
-        refund_reason: Optional[str] = None,
-        participant_count_override: Optional[int] = None,
-    ) -> RoundSnapshot:
-        if source and source.round_id == round_id:
-            participant_count = participant_count_override or source.participant_count
-            return RoundSnapshot(
-                round_id=round_id,
-                start_time=source.start_time,
-                end_time=source.end_time,
-                min_draw_time=source.min_draw_time,
-                max_draw_time=source.max_draw_time,
-                total_pot=total_pot or source.total_pot,
-                participant_count=participant_count,
-                winner=winner,
-                winner_prize=winner_prize,
-                publisher_commission=publisher_commission or source.publisher_commission,
-                sparsity_commission=sparsity_commission or source.sparsity_commission,
-                state=state,
-                finished_at=finished_at,
-                refund_reason=refund_reason,
-            )
-        return RoundSnapshot(
-            round_id=round_id,
-            start_time=0,
-            end_time=0,
-            min_draw_time=0,
-            max_draw_time=0,
-            total_pot=total_pot,
-            participant_count=participant_count_override or 0,
-            winner=winner,
-            winner_prize=winner_prize,
-            publisher_commission=publisher_commission,
-            sparsity_commission=sparsity_commission,
-            state=state,
-            finished_at=finished_at,
-            refund_reason=refund_reason,
-        )
-
     def _load_settings(self, config: Dict[str, Any]) -> OperatorSettings:
         operator_cfg = config.get("operator", {})
         passive_cfg = operator_cfg.get("passive", {})
@@ -620,10 +388,7 @@ class PassiveOperator:
                 return int(default)
 
         return OperatorSettings(
-            event_poll_interval=to_float(get_value("event_poll_interval", 6.0), 6.0),
-            state_refresh_interval=to_float(get_value("state_refresh_interval", 30.0), 30.0),
             draw_check_interval=to_float(get_value("draw_check_interval", 10.0), 10.0),
-            event_replay_blocks=to_int(get_value("event_replay_blocks", 500), 500),
             draw_retry_delay=to_float(get_value("draw_retry_delay", 45.0), 45.0),
             max_draw_retries=to_int(get_value("max_draw_retries", 3), 3),
             refund_grace_period=to_float(get_value("refund_grace_period", 120.0), 120.0),

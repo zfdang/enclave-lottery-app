@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import asyncio
+from collections import defaultdict, deque
+from datetime import datetime
+from threading import Lock
+from typing import Any, Callable, Dict, Iterable, List, Optional
+
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
 """In-memory state manager for the passive lottery backend."""
-from collections import defaultdict, deque
-from threading import Lock
-from typing import Callable, Dict, Iterable, List, Optional
 
 from lottery.models import (
     ContractConfig,
@@ -18,15 +21,20 @@ from lottery.models import (
     RoundState,
 )
 
-
-
 class MemoryStore:
     """Volatile storage for contract state, history, and live feed."""
 
     def __init__(self, *, feed_capacity: int = 200, history_capacity: int = 200) -> None:
         self._lock = Lock()
-        self._current_round: Optional[LotteryRound] = None
+        self._listeners: Dict[str, List[Callable[[dict | None], None]]] = defaultdict(list)
+        self._feed_capacity = feed_capacity
         self._history_capacity = history_capacity
+        self._live_feed: deque[LiveFeedItem] = deque(maxlen=feed_capacity)
+        self._history: deque[RoundSnapshot] = deque(maxlen=history_capacity)
+        self._participant_summaries: Dict[str, ParticipantSummary] = {}
+        self._current_round: Optional[LotteryRound] = None
+        self._operator_status = OperatorStatus()
+        self._contract_config: Optional[ContractConfig] = None
 
     # ------------------------------------------------------------------
     # Listener management
@@ -100,17 +108,31 @@ class MemoryStore:
         logger.debug(f"[MemoryStore] sync_participants called with {len(list(summaries))} participants")
 
 
-    def add_live_feed(self, *, event_type: str, message: str, details: Dict[str, int | str] | None = None, severity: str = "info") -> None:
+    def add_live_feed(
+        self,
+        *,
+        event_type: str,
+        message: str,
+        details: Dict[str, int | str] | None = None,
+    ) -> None:
         """Public helper to append a simple live-feed item and emit it.
 
         This avoids performing other side-effects (history/participants) when
         callers only want to post a short live feed message.
         """
+        safe_details = dict(details or {})
+        timestamp_val = safe_details.get("timestamp", 0)
+        # Convert timestamp to datetime
+        if isinstance(timestamp_val, int):
+            created_at = datetime.fromtimestamp(timestamp_val) if timestamp_val > 0 else datetime.now()
+        else:
+            created_at = datetime.now()
+        
         feed_item = LiveFeedItem(
             event_type=event_type,
             message=message,
-            details=details or {},
-            severity=severity,
+            details=safe_details,
+            created_at=created_at,
         )
         with self._lock:
             self._append_feed(feed_item)
@@ -148,26 +170,6 @@ class MemoryStore:
         self._emit("operator_status", self._serialize_operator_status(status_copy))
         logger.debug(f"[MemoryStore] update_operator_status called with update={update}")
         return status_copy
-
-    def add_operator_alert(
-        self,
-        *,
-        message: str,
-        details: Dict[str, int | str],
-        severity: str = "error",
-    ) -> None:
-        feed_item = LiveFeedItem(
-            event_type="operator_alert",
-            message=message,
-            details=details,
-            severity=severity,
-        )
-        with self._lock:
-            self._append_feed(feed_item)
-        payload = self._serialize_feed_item(feed_item)
-        self._emit("live_feed", payload)
-        self._emit("operator_alert", payload)
-        logger.debug(f"[MemoryStore] add_operator_alert: message={message}, details={details}, severity={severity}")
 
     # ------------------------------------------------------------------
     # Accessors
@@ -216,44 +218,66 @@ class MemoryStore:
         current round when fields are missing.
         """
         try:
-            # Prefer explicit fields from details; fall back to current round
-            round_id = int(details.get("roundId") or details.get("round_id") or 0)
-            start_time = int(details.get("startTime") or details.get("start_time") or 0)
-            end_time = int(details.get("endTime") or details.get("end_time") or 0)
-            min_draw_time = int(details.get("minDrawTime") or details.get("min_draw_time") or 0)
-            max_draw_time = int(details.get("maxDrawTime") or details.get("max_draw_time") or 0)
-            total_pot = int(
-                details.get("totalPot")
-                or details.get("total_pot")
-                or details.get("total_pot_wei")
-                or details.get("totalPotWei")
-                or 0
+            snapshot_details = dict(details or {})
+
+            def _as_int(value: Any, default: int = 0) -> int:
+                if value is None:
+                    return default
+                try:
+                    if isinstance(value, str) and value.startswith("0x"):
+                        return int(value, 16)
+                    return int(value)
+                except Exception:
+                    return default
+
+            current_round = self.get_current_round()
+            round_id = _as_int(
+                snapshot_details.get("roundId")
+                or snapshot_details.get("round_id")
+                or (current_round.round_id if current_round else 0)
             )
-            participant_count = int(details.get("participantCount") or details.get("participant_count") or 0)
-            winner = details.get("winner")
-            winner_prize = int(
-                details.get("winnerPrize")
-                or details.get("winner_prize")
-                or details.get("winnerPrizeWei")
-                or details.get("winner_prize_wei")
-                or 0
+            start_time = _as_int(snapshot_details.get("startTime") or snapshot_details.get("start_time"))
+            end_time = _as_int(snapshot_details.get("endTime") or snapshot_details.get("end_time"))
+            min_draw_time = _as_int(
+                snapshot_details.get("minDrawTime") or snapshot_details.get("min_draw_time")
             )
-            publisher_commission = int(
-                details.get("publisherCommission")
-                or details.get("publisher_commission")
-                or details.get("publisherCommissionWei")
-                or details.get("publisher_commission_wei")
-                or 0
+            max_draw_time = _as_int(
+                snapshot_details.get("maxDrawTime") or snapshot_details.get("max_draw_time")
             )
-            sparsity_commission = int(
-                details.get("sparsityCommission")
-                or details.get("sparsity_commission")
-                or details.get("sparsityCommissionWei")
-                or details.get("sparsity_commission_wei")
-                or 0
+            total_pot = _as_int(
+                snapshot_details.get("totalPot")
+                or snapshot_details.get("total_pot")
+                or snapshot_details.get("total_pot_wei")
+                or snapshot_details.get("totalPotWei")
+                or snapshot_details.get("totalRefunded")
+                or snapshot_details.get("total_refunded")
+            )
+            participant_count = _as_int(
+                snapshot_details.get("participantCount") or snapshot_details.get("participant_count")
+            )
+            winner = snapshot_details.get("winner")
+            if event_type == "RoundRefunded":
+                winner = None
+            winner_prize = _as_int(
+                snapshot_details.get("winnerPrize")
+                or snapshot_details.get("winner_prize")
+                or snapshot_details.get("winnerPrizeWei")
+                or snapshot_details.get("winner_prize_wei")
+            )
+            publisher_commission = _as_int(
+                snapshot_details.get("publisherCommission")
+                or snapshot_details.get("publisher_commission")
+                or snapshot_details.get("publisherCommissionWei")
+                or snapshot_details.get("publisher_commission_wei")
+            )
+            sparsity_commission = _as_int(
+                snapshot_details.get("sparsityCommission")
+                or snapshot_details.get("sparsity_commission")
+                or snapshot_details.get("sparsityCommissionWei")
+                or snapshot_details.get("sparsity_commission_wei")
             )
             # Determine state enum if provided
-            state_val = details.get("state") or details.get("final_state")
+            state_val = snapshot_details.get("state") or snapshot_details.get("final_state")
             if state_val is None:
                 # fallback: completed/refunded based on event_type
                 state = RoundState.COMPLETED if event_type == "RoundCompleted" else RoundState.REFUNDED
@@ -267,8 +291,34 @@ class MemoryStore:
                     except Exception:
                         state = RoundState.COMPLETED
 
-            finished_at = int(details.get("timestamp") or details.get("finishedAt") or details.get("finished_at") or 0)
-            refund_reason = details.get("refundReason") or details.get("refund_reason")
+            finished_at = _as_int(
+                snapshot_details.get("timestamp")
+                or snapshot_details.get("finishedAt")
+                or snapshot_details.get("finished_at")
+            )
+            refund_reason = snapshot_details.get("refundReason") or snapshot_details.get("refund_reason")
+
+            if current_round and current_round.round_id == round_id:
+                if start_time == 0:
+                    start_time = current_round.start_time
+                if end_time == 0:
+                    end_time = current_round.end_time
+                if min_draw_time == 0:
+                    min_draw_time = current_round.min_draw_time
+                if max_draw_time == 0:
+                    max_draw_time = current_round.max_draw_time
+                if total_pot == 0:
+                    total_pot = current_round.total_pot
+                if participant_count == 0:
+                    participant_count = current_round.participant_count
+                if winner is None and current_round.winner:
+                    winner = current_round.winner
+                if winner_prize == 0:
+                    winner_prize = current_round.winner_prize
+                if publisher_commission == 0:
+                    publisher_commission = current_round.publisher_commission
+                if sparsity_commission == 0:
+                    sparsity_commission = current_round.sparsity_commission
 
             snapshot = RoundSnapshot(
                 round_id=round_id,
@@ -286,23 +336,52 @@ class MemoryStore:
                 finished_at=finished_at,
                 refund_reason=refund_reason,
             )
+            appended = False
             with self._lock:
-                self._append_history(snapshot)
-                history_payload = self._serialize_history()
+                duplicate = False
+                for existing in reversed(self._history):
+                    if (
+                        existing.round_id == snapshot.round_id
+                        and existing.state == snapshot.state
+                        and existing.finished_at == snapshot.finished_at
+                    ):
+                        duplicate = True
+                        break
+                if duplicate:
+                    logger.debug("[MemoryStore] duplicate history snapshot for round %s suppressed", round_id)
+                else:
+                    self._append_history(snapshot)
+                    appended = True
+
+            if not appended:
+                return
+
+            history_payload = self._serialize_history()
 
             # Emit an update for listeners
             self._emit("history_update", history_payload)
             logger.info(f"[MemoryStore] added history snapshot for round {round_id}")
         except Exception as exc:  # pragma: no cover - defensive
-            logger.debug("[MemoryStore] add_history_snapshot failed: %s", exc)
-            # Best-effort operator alert
-            try:
-                self.add_operator_alert(message="Failed to add history snapshot", details={"error": str(exc)}, severity="warning")
-            except Exception:
-                pass
+            logger.warning("[MemoryStore] add_history_snapshot failed: %s", exc)
 
     def _append_feed(self, item: LiveFeedItem) -> None:
+        if item.details is None:
+            item.details = {}
+        else:
+            item.details = dict(item.details)
+
+        recent = list(self._live_feed)[-10:]
+        for existing in reversed(recent):
+            if (
+                existing.event_type == item.event_type
+                and existing.message == item.message
+                and existing.details == item.details
+            ):
+                logger.debug("[MemoryStore] duplicate live feed suppressed for event %s", item.event_type)
+                return
+
         self._live_feed.append(item)
+        logger.info("[MemoryStore] appended live feed item %s", item.event_type)
 
     def _serialize_round(self, round_data: Optional[LotteryRound]) -> Optional[dict]:
         if not round_data:
@@ -368,7 +447,6 @@ class MemoryStore:
             "type": item.event_type,
             "message": item.message,
             "details": item.details,
-            "severity": item.severity,
             "timestamp": item.created_at.isoformat(),
         }
 
@@ -441,10 +519,6 @@ class MemoryStore:
 
 # Global singleton used across the backend.
 memory_store = MemoryStore()
-
-
-import asyncio
-from typing import Any, Dict, List, Optional
 
 from blockchain.client import BlockchainClient
 from utils.config import load_config
@@ -606,27 +680,20 @@ class EventManager:
         args = getattr(evt, "args", {}) or {}
         logger.info("EventManager handling event %s args=%s", name, args)
 
-        # Newer contract ABIs include timestamp as an event parameter. Prefer
-        # args['timestamp'] when present; fall back to evt.timestamp or 0.
-        raw_ts = args.get("timestamp") if isinstance(args, dict) else None
-        if raw_ts is None:
-            raw_ts = getattr(evt, "timestamp", 0)
-        try:
-            event_timestamp = int(raw_ts or 0)
-        except Exception:
-            event_timestamp = 0
-
-        # If event is RoundCompleted or RoundRefunded, also add a history snapshot
-        if name in ("RoundCompleted", "RoundRefunded"):
-            self.store.add_history_snapshot(
-                event_type=name,
-                details=details,
-            )
+        # Emit blockchain event to registered listeners (e.g., operator)
+        # Pass the full event object so listeners can access all properties
+        self.store._emit("blockchain_event", {
+            "event": evt,
+            "name": name,
+            "args": args,
+            "block_number": getattr(evt, "block_number", 0),
+            "transaction_hash": getattr(evt, "transaction_hash", ""),
+            "timestamp": getattr(evt, "timestamp", 0),
+        })
 
         # For events that should be posted to the live feed, follow the
         # contract event definitions exactly: include each event parameter (as
-        # present in args) in the feed.details. Convert numeric-like values to
-        # ints when possible; otherwise keep the original value/string.
+        # present in args) in the feed.details.
         live_feed_events = {
             "RoundCreated",
             "BetPlaced",
@@ -634,36 +701,13 @@ class EventManager:
             "RoundRefunded",
         }
 
-
         if name in live_feed_events:
             try:
-                details: dict = {}
-                # preserve insertion order from args when possible
-                if isinstance(args, dict):
-                    for k, v in args.items():
-                        try:
-                            details[k] = int(v)
-                        except Exception:
-                            # fallback to string representation (addresses, enums, strings)
-                            details[k] = v
-                else:
-                    # Unknown args shape - stringify
-                    details = {"args": str(args)}
-
-                # If timestamp isn't included in args, use normalized event_timestamp
-                if "timestamp" not in details:
-                    details["timestamp"] = event_timestamp
-
-                # Create a simple message: prefer roundId when present
-                msg_round = details.get("roundId")
                 message = f"{name}"
-                if msg_round is not None:
-                    message = f"{name} for round {msg_round}"
-
                 self.store.add_live_feed(
                     event_type=name,
                     message=message,
-                    details=details,
+                    details=args,
                 )
             except Exception as exc:
                 logger.debug("Failed to post %s live feed: %s", name, exc)
@@ -677,3 +721,9 @@ class EventManager:
             if name in ("EndTimeExtended", "RoundStateChanged"):
                 # do nothing
                 pass
+
+        if name in ("RoundCompleted", "RoundRefunded"):
+            try:
+                self.store.add_history_snapshot(event_type=name, details=dict(args))
+            except Exception as exc:
+                logger.debug("Failed to append history snapshot for %s: %s", name, exc)

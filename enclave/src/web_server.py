@@ -440,7 +440,6 @@ class LotteryWebServer:
             "live_feed",
             "config_update",
             "operator_status",
-            "operator_alert",
         ):
             self._store.add_listener(event, lambda payload, evt=event: self._enqueue_broadcast(evt, payload))
         self._listeners_registered = True
@@ -577,15 +576,18 @@ class LotteryWebServer:
             "activity_type": self._map_feed_type(item.event_type),
             "details": item.details,
             "message": item.message,
-            "severity": item.severity,
             "timestamp": item.created_at.isoformat(),
         }
 
     def _map_feed_type(self, event_type: str) -> str:
-        if event_type == "bet_placed":
-            return "bet"
-        if event_type == "round_completed":
-            return "win"
-        if event_type == "operator_alert":
-            return "system"
-        return event_type
+        # Canonical event names now mirror Solidity events.
+        if event_type in {"BetPlaced", "RoundCompleted", "RoundRefunded", "RoundCreated"}:
+            return event_type
+
+        legacy = {
+            "bet_placed": "BetPlaced",
+            "round_completed": "RoundCompleted",
+            "round_refunded": "RoundRefunded",
+            "system": "other",
+        }
+        return legacy.get(event_type, "other")

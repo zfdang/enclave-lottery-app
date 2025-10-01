@@ -88,8 +88,7 @@ class LiveFeedItem:
     event_type: str
     message: str
     details: Dict[str, int | str]
-    severity: str = "info"
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime
 
 
 @dataclass

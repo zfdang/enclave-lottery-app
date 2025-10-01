@@ -158,7 +158,7 @@ contract Lottery {
         SPARSITY_COMMISSION_RATE = _sparsityCommissionRate;
 
         // Set sensible defaults for other config values
-        minBetAmount = 0.01 ether;
+        minBetAmount = 0.001 ether;
         bettingDuration = 120 seconds;
         minDrawDelayAfterEnd = 30 seconds;
         maxDrawDelayAfterEnd = 120 seconds;

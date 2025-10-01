@@ -63,16 +63,19 @@ const HistoryPanel: React.FC = () => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`
   }
 
-  const formatDate = (timestamp: number | undefined): string => {
-    if (!timestamp) return ''
+  const formatDate = (timestamp?: number | string | null): string => {
+    const value = Number(timestamp ?? 0)
+    if (!Number.isFinite(value) || value <= 0) return ''
     // backend uses seconds or milliseconds inconsistently; normalize: if > 1e12 assume ms else seconds
-    const asMs = timestamp > 1e12 ? timestamp : timestamp * 1000
+    const asMs = value > 1e12 ? value : value * 1000
     const date = new Date(asMs)
     return `${date.toLocaleDateString()} ${date.toLocaleTimeString().slice(0, 5)}`
   }
 
-  const formatEth = (wei: number): string => {
-    return (wei / 1e18).toFixed(4)
+  const formatEth = (wei?: number | string | null): string => {
+    const value = Number(wei ?? 0)
+    if (!Number.isFinite(value)) return '0.0000'
+    return (value / 1e18).toFixed(4)
   }
 
   const getAvatarColor = (address: string): string => {

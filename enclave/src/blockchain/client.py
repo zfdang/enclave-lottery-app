@@ -307,7 +307,7 @@ class BlockchainClient:
             except Exception as exc:
                 logger.error("Failed to get latest block number: %s", exc)
                 return []
-            if from_block >= self._latest_block:
+            if from_block > self._latest_block:
                 logger.info("Requested block %s is ahead of latest block %s, skip", from_block, self._latest_block)
                 return []
 

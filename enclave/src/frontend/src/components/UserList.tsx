@@ -26,10 +26,10 @@ interface ParticipantsResponse {
   round_state?: string
   participants: Participant[]
   total_participants: number
-  total_bets: number
-  // backend uses snake_case for aggregates
-  total_amount_wei: number
-  current_time: number
+  // Aggregates may be omitted by older backends; treat as optional.
+  total_bets?: number
+  total_amount_wei?: number
+  timestamp?: string
   message?: string
 }
 
@@ -60,8 +60,10 @@ const UserList: React.FC = () => {
     return address.slice(0, 6) + '...' + address.slice(-4)
   }
 
-  const formatEth = (wei: number): string => {
-    return (wei / 1e18).toFixed(4)
+  const formatEth = (wei: number | string | undefined): string => {
+    const value = Number(wei ?? 0)
+    if (!Number.isFinite(value)) return '0.0000'
+    return (value / 1e18).toFixed(4)
   }
 
   const getAvatarColor = (address: string): string => {
@@ -92,33 +94,33 @@ const UserList: React.FC = () => {
     return colors[index]
   }
 
-  const getTotalTickets = (): number => {
-    // convert to a simple total of bets across participants (betCount)
-    const participants = participantsData?.participants || []
-    // If backend provides a per-participant betCount, sum it; otherwise approximate by
-    // counting participants (1 ticket each) as a conservative fallback.
-    return participants.reduce((total: number, p: Participant) => total + ((p as any).betCount ?? 1), 0)
-  }
-
   const safeParticipants = participantsData?.participants || []
   const count = safeParticipants.length
+  const totalTickets = safeParticipants.reduce(
+    (total: number, p: Participant) => total + ((p as any).betCount ?? 1),
+    0
+  )
+  const totalAmountWei =
+    participantsData?.total_amount_wei ??
+    safeParticipants.reduce((sum: number, p: Participant) => sum + Number((p as any).totalAmountWei ?? 0), 0)
+  const totalBets = participantsData?.total_bets ?? totalTickets
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', p: 1 }}>
       <Box display="flex" alignItems="center" mb={1} justifyContent="center">
         <People sx={{ mr: 1, color: 'white' }} />
         <Typography variant="subtitle1" sx={{ color: 'white' }}>
-          ({count})
+          {count}
         </Typography>
       </Box>
 
-      {participantsData?.round_id && (
+      {participantsData?.round_id ? (
         <Box mb={1} p={1} sx={{ bgcolor: 'rgba(255, 255, 255, 0.1)', borderRadius: 1 }}>
           <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.8)' }}>
-            Round #{participantsData.round_id} : {participantsData.total_bets} {formatEth((participantsData as any).total_amount_wei ?? 0)} ETH total bets
+            Round #{participantsData.round_id} • {totalBets} tickets • {formatEth(totalAmountWei)} ETH total bets
           </Typography>
         </Box>
-      )}
+      ) : null}
 
       {loading && count === 0 ? (
         <></>
@@ -196,7 +198,7 @@ const UserList: React.FC = () => {
       {count > 0 && (
         <Box mt={1} pt={1} sx={{ borderTop: '1px solid rgba(255, 255, 255, 0.2)' }}>
           <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.8)' }} textAlign="center">
-            Total tickets: {getTotalTickets()}
+            Total tickets: {totalTickets}
           </Typography>
         </Box>
       )}

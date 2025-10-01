@@ -315,7 +315,7 @@ const BettingPanel: React.FC = () => {
             >
               {isPlacingBet
                 ? 'Betting...'
-                : `Bet ${getTotalBetAmount().toFixed(2)} ETH`}
+                : `Bet ${getTotalBetAmount().toFixed(3)} ETH`}
             </Button>
           </Box>
         </Box>
