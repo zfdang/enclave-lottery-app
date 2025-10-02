@@ -9,13 +9,14 @@ import {
   Avatar,
   Chip,
 } from '@mui/material'
-import { 
-  Notifications, 
-  PersonAdd, 
-  Casino, 
+import {
+  Notifications,
+  AttachMoney,
   EmojiEvents,
   AccessTime,
-  Schedule
+  Transform,
+  Replay,
+  FiberNew
 } from '@mui/icons-material'
 
 import { getActivities } from '../services/api'
@@ -65,35 +66,20 @@ const ActivityFeed: React.FC = () => {
 
 
 
-  const getActivityIcon = (type: ActivityType) => {
-    switch (type) {
-      case 'BetPlaced':
-        return <Casino />
-      case 'RoundCompleted':
-        return <EmojiEvents />
-      case 'RoundRefunded':
-        return <EmojiEvents />
-      case 'RoundCreated':
-        return <Notifications />
-      default:
-        return <AccessTime />
-    }
+  const ACTIVITY_VISUALS: Record<ActivityType, { icon: React.ReactNode; color: string }> = {
+    BetPlaced: { icon: <AttachMoney />, color: '#ff9800' },
+    RoundStateChanged: { icon: <Transform />, color: '#9575cd' },
+    RoundCompleted: { icon: <EmojiEvents />, color: '#4caf50' },
+    RoundRefunded: { icon: <Replay />, color: '#f44336' },
+    RoundCreated: { icon: <FiberNew />, color: '#03a9f4' },
+    other: { icon: <AccessTime />, color: '#9e9e9e' },
   }
 
-  const getActivityColor = (type: ActivityType) => {
-    switch (type) {
-      case 'BetPlaced':
-        return '#ff9800'
-      case 'RoundCompleted':
-        return '#4caf50'
-      case 'RoundRefunded':
-        return '#f44336'
-      case 'RoundCreated':
-        return '#03a9f4'
-      default:
-        return '#9e9e9e'
-    }
-  }
+  const resolveActivityVisual = (type: ActivityType) => ACTIVITY_VISUALS[type] ?? ACTIVITY_VISUALS.other
+
+  const getActivityIcon = (type: ActivityType) => resolveActivityVisual(type).icon
+
+  const getActivityColor = (type: ActivityType) => resolveActivityVisual(type).color
 
 
 
@@ -157,7 +143,8 @@ const ActivityFeed: React.FC = () => {
                       bgcolor: getActivityColor(activity.activity_type),
                       width: 24, 
                       height: 24,
-                      fontSize: '0.8rem'
+                      fontSize: '0.8rem',
+                      color: 'white'
                     }}
                   >
                     {getActivityIcon(activity.activity_type)}

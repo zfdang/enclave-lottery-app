@@ -41,7 +41,6 @@
 │  • Round history                                                    │
 │  • Live activity feed                                               │
 │  • Contract config                                                  │
-│  • Operator status                                                  │
 │  • Event listeners registry                                         │
 └──────┬──────────────────────────────────────────────┬───────────────┘
        │                                              │
@@ -50,12 +49,11 @@
        ↓                                              ↓
 ┌─────────────────────────────────────────┐  ┌──────────────────────┐
 │         PASSIVE OPERATOR                │  │    WEB SERVER        │
-│  • Listen to blockchain_event           │  │  • HTTP API          │
-│  • Schedule draws when rounds ready     │  │  • WebSocket feed    │
+│  • Listen to round_update events        │  │  • HTTP API          │
+│  • React to draw/refund windows         │  │  • WebSocket feed    │
 │  • Execute draws in time window         │  │  • Serve frontend    │
 │  • Execute refunds when expired         │  │                      │
 │  • Retry failed transactions            │  │                      │
-│  • Update operator status               │  │                      │
 └──────────────────┬──────────────────────┘  └──┬───────────────────┘
                    │                            │
                    │ Blockchain Write Calls     │
@@ -80,26 +78,13 @@
    - store.set_current_round(round_data)
    - store.add_live_feed(event_message)
    ↓
-4. EventManager emits blockchain_event:
-   store._emit("blockchain_event", {
-     "event": evt,
-     "name": "RoundCreated",
-     "args": {"roundId": 1, ...}
-   })
+4. MemoryStore emits `round_update` with the serialized round payload
    ↓
-5. PassiveOperator receives event via callback:
-   _on_blockchain_event(payload) → _handle_event(event)
+5. PassiveOperator receives `round_update` via callback
    ↓
-6. Operator schedules draw:
-   - Reads round data from MemoryStore
-   - Calculates draw time (max(minDrawTime, now))
-   - Updates operator status with scheduled draw
-   ↓
-7. Draw loop periodically checks scheduled draws
-   ↓
-8. When minDrawTime <= now <= maxDrawTime:
-   - Operator calls blockchain_client.draw_round()
-   - Waits for transaction confirmation
+6. Operator evaluates current time against `minDrawTime` / `maxDrawTime` and acts immediately:
+   - If inside the draw window, call `blockchain_client.draw_round()` and wait for confirmation
+   - If past the draw window, call `blockchain_client.refund_round()`
 ```
 
 ## Event Flow: State Refresh
@@ -136,11 +121,12 @@
 - Creates round history snapshots
 
 **PassiveOperator** (Business Logic Layer)
-- Event-driven draw management
+- Event-driven draw/refund handler
+- Subscribes to `round_update` events emitted by MemoryStore
+- Makes idempotent decisions directly from serialized round payloads
 - Executes draws within contract time windows (minDrawTime ~ maxDrawTime)
 - Executes refunds when rounds expire
 - Handles transaction retries and failures
-- No direct blockchain polling
 
 **MemoryStore** (State & Pub/Sub Layer)
 - Central state repository
@@ -192,30 +178,29 @@ The operator follows the contract's time window requirements:
 - Returns bets to all participants
 - Logs: "draw window expired at X, attempting refund"
 
-### Draw Scheduling
+### Round Update Handling
 
-When a new round is created:
-1. EventManager detects `RoundCreated` event
-2. Emits `blockchain_event` to operator
-3. Operator schedules draw at `max(minDrawTime, currentTime)`
-4. Draw loop checks every 10s (configurable)
-5. When time window arrives, executes draw
+When a new round is created or refreshed:
+1. EventManager detects on-chain changes and updates MemoryStore
+2. MemoryStore emits a `round_update` payload with serialized round fields
+3. PassiveOperator receives the payload, reads `minDrawTime` / `maxDrawTime`, and:
+   - If the draw window has not opened yet, it simply waits for the next update
+   - If the draw window is open, it submits the draw transaction immediately
+   - If the window has expired, it submits a refund transaction immediately
 
 ### Retry Logic
 
-If draw transaction fails:
-- Increment failure counter
-- Wait 45s (configurable: `draw_retry_delay`)
-- Retry up to 3 times (configurable: `max_draw_retries`)
-- Continue as long as still in time window
+If a draw or refund transaction fails the operator logs the error. Because there is no scheduler loop, retries rely on either:
+- A subsequent `round_update` emission while the round remains in the draw window, or
+- Manual intervention (triggering a draw/refund via API or CLI)
 
 ## Error Handling
 
 ### EventManager Failure
 - MemoryStore data becomes stale
-- Operator continues with last known state
-- Draw loop keeps checking scheduled draws
-- No new events propagated
+- PassiveOperator holds the last payload but receives no new `round_update` events
+- No additional draw/refund actions are triggered until EventManager recovers
+- Frontend data stops refreshing; manual monitoring recommended
 
 ### Operator Failure
 - EventManager continues updating state
@@ -258,11 +243,10 @@ If draw transaction fails:
 ### OperatorSettings
 
 ```python
-draw_check_interval: float = 10.0      # How often to check for scheduled draws
-draw_retry_delay: float = 45.0         # Seconds to wait before retry
-max_draw_retries: int = 3              # Maximum retry attempts
 tx_timeout_seconds: int = 180          # Transaction confirmation timeout
 ```
+
+Legacy scheduler-related parameters (`draw_check_interval`, `draw_retry_delay`, `max_draw_retries`) were removed along with the OperatorStatus state machine.
 
 ### EventManager Settings
 

@@ -159,10 +159,10 @@ contract Lottery {
 
         // Set sensible defaults for other config values
         minBetAmount = 0.001 ether;
-        bettingDuration = 120 seconds;
-        minDrawDelayAfterEnd = 30 seconds;
-        maxDrawDelayAfterEnd = 120 seconds;
-        minEndTimeExtension = 120 seconds;
+        bettingDuration = 180 seconds;
+        minDrawDelayAfterEnd = 5 seconds;
+        maxDrawDelayAfterEnd = 180 seconds;
+        minEndTimeExtension = 60 seconds;
         minParticipants = 2;
 
         // start with roundId = 1 and WAITING state
