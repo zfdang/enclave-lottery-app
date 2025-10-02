@@ -22,6 +22,7 @@ import { getActivities } from '../services/api'
 
 type ActivityType =
   | 'BetPlaced'
+  | 'RoundStateChanged'
   | 'RoundCompleted'
   | 'RoundRefunded'
   | 'RoundCreated'
@@ -33,13 +34,12 @@ interface Activity {
   activity_type: ActivityType
   details: Record<string, any>
   message?: string
-  timestamp: string
+  timestamp: number
 }
 
 const ActivityFeed: React.FC = () => {
   const [activities, setActivities] = useState<Activity[]>([])
   const [loading, setLoading] = useState(false)
-  const [systemMessages, setSystemMessages] = useState<Array<{id: string, message: string, timestamp: Date}>>([])
 
   const fetchActivities = async () => {
     setLoading(true)
@@ -62,27 +62,22 @@ const ActivityFeed: React.FC = () => {
     return () => clearInterval(interval)
   }, [])
 
-  // systemMessages can be pushed manually by other UI interactions if needed.
-
   const formatAddress = (address: string): string => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`
   }
 
-  const formatTime = (timestamp: string | Date): string => {
-    // Parse timestamp: if string without timezone, treat as GMT/UTC
+  const formatTime = (timestamp: number | Date): string => {
+    // Handle Unix timestamp (in seconds or milliseconds)
     let date: Date
-    if (typeof timestamp === 'string') {
-      const trimmed = timestamp.trim()
-      // Check if timestamp already has timezone info (Z or +/-offset)
-      const hasTimezone = /([zZ]|[+-]\d{2}:?\d{2})$/.test(trimmed)
-      // If no timezone, append 'Z' to treat as UTC
-      const utcString = hasTimezone ? trimmed : `${trimmed}Z`
-      date = new Date(utcString)
+    if (typeof timestamp === 'number') {
+      // If timestamp is in seconds (< 10 digits), convert to milliseconds
+      const ts = timestamp < 10000000000 ? timestamp * 1000 : timestamp
+      date = new Date(ts)
     } else {
       date = timestamp
     }
 
-    if (Number.isNaN(date.getTime())) {
+    if (!date || Number.isNaN(date.getTime())) {
       return ''
     }
 
@@ -133,47 +128,6 @@ const ActivityFeed: React.FC = () => {
     }
   }
 
-  const getActivityMessage = (activity: Activity): string => {
-  const type = (activity.activity_type as ActivityType) ?? 'other'
-  const details = activity.details || {}
-  const user = activity.user_address || ''
-  const address = user ? formatAddress(String(user)) : 'unknown'
-
-    const weiToEth = (wei: any) => {
-      try {
-        const n = typeof wei === 'string' ? parseFloat(wei) : Number(wei)
-        if (Number.isNaN(n)) return String(wei)
-        return (n / 1e18).toFixed(4)
-      } catch (e) {
-        return String(wei)
-      }
-    }
-
-    switch (type) {
-      case 'BetPlaced': {
-        const player = details.player || activity.user_address || ''
-        const amt = details.amount || details.amountWei || details.totalAmountWei || 0
-        return `💰 ${formatAddress(String(player || address))} placed ${weiToEth(amt)} ETH`
-      }
-      case 'RoundCompleted': {
-        const winner = details.winner || activity.user_address || ''
-        const amt = details.winnerPrize || details.totalPotWei || details.totalPot || 0
-        return `🎉 ${formatAddress(String(winner || address))} won ${weiToEth(amt)} ETH!`
-      }
-      case 'RoundRefunded': {
-        const rid = details.roundId
-        const refunded = details.totalRefundedWei || details.totalRefunded || 0
-        return `↩️ Round ${rid} refunded ${weiToEth(refunded)} ETH`
-      }
-      case 'RoundCreated': {
-        const rid = details.roundId
-        return `🔔 Round ${rid} created`
-      }
-      default:
-        // For 'other' and any unexpected types, prefer server message or a generic text.
-        return activity.message ? activity.message : `${address} performed ${String(type)}`
-    }
-  }
 
   const getAvatarColor = (address: string): string => {
     const colors = [
@@ -185,40 +139,6 @@ const ActivityFeed: React.FC = () => {
     const index = parseInt(address.slice(-2), 16) % colors.length
     return colors[index]
   }
-
-  // Merge system messages (including derived persistent messages) and user activities
-  const safeActivities = Array.isArray(activities) ? activities : []
-
-  // No derived persistent messages; system messages are user-driven or server-provided.
-  const derivedSystemMessages: Array<{id: string, message: string, timestamp: Date}> = []
-
-  // Combine derived messages with ephemeral systemMessages and deduplicate by message text
-  const combinedSystem = [...derivedSystemMessages, ...systemMessages]
-  const seen = new Set<string>()
-  const uniqueSystem = combinedSystem.filter(s => {
-    if (seen.has(s.message)) return false
-    seen.add(s.message)
-    return true
-  })
-
-  const allMessages = [
-    ...uniqueSystem.map(msg => ({
-      id: msg.id,
-      type: 'other',
-      message: msg.message,
-      timestamp: msg.timestamp,
-      isSystem: true
-    })),
-    ...safeActivities.map(activity => ({
-      id: activity.activity_id,
-      type: activity.activity_type,
-      // Prefer server-provided message when present; otherwise fall back to client-formatted text
-      message: activity.message ? activity.message : getActivityMessage(activity as Activity),
-      timestamp: new Date(activity.timestamp),
-      activity,
-      isSystem: false,
-    }))
-  ].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
 
   return (
     <Box
@@ -235,7 +155,7 @@ const ActivityFeed: React.FC = () => {
         <Typography variant="subtitle1" sx={{ color: 'white' }}>
           Live Feed
         </Typography>
-        {allMessages.length > 0 && (
+        {activities.length > 0 && (
           <Chip 
             label="LIVE" 
             size="small" 
@@ -249,7 +169,7 @@ const ActivityFeed: React.FC = () => {
         )}
       </Box>
 
-      {allMessages.length === 0 ? (
+      {activities.length === 0 ? (
         <Box 
           display="flex" 
           flexDirection="column" 
@@ -296,18 +216,18 @@ const ActivityFeed: React.FC = () => {
           }}
         >
           <List sx={{ p: 1, pb: 4 }}>
-            {allMessages.map((message) => (
-              <ListItem key={message.id} sx={{ px: 1, py: 0.5 }}>
+            {activities.map((activity) => (
+              <ListItem key={activity.activity_id} sx={{ px: 1, py: 0.5 }}>
                 <ListItemIcon sx={{ minWidth: 35 }}>
                   <Avatar 
                     sx={{ 
-                      bgcolor: message.isSystem ? getActivityColor('other') : getActivityColor((message.type as ActivityType) ?? 'other'),
+                      bgcolor: getActivityColor(activity.activity_type),
                       width: 24, 
                       height: 24,
                       fontSize: '0.8rem'
                     }}
                   >
-                    {getActivityIcon(message.isSystem ? 'other' : (message.type as ActivityType) ?? 'other')}
+                    {getActivityIcon(activity.activity_type)}
                   </Avatar>
                 </ListItemIcon>
                 <ListItemText
@@ -316,16 +236,15 @@ const ActivityFeed: React.FC = () => {
                       variant="body2" 
                       sx={{ 
                         color: 'white', 
-                        fontSize: '0.85rem',
-                        fontWeight: message.isSystem ? 'bold' : 'normal'
+                        fontSize: '0.85rem'
                       }}
                     >
-                      {message.message}
+                      {activity.message || 'Activity'}
                     </Typography>
                   }
                   secondary={
                     <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.6)' }}>
-                      {formatTime(message.timestamp)}
+                      {formatTime(activity.timestamp)}
                     </Typography>
                   }
                   primaryTypographyProps={{ component: 'div' }}

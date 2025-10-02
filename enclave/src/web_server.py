@@ -289,7 +289,10 @@ class LotteryWebServer:
         async def get_live_feed(limit: int = 50) -> Dict[str, Any]:
             limit = max(1, min(limit, 200))
             feed = self._store.get_live_feed(limit=limit)
-            activities = [self._serialize_activity(item, idx) for idx, item in enumerate(reversed(feed))]
+            # sort feed by roundid (larger first), then timestamp descending (newest first)
+            feed = sorted(feed, key=lambda x: (-x.details.get("roundId", 0), -x.event_time))
+            # serialize items in feed
+            activities = [self._serialize_live_feed_item(item, idx) for idx, item in enumerate(feed)]
             return {"activities": activities}
 
         @self.app.get("/api/contract/config")
@@ -493,7 +496,7 @@ class LotteryWebServer:
             "round": self._serialize_round(current),
             "participants": self._serialize_participants(participants),
             "history": [self._serialize_history_round(item) for item in history],
-            "live_feed": [self._serialize_activity(item, idx) for idx, item in enumerate(reversed(feed))],
+            "live_feed": [self._serialize_live_feed_item(item, idx) for idx, item in enumerate(reversed(feed))],
             "operator": operator_status,
             "config": {
                 "publisherAddr": config.publisher_addr if config else None,
@@ -559,35 +562,12 @@ class LotteryWebServer:
             "refund_reason": snapshot.refund_reason,
         }
 
-    def _serialize_activity(self, item: LiveFeedItem, index: int) -> Dict[str, Any]:
-        # Ensure user_address is always a string for the frontend.
-        # Prefer explicit player addresses, then winner, then fall back to a readable round id or 'system'.
-        user_val = item.details.get("player") or item.details.get("winner")
-        if not user_val:
-            # Prefer roundId when no participant address is present; coerce to string for consistency
-            round_id = item.details.get("roundId")
-            user_val = f"round:{round_id}" if round_id is not None else "system"
-        # Final coercion to string to avoid runtime errors like `address.slice is not a function` in the UI
-        user_address_str = str(user_val)
-
+    def _serialize_live_feed_item(self, item: LiveFeedItem, index: int) -> Dict[str, Any]:
+        activity_id = item.get_item_id()
         return {
-            "activity_id": f"{item.created_at.isoformat()}-{index}",
-            "user_address": user_address_str,
-            "activity_type": self._map_feed_type(item.event_type),
+            "activity_id": f"{activity_id}",
+            "activity_type": item.event_type,
             "details": item.details,
             "message": item.message,
-            "timestamp": item.created_at.isoformat(),
+            "timestamp": item.event_time
         }
-
-    def _map_feed_type(self, event_type: str) -> str:
-        # Canonical event names now mirror Solidity events.
-        if event_type in {"BetPlaced", "RoundCompleted", "RoundRefunded", "RoundCreated"}:
-            return event_type
-
-        legacy = {
-            "bet_placed": "BetPlaced",
-            "round_completed": "RoundCompleted",
-            "round_refunded": "RoundRefunded",
-            "system": "other",
-        }
-        return legacy.get(event_type, "other")

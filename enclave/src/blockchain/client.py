@@ -71,6 +71,10 @@ class BlockchainClient:
         self._latest_block: Optional[int] = None
         self._last_seen_block: Optional[int] = None
 
+    def get_last_seen_block(self) -> int:
+        """Return the last seen block number (internal sync pointer)."""
+        return getattr(self, '_last_seen_block', 0)
+    
     async def initialize(self) -> None:
         """Establish the RPC connection and load the contract."""
         # configure provider with a request timeout so synchronous calls don't hang indefinitely
@@ -102,6 +106,7 @@ class BlockchainClient:
         
         await self._load_contract()
 
+    
     async def close(self) -> None:
         """Tear down references; HTTP provider closes automatically."""
         self._contract = None
@@ -325,7 +330,7 @@ class BlockchainClient:
                 return []
 
             for raw in raw_logs:
-                logger.info("Block %d ...", raw.get("blockNumber"))
+                logger.debug("Block %d ...", raw.get("blockNumber"))
                 logger.debug("Block %d, Raw log: %s", raw.get("blockNumber"), raw)
                 # track the last seen block for future fetches
                 self._last_seen_block = raw.get("blockNumber")
@@ -339,7 +344,7 @@ class BlockchainClient:
                 if not abi:
                     logger.info("Unknown event topic %s", sig)
                     continue
-                logger.info("Decoding event with topic %s using ABI %s", sig, abi.get("name"))
+                logger.debug("Decoding event with topic %s using ABI %s", sig, abi.get("name"))
                 try:
                     decoded = get_event_data(w3.codec, abi, raw)
                     block_no = int(decoded["blockNumber"])

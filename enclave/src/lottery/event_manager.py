@@ -7,6 +7,7 @@ from threading import Lock
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from utils.logger import get_logger
+from utils.common import shorten_eth_address
 
 logger = get_logger(__name__)
 """In-memory state manager for the passive lottery backend."""
@@ -24,7 +25,7 @@ from lottery.models import (
 class MemoryStore:
     """Volatile storage for contract state, history, and live feed."""
 
-    def __init__(self, *, feed_capacity: int = 200, history_capacity: int = 200) -> None:
+    def __init__(self, *, feed_capacity: int = 100, history_capacity: int = 20) -> None:
         self._lock = Lock()
         self._listeners: Dict[str, List[Callable[[dict | None], None]]] = defaultdict(list)
         self._feed_capacity = feed_capacity
@@ -113,7 +114,7 @@ class MemoryStore:
         *,
         event_type: str,
         message: str,
-        details: Dict[str, int | str] | None = None,
+        details: Dict[str, int | str] | None = None
     ) -> None:
         """Public helper to append a simple live-feed item and emit it.
 
@@ -121,24 +122,21 @@ class MemoryStore:
         callers only want to post a short live feed message.
         """
         safe_details = dict(details or {})
-        timestamp_val = safe_details.get("timestamp", 0)
-        # Convert timestamp to datetime
-        if isinstance(timestamp_val, int):
-            created_at = datetime.fromtimestamp(timestamp_val) if timestamp_val > 0 else datetime.now()
-        else:
-            created_at = datetime.now()
+        event_time = safe_details.get("timestamp", 0)
         
         feed_item = LiveFeedItem(
             event_type=event_type,
             message=message,
             details=safe_details,
-            created_at=created_at,
+            event_time=event_time,
         )
+        
+        logger.info(f"[MemoryStore] add_live_feed called with feed_item: {feed_item}")
         with self._lock:
             self._append_feed(feed_item)
-            payload = self._serialize_feed_item(feed_item)
-
-        self._emit("live_feed", payload)
+        
+        feed_payload = self._serialize_feed_item(feed_item)
+        logger.info(f"[MemoryStore] Emitting live_feed event: {feed_payload}")
 
     # ------------------------------------------------------------------
     # Configuration and status
@@ -370,18 +368,8 @@ class MemoryStore:
         else:
             item.details = dict(item.details)
 
-        recent = list(self._live_feed)[-10:]
-        for existing in reversed(recent):
-            if (
-                existing.event_type == item.event_type
-                and existing.message == item.message
-                and existing.details == item.details
-            ):
-                logger.debug("[MemoryStore] duplicate live feed suppressed for event %s", item.event_type)
-                return
-
         self._live_feed.append(item)
-        logger.info("[MemoryStore] appended live feed item %s", item.event_type)
+        logger.info("[MemoryStore] appended live feed item %s:  %s", item.event_type, item.message)
 
     def _serialize_round(self, round_data: Optional[LotteryRound]) -> Optional[dict]:
         if not round_data:
@@ -447,7 +435,7 @@ class MemoryStore:
             "type": item.event_type,
             "message": item.message,
             "details": item.details,
-            "timestamp": item.created_at.isoformat(),
+            "timestamp": item.event_time,
         }
 
     def _serialize_config(self, config: ContractConfig) -> dict:
@@ -603,7 +591,7 @@ class EventManager:
                 cfg = await self.client.get_contract_config()
                 self.store.set_contract_config(cfg)
             except Exception as exc:
-                logger.debug("EventManager contract_config_loop error: %s", exc)
+                logger.error("EventManager contract_config_loop error: %s", exc)
             
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=self._contract_config_interval)
@@ -624,7 +612,7 @@ class EventManager:
                 round_data = await self.client.get_current_round()
                 self.store.set_current_round(round_data, reset_participants=False)
             except Exception as exc:  # pragma: no cover
-                logger.debug("EventManager round refresh error: %s", exc)
+                logger.error("EventManager round refresh error: %s", exc)
 
             try:
                 # Refresh participants if a round is active
@@ -633,7 +621,7 @@ class EventManager:
                     summaries = await self.client.get_participant_summaries(current.round_id)
                     self.store.sync_participants(summaries)
             except Exception as exc:  # pragma: no cover
-                logger.debug("EventManager participants refresh error: %s", exc)
+                logger.error("EventManager participants refresh error: %s", exc)
 
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=interval)
@@ -655,7 +643,7 @@ class EventManager:
             try:
                 events = await self.client.get_events(self._from_block)
             except Exception as exc:
-                logger.debug("EventManager events_loop get_events error: %s", exc)
+                logger.error("EventManager events_loop get_events error: %s", exc)
                 events = []
 
             if events:
@@ -664,17 +652,16 @@ class EventManager:
                     try:
                         await self._handle_event(evt)
                     except Exception as exc:
-                        logger.debug("EventManager failed to handle event %s: %s", getattr(evt, 'name', None), exc)
-                # advance from_block to last seen + 1
-                last_block = max(e.block_number for e in events)
-                self._from_block = last_block + 1
+                        logger.error("EventManager failed to handle event %s: %s", getattr(evt, 'name', None), exc)
             else:
                 # back off briefly when no events
                 await asyncio.sleep(1.0)
 
             # small sleep to avoid tight loop
+            self._from_block = self.client.get_last_seen_block() + 1
             await asyncio.sleep(0.2)
 
+        
     async def _handle_event(self, evt: Any) -> None:
         name = getattr(evt, "name", "")
         args = getattr(evt, "args", {}) or {}
@@ -696,6 +683,7 @@ class EventManager:
         # present in args) in the feed.details.
         live_feed_events = {
             "RoundCreated",
+            "RoundStateChanged",
             "BetPlaced",
             "RoundCompleted",
             "RoundRefunded",
@@ -703,14 +691,16 @@ class EventManager:
 
         if name in live_feed_events:
             try:
-                message = f"{name}"
+                message = self._generate_event_message(name, args)
+                logger.info("Adding live feed event: %s", message)
+                # add_live_feed will normalise details and convert timestamps
                 self.store.add_live_feed(
                     event_type=name,
                     message=message,
-                    details=args,
+                    details=args
                 )
             except Exception as exc:
-                logger.debug("Failed to post %s live feed: %s", name, exc)
+                logger.error("Failed to add %s live feed: %s", name, exc)
 
         else:
             # Other events: operator/config updates
@@ -726,4 +716,61 @@ class EventManager:
             try:
                 self.store.add_history_snapshot(event_type=name, details=dict(args))
             except Exception as exc:
-                logger.debug("Failed to append history snapshot for %s: %s", name, exc)
+                logger.error("Failed to append history snapshot for %s: %s", name, exc)
+
+    def _generate_event_message(self, event_type: str, args: dict | None) -> str:
+        """Generate a human-friendly message for live feed entries.
+
+        Keep this function compact and defensive: it should not raise for
+        unexpected argument shapes. Return a short text summary suitable for
+        the live activity feed.
+        """
+        a = args or {}
+        try:
+            if event_type == "RoundCreated":
+                rid = a.get("roundId") or a.get("round_id")
+                return f"Round {rid} created" if rid is not None else "Round created"
+
+            if event_type == "BetPlaced":
+                player = a.get("player") or a.get("from") or a.get("address")
+                player = shorten_eth_address(player)
+                amount = a.get("amount") or a.get("value") or a.get("betAmount")
+                amt_str = f" for {int(amount) / 1e18:.4f} ETH" if amount is not None and str(amount).isdigit() else (f" for {amount}" if amount is not None else "")
+                who = player if player else "a player"
+                return f"{who} placed a bet{amt_str}"
+
+            if event_type == "RoundCompleted":
+                rid = a.get("roundId") or a.get("round_id")
+                winner = a.get("winner")
+                winner = shorten_eth_address(winner) if winner else "unknown"
+                return f"Round {rid} completed - winner: {winner}" if rid is not None else f"Round completed - winner: {winner}"
+
+            if event_type == "RoundRefunded":
+                rid = a.get("roundId") or a.get("round_id")
+                reason = a.get("reason") or a.get("refundReason")
+                if reason:
+                    return f"Round {rid} refunded: {reason}"
+                return f"Round {rid} refunded" if rid is not None else "Round refunded"
+
+            if event_type == "RoundStateChanged":
+                rid = a.get("roundId") or a.get("round_id")
+                new_state = a.get("newState")
+                new_state_name = RoundState(int(new_state))
+                return f"Round {rid} state transitioned to {new_state_name.name}" if rid is not None else f"Round state transitioned to {new_state_name.name}"
+
+            if event_type == "EndTimeExtended":
+                rid = a.get("roundId") or a.get("round_id")
+                new_end = a.get("newEndTime") or a.get("new_end_time")
+                return f"Round {rid} end extended to {new_end}" if rid is not None else "Round end extended"
+
+            # Fallback: present the event name and any obvious identifying field
+            rid = a.get("roundId") or a.get("round_id")
+            if rid is not None:
+                return f"{event_type} for round {rid}"
+            player = a.get("player") or a.get("address") or a.get("from")
+            if player:
+                return f"{event_type} by {player}"
+            return event_type
+        except Exception:
+            # Defensive fallback so message generation never raises
+            return event_type

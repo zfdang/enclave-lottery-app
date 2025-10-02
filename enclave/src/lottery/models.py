@@ -88,7 +88,13 @@ class LiveFeedItem:
     event_type: str
     message: str
     details: Dict[str, int | str]
-    created_at: datetime
+    event_time: timestamp
+    
+    def get_item_id(self) -> str:
+        round_id = self.details.get("roundId", 0)
+        timestamp = self.event_time
+        event_type = self.event_type
+        return f"{round_id}-{timestamp}-{event_type}"
 
 
 @dataclass
