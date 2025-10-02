@@ -89,30 +89,3 @@ class LiveFeedItem:
         timestamp = self.event_time
         event_type = self.event_type
         return f"{round_id}-{timestamp}-{event_type}"
-
-
-@dataclass
-class OperatorStatus:
-    """Operational metrics for the passive operator loop."""
-
-    is_running: bool = False
-    current_round_id: Optional[int] = None
-    last_event_time: Optional[datetime] = None
-    last_draw_attempt: Optional[datetime] = None
-    consecutive_draw_failures: int = 0
-    max_draw_retries: int = 3
-    scheduled_draw_round_id: Optional[int] = None
-    scheduled_draw_due_at: Optional[int] = None
-    watchdog_last_check: Optional[datetime] = None
-
-    def record_event(self) -> None:
-        self.last_event_time = datetime.utcnow()
-
-    def record_draw_attempt(self) -> None:
-        self.last_draw_attempt = datetime.utcnow()
-
-    def reset_draw_failures(self) -> None:
-        self.consecutive_draw_failures = 0
-
-    def increment_draw_failures(self) -> None:
-        self.consecutive_draw_failures += 1

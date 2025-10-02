@@ -16,7 +16,6 @@ from lottery.models import (
     ContractConfig,
     LiveFeedItem,
     LotteryRound,
-    OperatorStatus,
     ParticipantSummary,
     RoundSnapshot,
     RoundState,
@@ -34,7 +33,6 @@ class MemoryStore:
         self._history: deque[RoundSnapshot] = deque(maxlen=history_capacity)
         self._participant_summaries: Dict[str, ParticipantSummary] = {}
         self._current_round: Optional[LotteryRound] = None
-        self._operator_status = OperatorStatus()
         self._contract_config: Optional[ContractConfig] = None
 
     # ------------------------------------------------------------------
@@ -72,8 +70,6 @@ class MemoryStore:
             for item in history:
                 self._history.append(item)
             self._contract_config = contract_config
-            if current_round:
-                self._operator_status.current_round_id = current_round.round_id
 
         if current_round:
             self._emit("round_update", self._serialize_round(current_round))
@@ -91,10 +87,6 @@ class MemoryStore:
             self._current_round = round_data
             if reset_participants:
                 self._participant_summaries = {}
-            self._operator_status.current_round_id = (
-                round_data.round_id if round_data else None
-            )
-            self._operator_status.record_event()
 
             payload = self._serialize_round(round_data) if round_data else None
 
@@ -135,8 +127,8 @@ class MemoryStore:
         with self._lock:
             self._append_feed(feed_item)
         
-        feed_payload = self._serialize_feed_item(feed_item)
-        logger.info(f"[MemoryStore] Emitting live_feed event: {feed_payload}")
+        # feed_payload = self._serialize_feed_item(feed_item)
+        # logger.info(f"[MemoryStore] Emitting live_feed event: {feed_payload}")
 
     # ------------------------------------------------------------------
     # Configuration and status
@@ -150,24 +142,6 @@ class MemoryStore:
     def get_contract_config(self) -> Optional[ContractConfig]:
         with self._lock:
             return self._contract_config
-
-    def update_operator_status(self, update: Callable[[OperatorStatus], None]) -> OperatorStatus:
-        with self._lock:
-            update(self._operator_status)
-            status_copy = OperatorStatus(
-                is_running=self._operator_status.is_running,
-                current_round_id=self._operator_status.current_round_id,
-                last_event_time=self._operator_status.last_event_time,
-                last_draw_attempt=self._operator_status.last_draw_attempt,
-                consecutive_draw_failures=self._operator_status.consecutive_draw_failures,
-                max_draw_retries=self._operator_status.max_draw_retries,
-                scheduled_draw_round_id=self._operator_status.scheduled_draw_round_id,
-                scheduled_draw_due_at=self._operator_status.scheduled_draw_due_at,
-                watchdog_last_check=self._operator_status.watchdog_last_check,
-            )
-        self._emit("operator_status", self._serialize_operator_status(status_copy))
-        logger.debug(f"[MemoryStore] update_operator_status called with update={update}")
-        return status_copy
 
     # ------------------------------------------------------------------
     # Accessors
@@ -198,10 +172,6 @@ class MemoryStore:
             return items[-limit:]
         return items
 
-    def get_operator_status(self) -> OperatorStatus:
-        with self._lock:
-            return self._operator_status
-
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -213,7 +183,7 @@ class MemoryStore:
         try:
             d = dict(details or {})
             
-            logger.info(f"[MemoryStore] add_history_snapshot called with event_type={event_type}, details={d}")
+            # logger.info(f"[MemoryStore] add_history_snapshot called with event_type={event_type}, details={d}")
 
             def _as_int(value: Any, default: int = 0) -> int:
                 if value is None:
@@ -345,28 +315,12 @@ class MemoryStore:
             "minParticipants": config.min_participants,
         }
 
-    def _serialize_operator_status(self, status: OperatorStatus) -> dict:
-        return {
-            "isRunning": status.is_running,
-            "currentRoundId": status.current_round_id,
-            "lastEventTime": status.last_event_time.isoformat() if status.last_event_time else None,
-            "lastDrawAttempt": status.last_draw_attempt.isoformat() if status.last_draw_attempt else None,
-            "consecutiveDrawFailures": status.consecutive_draw_failures,
-            "maxDrawRetries": status.max_draw_retries,
-            "scheduledDrawRoundId": status.scheduled_draw_round_id,
-            "scheduledDrawDueAt": status.scheduled_draw_due_at,
-            "watchdogLastCheck": status.watchdog_last_check.isoformat() if status.watchdog_last_check else None,
-        }
-
     def clear_all_data(self) -> None:
         with self._lock:
             self._current_round = None
             self._participant_summaries = {}
             self._history.clear()
             self._live_feed.clear()
-            self._operator_status = OperatorStatus(
-                max_draw_retries=self._operator_status.max_draw_retries
-            )
             self._contract_config = None
         self._emit("round_update", None)
         self._emit("participants_update", self._serialize_participants())
