@@ -31,6 +31,7 @@ COPY --chown=lottery:lottery src/main.py /app/src/
 COPY --chown=lottery:lottery src/web_server.py /app/src/
 COPY --chown=lottery:lottery src/blockchain/ /app/src/blockchain/
 COPY --chown=lottery:lottery src/lottery/ /app/src/lottery/
+COPY --chown=lottery:lottery src/contracts/ /app/src/contracts/
 COPY --chown=lottery:lottery src/utils/ /app/src/utils/
 
 # Copy only the compiled frontend assets (not source)

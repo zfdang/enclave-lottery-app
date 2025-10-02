@@ -38,7 +38,7 @@ const HistoryPanel: React.FC = () => {
   const fetchHistory = async () => {
     setLoading(true)
     try {
-      const response = await getLotteryHistory(50) // Get last 50 rounds
+      const response = await getLotteryHistory(20) // Get last 20 rounds
       setHistoryData(response)
     } catch (error) {
       console.error('Error fetching history:', error)
@@ -50,7 +50,8 @@ const HistoryPanel: React.FC = () => {
 
   useEffect(() => {
     fetchHistory()
-    const interval = setInterval(fetchHistory, 30000)
+    // Refresh history every 5 seconds
+    const interval = setInterval(fetchHistory, 5000)
     return () => clearInterval(interval)
   }, [])
 
