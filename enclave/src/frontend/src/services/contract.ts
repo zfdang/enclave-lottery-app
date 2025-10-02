@@ -61,7 +61,7 @@ class ContractService {
     this.contractAddress = import.meta.env.VITE_LOTTERY_CONTRACT_ADDRESS || ''
     this.rpcUrl = import.meta.env.VITE_RPC_URL || ''
     this.chainId = import.meta.env.VITE_CHAIN_ID ? Number(import.meta.env.VITE_CHAIN_ID) : undefined
-    console.log('ContractService initialized with address:', this.contractAddress + ', rpcUrl:', this.rpcUrl + ', chainId:', this.chainId)
+    // console.log('ContractService initialized with address:', this.contractAddress + ', rpcUrl:', this.rpcUrl + ', chainId:', this.chainId)
   }
 
   /**

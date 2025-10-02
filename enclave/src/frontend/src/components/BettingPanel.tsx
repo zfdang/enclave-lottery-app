@@ -7,8 +7,11 @@ import {
   CircularProgress,
   IconButton,
   Dialog,
+  DialogContent,
+  DialogActions,
+  Divider,
 } from '@mui/material'
-import { Casino, Add, Remove } from '@mui/icons-material'
+import { Casino, Add, Remove, CheckCircleOutline } from '@mui/icons-material'
 
 import { useWalletStore } from '../services/wallet'
 import { contractService } from '../services/contract'
@@ -24,6 +27,9 @@ const BettingPanel: React.FC = () => {
   const [notificationOpen, setNotificationOpen] = useState(false)
   const [notificationMessage, setNotificationMessage] = useState('')
   const [notificationSeverity, setNotificationSeverity] = useState<'success' | 'error' | 'info' | 'warning'>('info')
+  const [successDialogOpen, setSuccessDialogOpen] = useState(false)
+  const [successMessage, setSuccessMessage] = useState('')
+  const [successCountdown, setSuccessCountdown] = useState(5)
   const [userBetAmount, setUserBetAmount] = useState(0)
   const [userWinRate, setUserWinRate] = useState<number | null>(null)
   // default value for BASE_BET
@@ -82,6 +88,25 @@ const BettingPanel: React.FC = () => {
     loadMinBet()
   }, [isConnected])
 
+  useEffect(() => {
+    if (!successDialogOpen) return
+
+    setSuccessCountdown(5)
+
+    const timer = setInterval(() => {
+      setSuccessCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer)
+          setSuccessDialogOpen(false)
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [successDialogOpen])
+
   const getTotalMultiplier = (): number => {
     return ones + tens * 10 + hundreds * 100
   }
@@ -139,10 +164,11 @@ const BettingPanel: React.FC = () => {
       const transactionHash = await contractService.placeBet(betAmount.toString())
 
       // Optimistically update UI and show success dialog
-      const successMsg = `Bet placed successfully! Transaction: ${transactionHash.slice(0, 10)}...`
-      setNotificationMessage(successMsg)
-      setNotificationSeverity('success')
-      setNotificationOpen(true)
+  const successMsg = `Bet placed successfully! Transaction: ${transactionHash.slice(0, 10)}...`
+  setSuccessMessage(successMsg)
+  setSuccessDialogOpen(true)
+  setNotificationOpen(false)
+  setNotificationMessage('')
       setUserBetAmount(prev => prev + betAmount)
 
       // Refresh user's bet stats from backend (best-effort)
@@ -328,6 +354,51 @@ const BettingPanel: React.FC = () => {
             {notificationMessage}
           </Alert>
         </Box>
+      </Dialog>
+
+      <Dialog
+        open={successDialogOpen}
+        onClose={() => setSuccessDialogOpen(false)}
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            background: 'linear-gradient(135deg, rgba(67, 160, 71, 0.95), rgba(102, 187, 106, 0.95))',
+            color: 'white',
+            minWidth: 360,
+            boxShadow: '0 20px 40px rgba(0, 0, 0, 0.35)'
+          }
+        }}
+      >
+        <DialogContent sx={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+          <CheckCircleOutline sx={{ fontSize: 64 }} />
+          <Typography variant="h5" sx={{ fontWeight: 700 }}>
+            Bet Successful!
+          </Typography>
+          <Typography variant="body1" sx={{ opacity: 0.9 }}>
+            {successMessage}
+          </Typography>
+          <Divider sx={{ width: '100%', borderColor: 'rgba(255, 255, 255, 0.4)' }} />
+          <Typography variant="body2" sx={{ opacity: 0.85 }}>
+            This dialog will close in <strong>{Math.max(successCountdown, 0)}</strong> seconds.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ justifyContent: 'center', pb: 3 }}>
+          <Button
+            variant="contained"
+            onClick={() => setSuccessDialogOpen(false)}
+            sx={{
+              px: 4,
+              borderRadius: 999,
+              background: 'rgba(255, 255, 255, 0.2)',
+              color: 'white',
+              '&:hover': {
+                background: 'rgba(255, 255, 255, 0.35)'
+              }
+            }}
+          >
+            Close Now
+          </Button>
+        </DialogActions>
       </Dialog>
 
       {/* Unmet Conditions Dialog */}

@@ -13,6 +13,7 @@ import {
 import { People, Person, ConfirmationNumber } from '@mui/icons-material'
 
 import { getParticipants } from '../services/api'
+import { formatAddress, formatEther, generateAvatarColor } from '../utils/helpers'
 
 interface Participant {
   address: string
@@ -27,7 +28,6 @@ interface ParticipantsResponse {
   participants: Participant[]
   total_participants: number
   // Aggregates may be omitted by older backends; treat as optional.
-  total_bets?: number
   total_amount_wei?: number
   timestamp?: string
   message?: string
@@ -56,54 +56,11 @@ const UserList: React.FC = () => {
     return () => clearInterval(interval)
   }, [])
 
-  const formatAddress = (address: string): string => {
-    return address.slice(0, 6) + '...' + address.slice(-4)
-  }
-
-  const formatEth = (wei: number | string | undefined): string => {
-    const value = Number(wei ?? 0)
-    if (!Number.isFinite(value)) return '0.0000'
-    return (value / 1e18).toFixed(4)
-  }
-
-  const getAvatarColor = (address: string): string => {
-    // Expanded palette to reduce color collisions for many participants
-    const colors = [
-      '#f44336', '#e91e63', '#9c27b0', '#673ab7',
-      '#3f51b5', '#2196f3', '#03a9f4', '#00bcd4',
-      '#009688', '#4caf50', '#8bc34a', '#cddc39',
-      '#ffeb3b', '#ffc107', '#ff9800', '#ff5722',
-      '#795548', '#9e9e9e', '#607d8b', '#ff4081',
-      '#7c4dff', '#536dfe', '#448aff', '#00bfa5'
-    ]
-
-    // Safely extract last two hex chars from address; fallback to stable value
-    let tail = '00'
-    try {
-      if (typeof address === 'string' && address.length > 0) {
-        tail = address.replace(/^0x/i, '').slice(-2)
-        if (!/^[0-9a-fA-F]{1,2}$/.test(tail)) {
-          tail = '00'
-        }
-      }
-    } catch (e) {
-      tail = '00'
-    }
-
-    const index = parseInt(tail, 16) % colors.length
-    return colors[index]
-  }
-
   const safeParticipants = participantsData?.participants || []
   const count = safeParticipants.length
-  const totalTickets = safeParticipants.reduce(
-    (total: number, p: Participant) => total + ((p as any).betCount ?? 1),
-    0
-  )
   const totalAmountWei =
     participantsData?.total_amount_wei ??
     safeParticipants.reduce((sum: number, p: Participant) => sum + Number((p as any).totalAmountWei ?? 0), 0)
-  const totalBets = participantsData?.total_bets ?? totalTickets
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', p: 1 }}>
@@ -117,7 +74,7 @@ const UserList: React.FC = () => {
       {participantsData?.round_id ? (
         <Box mb={1} p={1} sx={{ bgcolor: 'rgba(255, 255, 255, 0.1)', borderRadius: 1 }}>
           <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.8)' }}>
-            Round #{participantsData.round_id} • {totalBets} tickets • {formatEth(totalAmountWei)} ETH total bets
+            Round #{participantsData.round_id} • {formatEther(totalAmountWei)} ETH total bets
           </Typography>
         </Box>
       ) : null}
@@ -150,7 +107,7 @@ const UserList: React.FC = () => {
                   <ListItemIcon sx={{ minWidth: 35 }}>
                     <Avatar 
                       sx={{ 
-                        bgcolor: getAvatarColor(participant.address ?? '0x0'),
+                        bgcolor: generateAvatarColor(participant.address ?? '0x0'),
                         width: 28, 
                         height: 28,
                         fontSize: '0.75rem'
@@ -170,7 +127,7 @@ const UserList: React.FC = () => {
                         <Box display="flex" alignItems="center" gap={0.5} mt={0.5} flexWrap="wrap">
                           <Chip
                             icon={<ConfirmationNumber sx={{ fontSize: '0.7rem !important' }} />}
-                            label={formatEth((participant as any).total_bet_amount ?? (participant as any).totalAmountWei ?? 0) + ' ETH'}
+                            label={formatEther((participant as any).total_bet_amount ?? (participant as any).totalAmountWei ?? 0) + ' ETH'}
                             size="small"
                             sx={{ 
                               height: 18, 
@@ -195,13 +152,7 @@ const UserList: React.FC = () => {
         </Box>
       )}
 
-      {count > 0 && (
-        <Box mt={1} pt={1} sx={{ borderTop: '1px solid rgba(255, 255, 255, 0.2)' }}>
-          <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.8)' }} textAlign="center">
-            Total tickets: {totalTickets}
-          </Typography>
-        </Box>
-      )}
+
     </Box>
   )
 }

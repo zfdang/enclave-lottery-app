@@ -273,12 +273,14 @@ class LotteryWebServer:
             limit = max(1, min(limit, 200))
             history = self._store.get_round_history(limit=limit)
             rounds = [self._serialize_history_round(item) for item in history]
+            # sort rounds by round_id descending (newest first)
+            rounds.sort(key=lambda x: x["round_id"], reverse=True)
             return {
                 "rounds": rounds,
                 "summary": {
                     "total_rounds": len(rounds),
-                    "completed_rounds": sum(1 for r in rounds if r["final_state"] == "COMPLETED"),
-                    "refunded_rounds": sum(1 for r in rounds if r["final_state"] == "REFUNDED"),
+                    "completed_rounds": sum(1 for r in rounds if r["event_type"] == "RoundCompleted"),
+                    "refunded_rounds": sum(1 for r in rounds if r["event_type"] == "RoundRefunded"),
                     "total_volume_wei": sum(r["total_pot_wei"] for r in rounds),
                 },
                 "pagination": {"limit": limit, "returned": len(rounds)},
@@ -546,19 +548,13 @@ class LotteryWebServer:
 
     def _serialize_history_round(self, snapshot: RoundSnapshot) -> Dict[str, Any]:
         return {
+            "event_type": snapshot.event_type,
             "round_id": snapshot.round_id,
-            "final_state": snapshot.state.name,
-            "start_time": snapshot.start_time,
-            "end_time": snapshot.end_time,
-            "min_draw_time": snapshot.min_draw_time,
-            "max_draw_time": snapshot.max_draw_time,
-            "total_pot_wei": snapshot.total_pot,
             "participant_count": snapshot.participant_count,
+            "total_pot_wei": snapshot.total_pot,
+            "finished_at": snapshot.finished_at,
             "winner": snapshot.winner,
             "winner_prize_wei": snapshot.winner_prize,
-            "publisher_commission_wei": snapshot.publisher_commission,
-            "sparsity_commission_wei": snapshot.sparsity_commission,
-            "finished_at": snapshot.finished_at,
             "refund_reason": snapshot.refund_reason,
         }
 

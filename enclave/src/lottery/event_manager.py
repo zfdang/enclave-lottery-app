@@ -205,18 +205,15 @@ class MemoryStore:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-    def _append_history(self, snapshot: RoundSnapshot) -> None:
-        self._history.append(snapshot)
-
     def add_history_snapshot(self, *, event_type: str, details: Dict[str, int | str]) -> None:
         """Public helper to append a RoundSnapshot to history and emit update.
 
-        The EventManager may call this with event args (details) from contract
-        events; attempt to normalise common field names and fall back to the
-        current round when fields are missing.
+        Extracts all information from details dict; no fallback to current_round.
         """
         try:
-            snapshot_details = dict(details or {})
+            d = dict(details or {})
+            
+            logger.info(f"[MemoryStore] add_history_snapshot called with event_type={event_type}, details={d}")
 
             def _as_int(value: Any, default: int = 0) -> int:
                 if value is None:
@@ -228,139 +225,41 @@ class MemoryStore:
                 except Exception:
                     return default
 
-            current_round = self.get_current_round()
-            round_id = _as_int(
-                snapshot_details.get("roundId")
-                or snapshot_details.get("round_id")
-                or (current_round.round_id if current_round else 0)
-            )
-            start_time = _as_int(snapshot_details.get("startTime") or snapshot_details.get("start_time"))
-            end_time = _as_int(snapshot_details.get("endTime") or snapshot_details.get("end_time"))
-            min_draw_time = _as_int(
-                snapshot_details.get("minDrawTime") or snapshot_details.get("min_draw_time")
-            )
-            max_draw_time = _as_int(
-                snapshot_details.get("maxDrawTime") or snapshot_details.get("max_draw_time")
-            )
-            total_pot = _as_int(
-                snapshot_details.get("totalPot")
-                or snapshot_details.get("total_pot")
-                or snapshot_details.get("total_pot_wei")
-                or snapshot_details.get("totalPotWei")
-                or snapshot_details.get("totalRefunded")
-                or snapshot_details.get("total_refunded")
-            )
-            participant_count = _as_int(
-                snapshot_details.get("participantCount") or snapshot_details.get("participant_count")
-            )
-            winner = snapshot_details.get("winner")
-            if event_type == "RoundRefunded":
+            # Extract required fields
+            round_id = _as_int(d.get("roundId", 0))
+            participant_count = _as_int(d.get("participantCount", 0))
+            total_pot = 0
+            finished_at = _as_int(d.get("timestamp", 0))
+
+            # Conditional fields based on event_type
+            if event_type == "RoundCompleted":
+                winner = d.get("winner")
+                winner_prize = _as_int(d.get("winnerPrize", 0))
+                refund_reason = None
+                total_pot = _as_int(d.get("totalPot", 0))
+            else:  # RoundRefunded
                 winner = None
-            winner_prize = _as_int(
-                snapshot_details.get("winnerPrize")
-                or snapshot_details.get("winner_prize")
-                or snapshot_details.get("winnerPrizeWei")
-                or snapshot_details.get("winner_prize_wei")
-            )
-            publisher_commission = _as_int(
-                snapshot_details.get("publisherCommission")
-                or snapshot_details.get("publisher_commission")
-                or snapshot_details.get("publisherCommissionWei")
-                or snapshot_details.get("publisher_commission_wei")
-            )
-            sparsity_commission = _as_int(
-                snapshot_details.get("sparsityCommission")
-                or snapshot_details.get("sparsity_commission")
-                or snapshot_details.get("sparsityCommissionWei")
-                or snapshot_details.get("sparsity_commission_wei")
-            )
-            # Determine state enum if provided
-            state_val = snapshot_details.get("state") or snapshot_details.get("final_state")
-            if state_val is None:
-                # fallback: completed/refunded based on event_type
-                state = RoundState.COMPLETED if event_type == "RoundCompleted" else RoundState.REFUNDED
-            else:
-                try:
-                    # if numeric
-                    state = RoundState(int(state_val))
-                except Exception:
-                    try:
-                        state = RoundState[state_val]
-                    except Exception:
-                        state = RoundState.COMPLETED
-
-            finished_at = _as_int(
-                snapshot_details.get("timestamp")
-                or snapshot_details.get("finishedAt")
-                or snapshot_details.get("finished_at")
-            )
-            refund_reason = snapshot_details.get("refundReason") or snapshot_details.get("refund_reason")
-
-            if current_round and current_round.round_id == round_id:
-                if start_time == 0:
-                    start_time = current_round.start_time
-                if end_time == 0:
-                    end_time = current_round.end_time
-                if min_draw_time == 0:
-                    min_draw_time = current_round.min_draw_time
-                if max_draw_time == 0:
-                    max_draw_time = current_round.max_draw_time
-                if total_pot == 0:
-                    total_pot = current_round.total_pot
-                if participant_count == 0:
-                    participant_count = current_round.participant_count
-                if winner is None and current_round.winner:
-                    winner = current_round.winner
-                if winner_prize == 0:
-                    winner_prize = current_round.winner_prize
-                if publisher_commission == 0:
-                    publisher_commission = current_round.publisher_commission
-                if sparsity_commission == 0:
-                    sparsity_commission = current_round.sparsity_commission
+                winner_prize = 0
+                refund_reason = d.get("reason")
+                total_pot = _as_int(d.get("totalRefunded", 0))
 
             snapshot = RoundSnapshot(
+                event_type=event_type,
                 round_id=round_id,
-                start_time=start_time,
-                end_time=end_time,
-                min_draw_time=min_draw_time,
-                max_draw_time=max_draw_time,
-                total_pot=total_pot,
                 participant_count=participant_count,
-                winner=winner,
-                winner_prize=winner_prize,
-                publisher_commission=publisher_commission,
-                sparsity_commission=sparsity_commission,
-                state=state,
+                total_pot=total_pot,
                 finished_at=finished_at,
                 refund_reason=refund_reason,
+                winner=winner,
+                winner_prize=winner_prize,
             )
-            appended = False
+            
             with self._lock:
-                duplicate = False
-                for existing in reversed(self._history):
-                    if (
-                        existing.round_id == snapshot.round_id
-                        and existing.state == snapshot.state
-                        and existing.finished_at == snapshot.finished_at
-                    ):
-                        duplicate = True
-                        break
-                if duplicate:
-                    logger.debug("[MemoryStore] duplicate history snapshot for round %s suppressed", round_id)
-                else:
-                    self._append_history(snapshot)
-                    appended = True
+                self._history.append(snapshot)
 
-            if not appended:
-                return
-
-            history_payload = self._serialize_history()
-
-            # Emit an update for listeners
-            self._emit("history_update", history_payload)
-            logger.info(f"[MemoryStore] added history snapshot for round {round_id}")
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.warning("[MemoryStore] add_history_snapshot failed: %s", exc)
+            logger.info(f"[MemoryStore] Added history snapshot: {snapshot}")
+        except Exception as exc:
+            logger.error("[MemoryStore] add_history_snapshot failed: %s", exc)
 
     def _append_feed(self, item: LiveFeedItem) -> None:
         if item.details is None:
@@ -406,20 +305,13 @@ class MemoryStore:
     def _serialize_history(self) -> dict:
         rounds = [
             {
+                "eventType": snapshot.event_type,
                 "roundId": snapshot.round_id,
-                "state": snapshot.state.value,
-                "stateLabel": snapshot.state.name,
-                "startTime": snapshot.start_time,
-                "endTime": snapshot.end_time,
-                "minDrawTime": snapshot.min_draw_time,
-                "maxDrawTime": snapshot.max_draw_time,
-                "totalPotWei": snapshot.total_pot,
                 "participantCount": snapshot.participant_count,
+                "totalPotWei": snapshot.total_pot,
+                "finishedAt": snapshot.finished_at,
                 "winner": snapshot.winner,
                 "winnerPrizeWei": snapshot.winner_prize,
-                "publisherCommissionWei": snapshot.publisher_commission,
-                "sparsityCommissionWei": snapshot.sparsity_commission,
-                "finishedAt": snapshot.finished_at,
                 "refundReason": snapshot.refund_reason,
             }
             for snapshot in self.get_round_history()

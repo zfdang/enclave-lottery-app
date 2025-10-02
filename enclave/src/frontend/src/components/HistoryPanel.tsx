@@ -1,24 +1,19 @@
 import React, { useEffect, useState } from 'react'
 import { Typography, Box, List, ListItem, ListItemText, ListItemIcon, Chip, Divider, Avatar } from '@mui/material'
-import { History, EmojiEvents, AttachMoney, People, Undo } from '@mui/icons-material'
+import { History, EmojiEvents, AttachMoney, People, Undo, EmojiEventsOutlined, MilitaryTech } from '@mui/icons-material'
 
 import { getLotteryHistory } from '../services/api'
+import { formatAddress, formatEther, formatTime, generateAvatarColor } from '../utils/helpers'
 
 interface HistoryItem {
+  event_type: string  // "RoundCompleted" or "RoundRefunded"
   round_id: number
-  final_state: string
-  start_time: number
-  end_time: number
-  // backend uses wei-suffixed fields
-  total_pot_wei: number
   participant_count: number
-  // optional fields provided by backend
-  winner?: string | null
-  winner_prize_wei?: number
-  publisher_commission_wei?: number
-  sparsity_commission_wei?: number
-  finished_at?: number
-  refund_reason?: string | null
+  total_pot_wei: number
+  finished_at: number
+  winner?: string | null  // Only for RoundCompleted
+  winner_prize_wei?: number  // Only for RoundCompleted
+  refund_reason?: string | null  // Only for RoundRefunded
 }
 
 interface HistoryResponse {
@@ -59,34 +54,7 @@ const HistoryPanel: React.FC = () => {
     return () => clearInterval(interval)
   }, [])
 
-  const formatAddress = (address: string): string => {
-    return `${address.slice(0, 6)}...${address.slice(-4)}`
-  }
 
-  const formatDate = (timestamp?: number | string | null): string => {
-    const value = Number(timestamp ?? 0)
-    if (!Number.isFinite(value) || value <= 0) return ''
-    // backend uses seconds or milliseconds inconsistently; normalize: if > 1e12 assume ms else seconds
-    const asMs = value > 1e12 ? value : value * 1000
-    const date = new Date(asMs)
-    return `${date.toLocaleDateString()} ${date.toLocaleTimeString().slice(0, 5)}`
-  }
-
-  const formatEth = (wei?: number | string | null): string => {
-    const value = Number(wei ?? 0)
-    if (!Number.isFinite(value)) return '0.0000'
-    return (value / 1e18).toFixed(4)
-  }
-
-  const getAvatarColor = (address: string): string => {
-    const colors = [
-      '#3f51b5', '#2196f3', '#03a9f4', '#00bcd4',
-      '#009688', '#4caf50', '#8bc34a', '#cddc39',
-      '#ffeb3b', '#ffc107', '#ff9800', '#ff5722'
-    ]
-    const index = parseInt(address.slice(-2), 16) % colors.length
-    return colors[index]
-  }
 
   const safeHistory = historyData?.rounds || []
 
@@ -134,17 +102,18 @@ const HistoryPanel: React.FC = () => {
               <React.Fragment key={item.round_id}>
                 <ListItem sx={{ px: 1, py: 0.5 }}>
                   <ListItemIcon sx={{ minWidth: 35 }}>
-                    {((item as any).winner) ? (
+                    {item.event_type === 'RoundCompleted' ? (
                       <Avatar 
                         sx={{ 
-                          bgcolor: getAvatarColor((item as any).winner || '0x0'),
+                          bgcolor: item.winner ? generateAvatarColor(item.winner) : 'rgba(76, 175, 80, 0.5)',
                           width: 28, 
                           height: 28,
+                          color: 'white'
                         }}
                       >
                         <EmojiEvents sx={{ fontSize: '0.9rem' }} />
                       </Avatar>
-                    ) : ((item as any).refund_reason) ? (
+                    ) : item.event_type === 'RoundRefunded' ? (
                       <Avatar 
                         sx={{ 
                           bgcolor: 'rgba(255, 152, 0, 0.5)',
@@ -171,17 +140,17 @@ const HistoryPanel: React.FC = () => {
                   <ListItemText
                     primary={
                       <Box>
-                        {((item as any).winner) ? (
+                        {item.winner ? (
                           <Typography variant="body2" sx={{ color: 'white', fontWeight: 'bold' }}>
-                            Winner: {formatAddress((item as any).winner)}
+                            Winner: {formatAddress(item.winner)}
                           </Typography>
-                        ) : ((item as any).refund_reason) ? (
+                        ) : item.event_type === 'RoundRefunded' ? (
                           <Typography variant="body2" sx={{ color: 'rgba(255, 152, 0, 0.8)' }}>
                             Refunded
                           </Typography>
                         ) : (
                           <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.8)' }}>
-                            {item.final_state}
+                            {item.event_type}
                           </Typography>
                         )}
                       </Box>
@@ -191,12 +160,12 @@ const HistoryPanel: React.FC = () => {
                         <Box display="flex" alignItems="center" gap={0.5} mt={0.5} flexWrap="wrap">
                           <Chip
                             icon={<AttachMoney sx={{ fontSize: '0.7rem !important' }} />}
-                            label={`${formatEth((item as any).total_pot_wei ?? 0)} ETH`}
+                            label={`${formatEther(item.total_pot_wei)} ETH`}
                             size="small"
                             sx={{ 
                               height: 18, 
                               fontSize: '0.65rem',
-                              bgcolor: (item as any).winner ? 'rgba(76, 175, 80, 0.3)' : (item as any).refund_reason ? 'rgba(255, 152, 0, 0.3)' : 'rgba(255, 255, 255, 0.2)',
+                              bgcolor: item.winner ? 'rgba(76, 175, 80, 0.3)' : item.refund_reason ? 'rgba(255, 152, 0, 0.3)' : 'rgba(255, 255, 255, 0.2)',
                               color: 'white'
                             }}
                           />
@@ -212,14 +181,19 @@ const HistoryPanel: React.FC = () => {
                             }}
                           />
                         </Box>
-                        {(item as any).winner && (
+                        {item.event_type === 'RoundCompleted'  && (
                           <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
-                            Prize: {formatEth((item as any).winner_prize_wei ?? 0)} ETH
+                            Prize: {formatEther(item.winner_prize_wei ?? 0)} ETH
+                          </Typography>
+                        )}
+                        {item.event_type === 'RoundRefunded' && (
+                          <Typography variant="caption" sx={{ color: 'rgba(255, 152, 0, 0.8)' }}>
+                            Reason: {item.refund_reason}
                           </Typography>
                         )}
                         <br />
                         <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.6)' }}>
-                          Round #{item.round_id} • {formatDate(item.start_time)}
+                          Round #{item.round_id} • {formatTime(item.finished_at)}
                         </Typography>
                       </Box>
                     }

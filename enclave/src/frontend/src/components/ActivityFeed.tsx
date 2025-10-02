@@ -19,6 +19,7 @@ import {
 } from '@mui/icons-material'
 
 import { getActivities } from '../services/api'
+import { formatAddress, formatTime, generateAvatarColor } from '../utils/helpers'
 
 type ActivityType =
   | 'BetPlaced'
@@ -62,41 +63,7 @@ const ActivityFeed: React.FC = () => {
     return () => clearInterval(interval)
   }, [])
 
-  const formatAddress = (address: string): string => {
-    return `${address.slice(0, 6)}...${address.slice(-4)}`
-  }
 
-  const formatTime = (timestamp: number | Date): string => {
-    // Handle Unix timestamp (in seconds or milliseconds)
-    let date: Date
-    if (typeof timestamp === 'number') {
-      // If timestamp is in seconds (< 10 digits), convert to milliseconds
-      const ts = timestamp < 10000000000 ? timestamp * 1000 : timestamp
-      date = new Date(ts)
-    } else {
-      date = timestamp
-    }
-
-    if (!date || Number.isNaN(date.getTime())) {
-      return ''
-    }
-
-    // Format in user's local timezone and locale
-    try {
-      return new Intl.DateTimeFormat(undefined, {
-        year: 'numeric',
-        month: 'short',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        timeZoneName: 'short'
-      }).format(date)
-    } catch (error) {
-      console.warn('Date formatting failed, using fallback:', error)
-      return date.toLocaleString()
-    }
-  }
 
   const getActivityIcon = (type: ActivityType) => {
     switch (type) {
@@ -129,25 +96,16 @@ const ActivityFeed: React.FC = () => {
   }
 
 
-  const getAvatarColor = (address: string): string => {
-    const colors = [
-      '#f44336', '#e91e63', '#9c27b0', '#673ab7',
-      '#3f51b5', '#2196f3', '#03a9f4', '#00bcd4',
-      '#009688', '#4caf50', '#8bc34a', '#cddc39',
-      '#ffeb3b', '#ffc107', '#ff9800', '#ff5722'
-    ]
-    const index = parseInt(address.slice(-2), 16) % colors.length
-    return colors[index]
-  }
+
 
   return (
     <Box
       sx={{
+        height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        height: '100%',
-        minHeight: '400px',
-        maxHeight: '400px',
+        p: 1,
+        minHeight: 0
       }}
     >
       <Box display="flex" alignItems="center" mb={1} justifyContent="center" sx={{ flexShrink: 0 }}>
@@ -178,7 +136,6 @@ const ActivityFeed: React.FC = () => {
           flex={1}
           sx={{ 
             color: 'rgba(255, 255, 255, 0.7)',
-            minHeight: '300px'
           }}
         >
           <Notifications sx={{ fontSize: 40, mb: 1 }} />
@@ -190,32 +147,8 @@ const ActivityFeed: React.FC = () => {
           </Typography>
         </Box>
       ) : (
-        <Box
-          sx={{
-            flexGrow: 1,
-            height: 0, // Force flex child to respect parent's height constraints
-            background: 'rgba(0, 0, 0, 0.2)',
-            borderRadius: 1,
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            overflowY: 'scroll',
-            overflowX: 'hidden',
-            '&::-webkit-scrollbar': {
-              width: '8px',
-            },
-            '&::-webkit-scrollbar-track': {
-              backgroundColor: 'rgba(255, 255, 255, 0.1)',
-              borderRadius: '4px',
-            },
-            '&::-webkit-scrollbar-thumb': {
-              backgroundColor: 'rgba(255, 255, 255, 0.3)',
-              borderRadius: '4px',
-              '&:hover': {
-                backgroundColor: 'rgba(255, 255, 255, 0.5)',
-              }
-            }
-          }}
-        >
-          <List sx={{ p: 1, pb: 4 }}>
+        <Box flex={1} overflow="hidden" sx={{ minHeight: 0 }}>
+          <List sx={{ overflow: 'auto', height: '100%', p: 0 }}>
             {activities.map((activity) => (
               <ListItem key={activity.activity_id} sx={{ px: 1, py: 0.5 }}>
                 <ListItemIcon sx={{ minWidth: 35 }}>

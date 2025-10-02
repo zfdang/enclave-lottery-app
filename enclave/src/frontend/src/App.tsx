@@ -452,7 +452,7 @@ function App() {
                 ) : null}
               </Box>
             </Box>
-            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: 1 }}>
+            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: 1, minHeight: 0 }}>
               {/* Keep LotteryTimer fixed at top of this area */}
               <Box sx={{ flex: '0 0 auto' }}>
                 <LotteryTimer />
@@ -464,12 +464,9 @@ function App() {
               {/* ActivityFeed should scroll independently */}
               <Box sx={{
                 flex: '1 1 auto',
-                overflowY: 'scroll',
-                overflowX: 'hidden',
+                overflow: 'auto',
                 mt: 1,
-                /* Always show a vertical scrollbar for affordance */
-                '&::-webkit-scrollbar': { width: '10px' },
-                '&::-webkit-scrollbar-thumb': { backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 8 },
+                minHeight: 0
               }}>
                 <ActivityFeed />
               </Box>

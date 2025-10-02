@@ -17,6 +17,7 @@ import {
 } from '@mui/icons-material'
 
 import { useWalletStore } from '../services/wallet'
+import { formatAddress, generateAvatarColor, formatEther } from '../utils/helpers'
 
 const WalletConnection: React.FC = () => {
   const { 
@@ -58,26 +59,6 @@ const WalletConnection: React.FC = () => {
       navigator.clipboard.writeText(address)
     }
     handleMenuClose()
-  }
-
-  const formatAddress = (addr: string): string => {
-    return `${addr.slice(0, 6)}...${addr.slice(-4)}`
-  }
-
-  const formatBalance = (bal: string): string => {
-    const num = parseFloat(bal)
-    return num.toFixed(4)
-  }
-
-  const getAvatarColor = (addr: string): string => {
-    const colors = [
-      '#f44336', '#e91e63', '#9c27b0', '#673ab7',
-      '#3f51b5', '#2196f3', '#03a9f4', '#00bcd4',
-      '#009688', '#4caf50', '#8bc34a', '#cddc39',
-      '#ffeb3b', '#ffc107', '#ff9800', '#ff5722'
-    ]
-    const index = parseInt(addr.slice(-2), 16) % colors.length
-    return colors[index]
   }
 
   if (!isConnected) {
@@ -126,7 +107,7 @@ const WalletConnection: React.FC = () => {
       >
         <Avatar 
           sx={{ 
-            bgcolor: address ? getAvatarColor(address) : 'primary.main',
+            bgcolor: address ? generateAvatarColor(address) : 'primary.main',
             width: 24, 
             height: 24,
             mr: 1,
@@ -141,7 +122,7 @@ const WalletConnection: React.FC = () => {
           </Typography>
           {balance && (
             <Typography variant="caption" color="rgba(255, 255, 255, 0.7)">
-              {formatBalance(balance)} ETH
+              {formatEther(balance)} ETH
             </Typography>
           )}
         </Box>
@@ -178,7 +159,7 @@ const WalletConnection: React.FC = () => {
           </Typography>
           {balance && (
             <Typography variant="body2" color="primary.main" fontWeight="bold">
-              {formatBalance(balance)} ETH
+              {formatEther(balance)} ETH
             </Typography>
           )}
         </Box>

@@ -399,6 +399,10 @@ contract Lottery {
      * @dev Internal function to change global state and emit event
      */
     function _changeState(RoundState newState) internal {
+        if(newState == round.state) {
+            return; // No state change
+        }
+        
         RoundState oldState = round.state;
         round.state = newState;
         emit RoundStateChanged(round.roundId, oldState, newState, block.timestamp);

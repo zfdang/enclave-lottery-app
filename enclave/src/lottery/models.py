@@ -65,19 +65,13 @@ class ParticipantSummary:
 class RoundSnapshot:
     """Historical record of a completed or refunded round."""
 
+    event_type: str
     round_id: int
-    start_time: int
-    end_time: int
-    min_draw_time: int
-    max_draw_time: int
-    total_pot: int
     participant_count: int
+    total_pot: int
+    finished_at: int
     winner: Optional[str]
     winner_prize: int
-    publisher_commission: int
-    sparsity_commission: int
-    state: RoundState
-    finished_at: int
     refund_reason: Optional[str] = None
 
 
