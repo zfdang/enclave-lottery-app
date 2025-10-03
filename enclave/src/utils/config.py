@@ -56,9 +56,17 @@ def load_config() -> Dict[str, Any]:
     blockchain = config.setdefault('blockchain', {})
     blockchain.setdefault('rpc_url', blockchain.get('rpc_url', os.environ.get('BLOCKCHAIN_RPC_URL', 'http://localhost:8545')))
     
-    # show config again
-    logger.info(f"Configuration after applying environment overrides: {json.dumps(config, indent=2)}")
+    # show config, with sensitive values (operator_private_key) redacted
+    redacted_config = json.loads(json.dumps(config))  # deep copy
+    if 'blockchain' in redacted_config and 'operator_private_key' in redacted_config['blockchain']:
+        # show only last 4 chars
+        pkey = redacted_config['blockchain']['operator_private_key']
+        if len(pkey) == 0:
+            redacted_config['blockchain']['operator_private_key'] = 'EMPTY'
+        else:
+            redacted_config['blockchain']['operator_private_key'] = '****' + redacted_config['blockchain']['operator_private_key'][-4:]
 
+    logger.info(f"Configuration after applying environment overrides: {json.dumps(redacted_config, indent=2)}")
     return config
 
 

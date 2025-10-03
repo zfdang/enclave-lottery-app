@@ -14,14 +14,13 @@ from typing import Optional
 
 _configured = False
 
-
 def _ensure_configured() -> None:
     global _configured
     if _configured:
         return
 
-    LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
-    LOG_FILE = os.getenv('LOG_FILE', '')
+    LOG_LEVEL = os.getenv('APP_LOG_LEVEL', 'INFO')
+    LOG_FILE = os.getenv('APP_LOG_FILE', '')
 
     level = getattr(logging, LOG_LEVEL.upper(), logging.INFO)
 
@@ -36,21 +35,23 @@ def _ensure_configured() -> None:
     ch.setFormatter(formatter)
     root.addHandler(ch)
 
-    # File handler
+    # File handler: only register if APP_LOG_FILE is explicitly set
     try:
         if LOG_FILE:
             log_path = Path(LOG_FILE)
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            fh = logging.FileHandler(log_path, encoding='utf-8')
+            fh.setLevel(level)
+            fh.setFormatter(formatter)
+            root.addHandler(fh)
         else:
-            # default to project-root passive_operator.log
-            log_path = Path(__file__).parent.parent.parent / 'passive_operator.log'
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        fh = logging.FileHandler(log_path, encoding='utf-8')
-        fh.setLevel(level)
-        fh.setFormatter(formatter)
-        root.addHandler(fh)
+            # file logging disabled when APP_LOG_FILE is empty
+            pass
     except Exception:
         root.exception('Failed to create file log handler; continuing with console only')
 
+    # show the initial log level
+    root.info(f'Logging initialized with level {LOG_LEVEL}, file={LOG_FILE or "(console only)"}')
     _configured = True
 
 
