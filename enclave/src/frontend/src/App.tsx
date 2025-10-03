@@ -17,7 +17,8 @@ import {
   CircularProgress,
   Divider
 } from '@mui/material'
-import { Security, VerifiedUser, ErrorOutline } from '@mui/icons-material'
+import { Security, VerifiedUser, ErrorOutline, InfoOutlined } from '@mui/icons-material'
+import GameIntro from './components/GameIntro'
 import LotteryTimer from './components/LotteryTimer'
 import BettingPanel from './components/BettingPanel'
 import UserList from './components/UserList'
@@ -82,6 +83,11 @@ function App() {
   const [attestation, setAttestation] = useState<string>('');
   const [attestationLoading, setAttestationLoading] = useState(false);
   const [attestationError, setAttestationError] = useState('');
+  // Game intro dialog state
+  const [gameIntroOpen, setGameIntroOpen] = useState(false)
+
+  const handleGameIntroOpen = () => setGameIntroOpen(true)
+  const handleGameIntroClose = () => setGameIntroOpen(false)
 
   // Contract info state (moved from ActivityFeed)
   const [contractAddress, setContractAddress] = useState<string | null>(null)
@@ -401,6 +407,35 @@ function App() {
               }}>
                 Lottery Status
               </Box>
+              {/* left floating Game Intro chip */}
+              <Box sx={{
+                position: 'absolute',
+                left: 16,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                display: 'flex',
+                alignItems: 'center'
+              }}>
+                <Chip
+                  icon={<InfoOutlined />}
+                  label="Game Intro"
+                  color="primary"
+                  variant="outlined"
+                  onClick={handleGameIntroOpen}
+                  sx={{
+                    fontWeight: 600,
+                    fontSize: '0.95rem',
+                    px: 1.5,
+                    py: 0.5,
+                    borderWidth: 1.2,
+                    borderStyle: 'solid',
+                    borderColor: 'rgba(255,255,255,0.12)',
+                    background: 'transparent',
+                    color: '#b4bdeaff',
+                    cursor: 'pointer'
+                  }}
+                />
+              </Box>
               <Box sx={{
                 position: 'absolute',
                 right: 16,
@@ -587,7 +622,7 @@ function App() {
         </DialogActions>
       </Dialog>
 
-      {/* Contract Configuration Dialog */}
+      <GameIntro open={gameIntroOpen} onClose={handleGameIntroClose} />
       <Dialog open={configOpen} onClose={() => setConfigOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle>
           <Box display="flex" alignItems="center">
