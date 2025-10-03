@@ -474,7 +474,7 @@ function App() {
                       py: 1,
                       borderWidth: 1.5,
                       borderStyle: 'solid',
-                      borderColor: 'rgba(65, 226, 94, 0.7)',
+                      borderColor: 'rgba(255,255,255,0.12)',
                       background: 'linear-gradient(90deg, rgba(102,126,234,0.10) 0%, rgba(118,75,162,0.10) 100%)',
                       color: '#b4bdeaff',
                       borderRadius: 2,
