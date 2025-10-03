@@ -3,10 +3,27 @@ export const formatAddress = (address: string): string => {
   return `${address.slice(0, 8)}...${address.slice(-4)}`
 }
 
-export const formatEther = (wei: string | number | undefined): string => {
-  const value = Number(wei ?? 0)
-  if (!Number.isFinite(value)) return '0.0000'
-  return (value / 1e18).toFixed(4)
+import { ethers } from 'ethers'
+
+export const formatEther = (wei: string | number | bigint | undefined): string => {
+  try {
+    if (wei === undefined || wei === null) return '0.0000'
+    // ethers.formatEther handles bigint / hex string / decimal string properly
+    const asEth = ethers.formatEther(wei as any)
+    // format to 4 decimal places
+    const num = Number(asEth)
+    if (!Number.isFinite(num)) return '0.0000'
+    return num.toFixed(4)
+  } catch (err) {
+    // Fallback: best-effort numeric conversion
+    try {
+      const value = Number(wei as any)
+      if (!Number.isFinite(value)) return '0.0000'
+      return (value / 1e18).toFixed(4)
+    } catch (e) {
+      return '0.0000'
+    }
+  }
 }
 
 export const formatTime = (timestamp: string | number): string => {

@@ -17,7 +17,7 @@ import {
 } from '@mui/icons-material'
 
 import { useWalletStore } from '../services/wallet'
-import { formatAddress, generateAvatarColor, formatEther } from '../utils/helpers'
+import { formatAddress, generateAvatarColor, formatEther, copyToClipboard } from '../utils/helpers'
 
 const WalletConnection: React.FC = () => {
   const { 
@@ -31,6 +31,7 @@ const WalletConnection: React.FC = () => {
   
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
   const [error, setError] = useState('')
+  // copy address removed per UX request
 
   const handleConnect = async () => {
     try {
@@ -54,12 +55,7 @@ const WalletConnection: React.FC = () => {
     setAnchorEl(null)
   }
 
-  const copyAddress = () => {
-    if (address) {
-      navigator.clipboard.writeText(address)
-    }
-    handleMenuClose()
-  }
+  // copyAddress intentionally removed
 
   if (!isConnected) {
     return (
@@ -162,14 +158,10 @@ const WalletConnection: React.FC = () => {
               {formatEther(balance)} ETH
             </Typography>
           )}
+          {/* copy message removed */}
         </Box>
         
         <Divider />
-        
-        <MenuItem onClick={copyAddress}>
-          <ContentCopy sx={{ mr: 2 }} />
-          Copy Address
-        </MenuItem>
         
         <Divider />
         

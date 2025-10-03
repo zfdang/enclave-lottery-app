@@ -96,6 +96,7 @@ contract Lottery {
         uint256 indexed roundId,
         address indexed winner,
         uint256 totalPot,
+        uint256 totalParticipants,
         uint256 winnerPrize,
         uint256 publisherCommission,
         uint256 sparsityCommission,
@@ -380,7 +381,7 @@ contract Lottery {
         round.winnerPrize = prize;
         
         // Emit completion event
-        emit RoundCompleted(round.roundId, winner, round.totalPot, prize, publisherCommission, sparsityCommission, randomSeed, block.timestamp);
+        emit RoundCompleted(round.roundId, winner, round.totalPot, round.participantCount, prize, publisherCommission, sparsityCommission, randomSeed, block.timestamp);
         _changeState(RoundState.COMPLETED);
         
         // Credit publisher and sparsity commissions to pending withdrawals (pull-payment)

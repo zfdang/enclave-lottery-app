@@ -44,14 +44,14 @@ export const useWalletStore = create<WalletState>((set, get) => ({
       const signer = await provider.getSigner()
       const address = await signer.getAddress()
 
-      // Get balance
+      // Get balance (store as wei string so UI formatter can convert)
       const balance = await provider.getBalance(address)
-      const balanceInEth = ethers.formatEther(balance)
+      const balanceWei = balance.toString()
 
       set({
         isConnected: true,
         address,
-        balance: balanceInEth,
+        balance: balanceWei,
         provider,
         signer,
         isConnecting: false,
@@ -128,9 +128,9 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     if (!provider || !address) return
 
     try {
-      const balance = await provider.getBalance(address)
-      const balanceInEth = ethers.formatEther(balance)
-      set({ balance: balanceInEth })
+  const balance = await provider.getBalance(address)
+  const balanceWei = balance.toString()
+  set({ balance: balanceWei })
     } catch (error) {
       console.error('Failed to update balance:', error)
     }
