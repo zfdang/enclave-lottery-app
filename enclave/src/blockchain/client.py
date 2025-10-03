@@ -333,7 +333,6 @@ class BlockchainClient:
                 logger.debug("Block %d ...", raw.get("blockNumber"))
                 logger.debug("Block %d, Raw log: %s", raw.get("blockNumber"), raw)
                 # track the last seen block for future fetches
-                self._last_seen_block = raw.get("blockNumber")
                 
                 topics = [t.hex() if isinstance(t, (bytes, bytearray)) else t for t in raw.get("topics", [])]
                 if not topics:
@@ -367,6 +366,7 @@ class BlockchainClient:
                     logger.info("Failed to decode log %s: %s", raw, exc)
                     continue
     
+            self._last_seen_block = self._latest_block
             # sort by block number, then transaction hash for deterministic order
             collected.sort(key=lambda evt: (evt.block_number, evt.transaction_hash))
             logger.info("Decoded %d events from block %s to %s", len(collected), from_block, self._latest_block)

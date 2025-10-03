@@ -47,7 +47,6 @@ class MemoryStore:
         listeners = list(self._listeners.get(event_type, []))
         for callback in listeners:
             try:
-                logger.info("Emitting %s event to listener", event_type)
                 callback(payload)
             except Exception as exc:  # pragma: no cover
                 logger.error("Listener for %s failed: %s", event_type, exc)
@@ -397,7 +396,7 @@ class EventManager:
             latest = 0
         start = max(0, latest - self._start_block_offset)
         self._from_block = start
-
+        
         # Ensure store capacities match config
         try:
             self.store.set_feed_capacity(self._feed_capacity)
