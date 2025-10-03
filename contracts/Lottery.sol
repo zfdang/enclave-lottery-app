@@ -96,7 +96,7 @@ contract Lottery {
         uint256 indexed roundId,
         address indexed winner,
         uint256 totalPot,
-        uint256 totalParticipants,
+        uint256 participantCount,
         uint256 winnerPrize,
         uint256 publisherCommission,
         uint256 sparsityCommission,
