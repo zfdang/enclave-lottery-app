@@ -1,23 +1,30 @@
-# Development Guide
+# Development Guide (Passive Architecture)
 
-This guide summarizes local development workflows, the consolidated demo system, and helpful scripts.
+Focused on the lean runtime (FastAPI + EventManager + PassiveOperator). Legacy demo launchers and engine/scheduler tooling have been removed.
 
 ## Prerequisites
 - Node.js 18+
 - Python 3.11+
 
 ## Frontend
-- Location: `enclave/src/frontend`
-- Scripts:
-  - `npm install`
-  - `npm run dev` (Vite dev server)
-  - `npm run build` (production build → `dist/`)
+Location: `enclave/src/frontend`
 
-## Backend (FastAPI)
-- Location: `enclave/src`
-- Entrypoints:
-  - `enclave/src/main.py` (production-style)
-  - `enclave/demo_app.py` (demo web server + scenarios)
+Common scripts:
+* `npm install` – install deps
+* `npm run dev` – Vite dev server (hot reload)
+* `npm run build` – production bundle → `dist/`
+* `npm run preview` – serve built assets locally
+
+## Backend
+Location: `enclave/src`
+
+Entry point: `enclave/src/main.py`
+
+Key modules:
+* `lottery/event_manager.py` – polling + event serialization
+* `lottery/operator.py` – passive draw/refund logic
+* `blockchain/client.py` – contract interaction
+* `utils/config.py` / `utils/logger.py`
 
 Create a venv and install dependencies:
 
@@ -28,28 +35,35 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Run demo server:
+Run backend:
 ```bash
-python demo_app.py
+python src/main.py
 ```
 
-## Unified Demo
-- Launcher: `./demo.sh`
-- Core: `lottery_demo.py`
-- Web-centric: `scripts/comprehensive_demo.sh`
-
-Recommended usage:
+## WebSocket Event Inspection
+Start backend with `APP_LOG_LEVEL=DEBUG` to view poll & event emission logs. Use browser dev tools or `wscat`:
 ```bash
-./demo.sh
+wscat -c ws://localhost:6080/ws
 ```
 
-## Testing & Utilities
-- `scripts/test_app.sh` includes a syntax/availability check for `scripts/comprehensive_demo.sh`.
-- `test_web_server.py` can start a simple API server for manual testing.
+## Testing (Suggested Additions)
+Currently limited automated coverage. Recommended to add:
+* Unit tests for operator timing decisions (draw vs refund)
+* Event serialization snapshot tests
+* Lightweight health endpoint test
 
-## Consolidation Notes
-- Deprecated/removed:
-  - `web_only.py` (removed)
-  - `test_comprehensive_demo.sh` (merged into `scripts/test_app.sh`)
-  - `scripts/run_standalone.sh` (deprecated stub)
-  - `enclave/quick_demo.py` (stub pointing to `demo.sh`)
+Example (placeholder):
+```bash
+pytest -k operator -v
+```
+
+## Removed Legacy Artifacts
+Eliminated for clarity:
+* Demo orchestration scripts (`demo.sh`, quick demo variants)
+* Engine/scheduler modules
+* Hard-coded timed draw loops
+
+New contributions should avoid reintroducing implicit schedulers—derive actions solely from chain state emissions.
+
+---
+See also: `README.md`, `docs/CONFIG.md`, docs (upcoming) `API.md`, `EVENTS.md`.

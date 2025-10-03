@@ -1,22 +1,22 @@
-# Lottery Enclave - Security Documentation
+# Security Overview (Current Passive Deployment)
 
 ## Security Overview
 
-For an architectural overview and hands-on demos, see:
-- Architecture: `docs/architecture.md`
-- Demos: `./demo.sh` (CLI) or `scripts/comprehensive_demo.sh` (web)
+Legacy demo references removed. This document now distinguishes between IMPLEMENTED controls and CONCEPTUAL / FUTURE items. Avoid assuming protections that are not present in source code.
 
-The Lottery Enclave implements multiple layers of security to ensure fairness, transparency, and protection against various attack vectors. This document outlines the security architecture, threat model, and implementation details.
+Legend:
+* ✅ Implemented in code now
+* 🧪 Partial / planned (scaffolding or placeholder only)
+* 🚧 Conceptual (not implemented)
 
 ## Security Architecture
 
 ### 1. AWS Nitro Enclave Foundation
 
-#### Hardware Security Module (HSM)
-- **Hardware Root of Trust**: Cryptographic operations backed by AWS Nitro hardware
-- **Memory Encryption**: All enclave memory encrypted with ephemeral keys
-- **Attestation**: Cryptographic proof of enclave code integrity and identity
-- **Isolation**: Complete isolation from host OS and other processes
+#### Hardware Isolation (when deployed in Nitro)
+* ✅ Memory isolation & encrypted enclave memory (provided by Nitro platform)
+* ✅ Attestation mechanism available (not yet surfaced via public API endpoint)
+* 🚧 Automated attestation presentation to users (planned)
 
 #### Attestation Process
 ```
@@ -38,46 +38,18 @@ The Lottery Enclave implements multiple layers of security to ensure fairness, t
 
 ### 2. Cryptographic Security
 
-#### Random Number Generation
-```python
-# Secure random number generation
-import secrets
-import hashlib
+#### Randomness
+Current contract logic determines winner selection on‑chain (draw transaction executes contract RNG / selection). No in‑enclave RNG module exists. Any earlier Python RNG examples have been removed to prevent confusion.
 
-def generate_secure_random(participants_count: int, timestamp: int) -> int:
-    """
-    Cryptographically secure random number generation
-    Uses hardware entropy + additional entropy sources
-    """
-    # Primary entropy from hardware
-    entropy = secrets.randbits(256)
-    
-    # Additional entropy from lottery state
-    additional_entropy = hashlib.sha256(
-        str(timestamp).encode() + 
-        str(participants_count).encode()
-    ).digest()
-    
-    # Combine entropy sources
-    combined = hashlib.sha256(
-        entropy.to_bytes(32, 'big') + additional_entropy
-    ).digest()
-    
-    # Convert to participant index
-    return int.from_bytes(combined[:8], 'big') % participants_count
-```
-
-#### Encryption Standards
-- **TLS 1.3**: All external communication encrypted
-- **AES-256-GCM**: Symmetric encryption for data at rest
-- **RSA-4096/ECDSA-P256**: Asymmetric encryption and signatures
-- **HKDF**: Key derivation for perfect forward secrecy
+#### Encryption / Transport
+* ✅ Client → Backend typically via plain HTTP in dev; production should terminate TLS at a reverse proxy (Nginx / ALB) (operator must configure)
+* 🚧 Backend internal TLS context (not currently enabled in code)
+* 🚧 Data-at-rest encryption not applicable (no persistent storage)
 
 #### Key Management
-- **Ephemeral Keys**: New keys generated for each enclave instance
-- **Key Rotation**: Regular rotation of long-term keys
-- **Secure Storage**: Keys stored in enclave memory only
-- **No Key Persistence**: Keys destroyed on enclave termination
+* ✅ Operator private key supplied via environment variable (redacted in logs)
+* 🚧 Automated rotation (not implemented)
+* 🚧 KMS / secret manager integration (deployment-specific outside code)
 
 ### 3. Network Security
 
@@ -104,42 +76,14 @@ def create_secure_context():
 ```
 
 #### Network Isolation
-- **No Direct Internet**: Enclave has no direct network access
-- **VSock Only**: Communication through secure VSock channel
-- **Firewall Rules**: Strict iptables rules on host
-- **DDoS Protection**: AWS Shield and CloudFlare integration
+* ✅ Minimal exposed surface (single HTTP/WebSocket port)
+* 🚧 Mandatory TLS
+* 🚧 DDoS mitigations (infrastructure concern, not code)
 
 ### 4. Smart Contract Security
 
-#### Contract Audit Points
-```solidity
-// Security features in Lottery.sol
-contract Lottery {
-    // Access control
-    modifier onlyEnclave() {
-        require(msg.sender == enclaveAddress, "Unauthorized");
-        _;
-    }
-    
-    // Reentrancy protection
-    bool private locked;
-    modifier noReentrant() {
-        require(!locked, "Reentrant call");
-        locked = true;
-        _;
-        locked = false;
-    }
-    
-    // Input validation
-    function recordDraw(uint256 drawId, address winner, uint256 totalPot) 
-        external onlyEnclave noReentrant {
-        require(drawId > 0, "Invalid draw ID");
-        require(winner != address(0), "Invalid winner");
-        require(totalPot > 0, "Invalid pot amount");
-        // ... implementation
-    }
-}
-```
+#### Smart Contract (High-Level)
+Refer to the Solidity source for actual modifiers and guards. Ensure independent audit before production use.
 
 #### Gas Optimization & Security
 - **Fixed Gas Limits**: Prevent gas-based attacks
@@ -148,62 +92,11 @@ contract Lottery {
 - **Event Logging**: Complete audit trail on blockchain
 
 ### 5. Application Security
-
-#### Input Validation
-```python
-from pydantic import BaseModel, validator
-from decimal import Decimal
-
-class BetRequest(BaseModel):
-    user_address: str
-    amount: Decimal
-    
-    @validator('user_address')
-    def validate_address(cls, v):
-        if not v.startswith('0x') or len(v) != 42:
-            raise ValueError('Invalid Ethereum address')
-        return v.lower()
-    
-    @validator('amount')
-    def validate_amount(cls, v):
-        if v < Decimal('0.01'):
-            raise ValueError('Minimum bet is 0.01 ETH')
-        if v > Decimal('10'):
-            raise ValueError('Maximum bet is 10 ETH')
-        return v
-```
-
-#### Rate Limiting
-```python
-from collections import defaultdict
-import time
-
-class RateLimiter:
-    def __init__(self, max_requests=10, time_window=60):
-        self.max_requests = max_requests
-        self.time_window = time_window
-        self.requests = defaultdict(list)
-    
-    def is_allowed(self, user_id: str) -> bool:
-        now = time.time()
-        user_requests = self.requests[user_id]
-        
-        # Remove old requests
-        user_requests[:] = [req for req in user_requests 
-                          if now - req < self.time_window]
-        
-        if len(user_requests) >= self.max_requests:
-            return False
-        
-        user_requests.append(now)
-        return True
-```
-
-#### Session Management
-- **Stateless Design**: No server-side session storage
-- **JWT Tokens**: Signed tokens for authentication
-- **Short Expiry**: 15-minute token validity
-- **Refresh Mechanism**: Automatic token renewal
+* ✅ Read endpoints / WebSocket provide round & participant data only
+* ✅ Operator actions (draw/refund) require possession of operator private key (not user initiated through backend)
+* 🚧 No rate limiting (rely on minimal surface + upstream infra)
+* 🚧 No JWT/session auth (not needed for current public read model)
+* 🚧 No user bet submission endpoints (users interact directly with contract via wallet)
 
 ### 6. Data Protection
 
@@ -226,11 +119,8 @@ class SecureLogger:
         return re.sub(r'0x[a-fA-F0-9]{40}', '0x***', error_str)
 ```
 
-#### Memory Protection
-- **Secure Allocation**: Use secure memory allocation functions
-- **Memory Wiping**: Clear sensitive data from memory after use
-- **Stack Protection**: Enable stack canaries and ASLR
-- **Heap Protection**: Enable heap protection mechanisms
+#### Memory / Process
+Standard Python process; no special secure wiping implemented. Rely on enclave isolation (if used) + ephemeral container lifecycle.
 
 ### 7. Threat Model
 
@@ -244,9 +134,7 @@ class SecureLogger:
 #### Attack Vectors & Mitigations
 
 ##### Lottery Manipulation
-- **Threat**: Predictable random numbers
-- **Mitigation**: Hardware RNG + multiple entropy sources
-- **Detection**: Blockchain analysis and statistical testing
+Mitigation is contract-level randomness design; ensure independent audit. No off-chain RNG component present.
 
 ##### Enclave Compromise
 - **Threat**: Modified enclave code
@@ -254,14 +142,10 @@ class SecureLogger:
 - **Detection**: Continuous attestation monitoring
 
 ##### Denial of Service
-- **Threat**: Resource exhaustion attacks
-- **Mitigation**: Rate limiting, resource quotas, AWS Shield
-- **Detection**: Monitoring unusual traffic patterns
+No built-in rate limiting; rely on infrastructure (WAF, proxy) and low compute footprint.
 
 ##### Smart Contract Attacks
-- **Threat**: Reentrancy, overflow, gas attacks
-- **Mitigation**: Secure coding practices, formal verification
-- **Detection**: Contract monitoring and audit tools
+Require standard Solidity best practices + audit (outside Python scope).
 
 ##### Social Engineering
 - **Threat**: Phishing attacks targeting users
@@ -271,54 +155,9 @@ class SecureLogger:
 ### 8. Security Monitoring
 
 #### Real-time Monitoring
-```python
-import asyncio
-import logging
-from datetime import datetime, timedelta
+Currently no dedicated background security monitor loop; observability is via standard logs. Future monitoring agent can subscribe to the same event bus.
 
-class SecurityMonitor:
-    def __init__(self):
-        self.failed_attempts = defaultdict(int)
-        self.suspicious_patterns = []
-    
-    async def monitor_security_events(self):
-        while True:
-            try:
-                # Check for unusual betting patterns
-                await self.detect_unusual_betting()
-                
-                # Monitor failed authentication attempts
-                await self.check_failed_attempts()
-                
-                # Verify enclave attestation
-                await self.verify_attestation()
-                
-                await asyncio.sleep(30)  # Check every 30 seconds
-                
-            except Exception as e:
-                logging.error(f"Security monitoring error: {e}")
-```
-
-#### Audit Logging
-```python
-class AuditLogger:
-    @staticmethod
-    def log_security_event(event_type: str, details: dict):
-        timestamp = datetime.utcnow().isoformat()
-        log_entry = {
-            'timestamp': timestamp,
-            'event_type': event_type,
-            'details': details,
-            'severity': 'HIGH' if 'attack' in event_type else 'INFO'
-        }
-        
-        # Log to secure location
-        logging.getLogger('security').info(json.dumps(log_entry))
-        
-        # Alert if high severity
-        if log_entry['severity'] == 'HIGH':
-            send_security_alert(log_entry)
-```
+Audit logging: standard application logs only at present.
 
 #### Metrics Collection
 - **Performance Metrics**: Response times, throughput, error rates
@@ -326,7 +165,7 @@ class AuditLogger:
 - **Business Metrics**: Betting volume, user activity, draw frequency
 - **Infrastructure Metrics**: CPU, memory, network usage
 
-### 9. Incident Response
+### 9. Incident Response (Conceptual Outline)
 
 #### Security Incident Classification
 1. **Critical**: Active attack or data breach
@@ -354,7 +193,7 @@ class IncidentResponse:
         self.initiate_recovery_procedures()
 ```
 
-### 10. Compliance & Standards
+### 10. Compliance & Standards (Aspirational)
 
 #### Regulatory Compliance
 - **GDPR**: Privacy by design, data minimization
@@ -384,15 +223,10 @@ class IncidentResponse:
 5. **Training**: Regular security awareness training
 
 #### For Users
-1. **Wallet Security**: Use hardware wallets when possible
-2. **Verify Domain**: Always check the website URL
-3. **Attestation Check**: Verify enclave attestation
-4. **Reasonable Limits**: Don't bet more than you can afford
-5. **Report Issues**: Report suspicious activity immediately
+Keep wallet software updated; verify contract addresses; be cautious of phishing—attestation UI pending.
 
 #### For Developers
-1. **Secure Coding**: Follow secure development practices
-2. **Code Reviews**: All code must be peer-reviewed
-3. **Testing**: Comprehensive security testing
-4. **Documentation**: Maintain security documentation
-5. **Training**: Stay updated on security best practices
+Focus on minimizing new trust surfaces. Prefer on‑chain enforcement to off‑chain logic. Document any added secrets or network egress.
+
+---
+This document intentionally prunes prior illustrative code blocks that are not part of the runtime to avoid overclaiming security posture.

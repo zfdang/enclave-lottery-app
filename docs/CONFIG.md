@@ -1,20 +1,14 @@
-# Configuration Management Guide
+# Configuration (Passive Operator)
 
-This document describes the configuration management system used by the Enclave Lottery App.
+Authoritative list of active configuration namespaces & keys used by the current passive event‑driven implementation. Legacy lottery engine variables (draw_interval_minutes, single_bet_amount, scheduler knobs, REACT_APP_*) have been removed.
 
-## Configuration System Overview
+## Precedence
+1. Environment variables (highest)
+2. JSON config file (`enclave/config/enclave.conf`)
+3. Internal defaults (lowest)
 
-The project uses a three-tier configuration priority system:
-
-1. Hardcoded defaults (lowest priority)
-2. Configuration file (`enclave/config/enclave.conf`) (medium priority)
-3. Environment variables (highest priority)
-
-## Configuration File Structure
-
-### 1. Configuration file (`enclave/config/enclave.conf`)
-
-This is a JSON file that contains default settings:
+## Configuration File (`enclave/config/enclave.conf`)
+Only include keys you wish to override; environment vars can still supersede them.
 
 ```json
 {
@@ -22,18 +16,19 @@ This is a JSON file that contains default settings:
     "host": "0.0.0.0",
     "port": 6080
   },
-  "lottery": {
-    "draw_interval_minutes": 5,
-    "minimum_interval_minutes": 2,
-    "betting_cutoff_minutes": 1,
-    "single_bet_amount": "0.01",
-    "max_bets_per_user": 10
+  "event_manager": {
+    "poll_interval_seconds": 2,
+    "config_refresh_seconds": 15,
+    "history_capacity": 50,
+    "feed_capacity": 200
   },
   "blockchain": {
     "rpc_url": "http://localhost:8545",
     "chain_id": 31337,
-    "contract_address": "",
-    "private_key": "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+    "contract_address": "0x...",
+    "operator_private_key": "0xTESTKEY...",
+    "gas_price": null,
+    "gas_multiplier": 1.15
   },
   "enclave": {
     "vsock_port": 5005,
@@ -42,61 +37,49 @@ This is a JSON file that contains default settings:
 }
 ```
 
-### 2. Environment variable file (`.env`)
+## Environment Variables
 
-Copy `.env.example` to `.env` and set your actual values:
+Prefer exporting only what you need for the deployment surface rather than a large `.env` checked into images.
 
-```bash
-cp .env.example .env
-```
+### Namespaces (Prefixes)
 
-Then edit the `.env` file and set your real configuration values.
+| Prefix | Purpose | Examples |
+|--------|---------|----------|
+| `BLOCKCHAIN_` | On‑chain connectivity & tx signing | `BLOCKCHAIN_RPC_URL`, `BLOCKCHAIN_CHAIN_ID`, `BLOCKCHAIN_CONTRACT_ADDRESS`, `BLOCKCHAIN_OPERATOR_PRIVATE_KEY`, `BLOCKCHAIN_GAS_PRICE`, `BLOCKCHAIN_GAS_MULTIPLIER` |
+| `EVENTMGR_` | Polling & retention behavior | `EVENTMGR_POLL_INTERVAL_SECONDS`, `EVENTMGR_CONFIG_REFRESH_SECONDS`, `EVENTMGR_HISTORY_CAPACITY`, `EVENTMGR_FEED_CAPACITY` |
+| `SERVER_` | API binding | `SERVER_HOST`, `SERVER_PORT` |
+| `APP_` | Logging & app-level | `APP_LOG_LEVEL`, `APP_LOG_FILE` |
+| `ENCLAVE_` | Nitro specifics (optional) | `ENCLAVE_VSOCK_PORT`, `ENCLAVE_ATTESTATION_ENABLED` |
+| `VITE_` | Frontend build/runtime | `VITE_API_URL`, `VITE_WS_URL`, `VITE_CHAIN_ID` |
 
-## Supported Environment Variables
+### Active Keys (Summary)
 
-### Server Configuration
+| Variable | Description | Default (if unset) |
+|----------|-------------|--------------------|
+| `BLOCKCHAIN_RPC_URL` | Ethereum RPC endpoint | `http://127.0.0.1:8545` |
+| `BLOCKCHAIN_CHAIN_ID` | Chain ID (int) | `31337` |
+| `BLOCKCHAIN_CONTRACT_ADDRESS` | Deployed Lottery.sol address | none (required for operations) |
+| `BLOCKCHAIN_OPERATOR_PRIVATE_KEY` | Operator EOA private key (hex) | none (draw/refund disabled if absent) |
+| `BLOCKCHAIN_GAS_PRICE` | Override gas price (gwei) | auto from node |
+| `BLOCKCHAIN_GAS_MULTIPLIER` | Multiply gas estimate | `1.15` |
+| `EVENTMGR_POLL_INTERVAL_SECONDS` | Base poll interval (round + participants) | `2` |
+| `EVENTMGR_CONFIG_REFRESH_SECONDS` | Contract config refresh interval | `15` |
+| `EVENTMGR_HISTORY_CAPACITY` | Retained completed/refunded rounds | `50` |
+| `EVENTMGR_FEED_CAPACITY` | Activity feed entries | `200` |
+| `SERVER_HOST` | Bind host | `0.0.0.0` |
+| `SERVER_PORT` | Bind port | `6080` |
+| `APP_LOG_LEVEL` | Logging level | `INFO` |
+| `APP_LOG_FILE` | Optional log file path | unset (stdout only) |
+| `ENCLAVE_VSOCK_PORT` | Vsock port (enclave mode) | `5005` |
+| `ENCLAVE_ATTESTATION_ENABLED` | Enable attestation features | `false` |
+| `VITE_API_URL` | Frontend API base | `http://localhost:6080` (dev) |
+| `VITE_WS_URL` | Frontend websocket URL | `ws://localhost:6080/ws` (dev) |
 
-| Variable | Legacy name | Description | Default |
-|----------|-------------|-------------|---------|
-| `SERVER_HOST` | `LOTTERY_SERVER_HOST` | Server bind address | `0.0.0.0` |
-| `SERVER_PORT` | `LOTTERY_SERVER_PORT` | Server port | `6080` |
+Deprecated / removed: all `LOTTERY_*` timing & betting amount vars, `REACT_APP_*` vars, legacy `PRIVATE_KEY` / `ETHEREUM_RPC_URL` alias names.
 
-### Lottery Configuration
+## Usage Examples
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `LOTTERY_DRAW_INTERVAL_MINUTES` | Draw interval (minutes) | `5` |
-| `LOTTERY_MINIMUM_INTERVAL_MINUTES` | Minimum interval (minutes) | `2` |
-| `LOTTERY_BETTING_CUTOFF_MINUTES` | Betting cutoff (minutes) | `1` |
-| `LOTTERY_SINGLE_BET_AMOUNT` | Single bet amount (ETH) | `0.01` |
-| `LOTTERY_MAX_BETS_PER_USER` | Max bets per user | `10` |
-
-### Blockchain Configuration
-
-| Variable | Legacy name | Description | Default |
-|----------|-------------|-------------|---------|
-| `ETHEREUM_RPC_URL` | `BLOCKCHAIN_RPC_URL` | Ethereum RPC URL | `http://localhost:8545` |
-| `CHAIN_ID` | `BLOCKCHAIN_CHAIN_ID` | Chain ID | `31337` |
-| `CONTRACT_ADDRESS` | `BLOCKCHAIN_CONTRACT_ADDRESS` | Contract address | `""` |
-| `PRIVATE_KEY` | `BLOCKCHAIN_PRIVATE_KEY` | Private key | Test private key |
-
-### Enclave Configuration
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `ENCLAVE_VSOCK_PORT` | VSock port | `5005` |
-| `ENCLAVE_ATTESTATION_ENABLED` | Enable attestation | `false` |
-
-### Frontend Configuration
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `REACT_APP_API_URL` | API URL | `http://localhost:6080` |
-| `REACT_APP_WEBSOCKET_URL` | WebSocket URL | `ws://localhost:6080/ws` |
-
-## Configuration Usage
-
-### Development Environment
+### Development (shell exports)
 
 ```bash
 # 1. Copy the template
@@ -106,43 +89,45 @@ cp .env.example .env
 nano .env
 
 # 3. Export required environment variables (optional)
-export ETHEREUM_RPC_URL="http://localhost:8545"
-export PRIVATE_KEY="your_development_private_key"
+export BLOCKCHAIN_RPC_URL=http://localhost:8545
+export BLOCKCHAIN_CHAIN_ID=31337
+export BLOCKCHAIN_OPERATOR_PRIVATE_KEY=0xYOURKEY
+export BLOCKCHAIN_CONTRACT_ADDRESS=0xDEPLOYED
 
 # 4. Run the application
 python enclave/src/main.py
 ```
 
-### Production Environment
+### Production (minimal set)
 
 Use environment variables in production instead of a `.env` file:
 
 ```bash
 # Set environment variables
-export ETHEREUM_RPC_URL="https://mainnet.infura.io/v3/YOUR_PROJECT_ID"
-export PRIVATE_KEY="your_production_private_key"
-export SERVER_HOST="0.0.0.0"
-export SERVER_PORT="6080"
-export ENCLAVE_ATTESTATION_ENABLED="true"
+export BLOCKCHAIN_RPC_URL="https://rpc.your-network.example"
+export BLOCKCHAIN_CHAIN_ID=12345
+export BLOCKCHAIN_CONTRACT_ADDRESS=0x...
+export BLOCKCHAIN_OPERATOR_PRIVATE_KEY=$(aws secretsmanager get-secret-value --secret-id prod/lottery/operator-key --query SecretString --output text)
+export APP_LOG_LEVEL=INFO
 
 # Run the application
 python enclave/src/main.py
 ```
 
-### Docker Environment
+### Docker Run
 
 ```bash
 # Run Docker with environment variables
 docker run -d \
   -p 6080:6080 \
-  -e ETHEREUM_RPC_URL="http://host.docker.internal:8545" \
-  -e PRIVATE_KEY="your_private_key" \
+  -e BLOCKCHAIN_RPC_URL=http://host.docker.internal:8545 \
+  -e BLOCKCHAIN_OPERATOR_PRIVATE_KEY=0xYOURKEY \
   enclave-lottery-app
 ```
 
 ## Security Considerations
 
-### Private Key Security
+### Private Key Handling
 
 Important notes:
 
@@ -152,13 +137,13 @@ Important notes:
 
 ```bash
 # Good practice: fetch private key from a secret manager
-export PRIVATE_KEY="$(aws secretsmanager get-secret-value --secret-id prod/lottery/private-key --query SecretString --output text)"
+export BLOCKCHAIN_OPERATOR_PRIVATE_KEY="$(aws secretsmanager get-secret-value --secret-id prod/lottery/operator-key --query SecretString --output text)"
 
 # Bad practice: hard-coding a private key in files
 PRIVATE_KEY="0x1234567890abcdef..."  # Dangerous!
 ```
 
-### Network Security
+### Network
 
 - Use trusted RPC providers (Infura, Alchemy).
 - Enable TLS in production.
@@ -172,7 +157,7 @@ chmod 600 .env
 chmod 644 enclave/config/enclave.conf
 ```
 
-## Configuration Validation
+## Validation (Illustrative)
 
 The project validates configuration on startup:
 
@@ -186,8 +171,8 @@ required_configs = [
 ]
 
 # Validate numeric ranges
-assert config['lottery']['draw_interval_minutes'] >= 1
-assert config['server']['port'] > 0 and config['server']['port'] < 65536
+assert 0 < config['server']['port'] < 65536
+assert 'rpc_url' in config['blockchain']
 ```
 
 ## Troubleshooting
@@ -209,7 +194,7 @@ python -m json.tool enclave/config/enclave.conf
 
 ```bash
 # Check environment variables
-printenv | grep -E "(ETHEREUM|LOTTERY|ENCLAVE)_"
+printenv | grep -E "(BLOCKCHAIN_|EVENTMGR_|SERVER_|APP_|ENCLAVE_)"
 
 # Check variable spelling
 echo $ETHEREUM_RPC_URL
@@ -219,24 +204,11 @@ echo $ETHEREUM_RPC_URL
 
 ```bash
 # Validate private key format (should start with 0x and have 64 hex chars)
-echo $PRIVATE_KEY | grep -E '^0x[a-fA-F0-9]{64}$'
+echo $BLOCKCHAIN_OPERATOR_PRIVATE_KEY | grep -E '^0x[a-fA-F0-9]{64}$'
 ```
 
-## Migration Guide
-
-Migrate from legacy variable names to the new standard names:
-
-```bash
-# Legacy → New
-BLOCKCHAIN_RPC_URL → ETHEREUM_RPC_URL
-BLOCKCHAIN_CHAIN_ID → CHAIN_ID
-BLOCKCHAIN_CONTRACT_ADDRESS → CONTRACT_ADDRESS
-BLOCKCHAIN_PRIVATE_KEY → PRIVATE_KEY
-LOTTERY_SERVER_HOST → SERVER_HOST
-LOTTERY_SERVER_PORT → SERVER_PORT
-```
-
-Note: Legacy variable names are still supported for backward compatibility, but migration to the new standard names is recommended.
+## Legacy
+Legacy variable names and lottery engine timing variables are no longer recognized. Update deployment manifests accordingly.
 
 ## Example Configurations
 
@@ -244,40 +216,39 @@ Note: Legacy variable names are still supported for backward compatibility, but 
 
 ```bash
 # .env file
-ETHEREUM_RPC_URL=http://localhost:8545
-CHAIN_ID=31337
-PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
-SERVER_HOST=localhost
+BLOCKCHAIN_RPC_URL=http://localhost:8545
+BLOCKCHAIN_CHAIN_ID=31337
+BLOCKCHAIN_OPERATOR_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+BLOCKCHAIN_CONTRACT_ADDRESS=0x5FbDB2315678afecb367f032d93F642f64180aa3
+SERVER_HOST=0.0.0.0
 SERVER_PORT=6080
-LOTTERY_DRAW_INTERVAL_MINUTES=5
 ```
 
 ### Testnet
 
 ```bash
 # .env file
-ETHEREUM_RPC_URL=https://goerli.infura.io/v3/YOUR_PROJECT_ID
-CHAIN_ID=5
-PRIVATE_KEY=your_testnet_private_key
-CONTRACT_ADDRESS=0x1234567890123456789012345678901234567890
-LOTTERY_DRAW_INTERVAL_MINUTES=10
+BLOCKCHAIN_RPC_URL=https://sepolia.infura.io/v3/YOUR_PROJECT_ID
+BLOCKCHAIN_CHAIN_ID=11155111
+BLOCKCHAIN_OPERATOR_PRIVATE_KEY=0xTESTNETKEY...
+BLOCKCHAIN_CONTRACT_ADDRESS=0x1234567890123456789012345678901234567890
 ```
 
 ### Mainnet
 
 ```bash
 # Environment variables (do not store these in a file)
-export ETHEREUM_RPC_URL="https://mainnet.infura.io/v3/YOUR_PROJECT_ID"
-export CHAIN_ID="1"
-export PRIVATE_KEY="$(aws secretsmanager get-secret-value ...)"
-export CONTRACT_ADDRESS="your_deployed_contract_address"
-export ENCLAVE_ATTESTATION_ENABLED="true"
-export LOTTERY_DRAW_INTERVAL_MINUTES="60"
+export BLOCKCHAIN_RPC_URL="https://mainnet.infura.io/v3/YOUR_PROJECT_ID"
+export BLOCKCHAIN_CHAIN_ID=1
+export BLOCKCHAIN_OPERATOR_PRIVATE_KEY="$(aws secretsmanager get-secret-value ...)"
+export BLOCKCHAIN_CONTRACT_ADDRESS="0xYourDeployed" 
+export ENCLAVE_ATTESTATION_ENABLED=true
 ```
 
 ## More Information
 
 - [Deployment guide](deployment.md)
 - [Security guide](security.md)
-- [Development guide](DEVELOPMENT.md)
+- [Development guide](development.md)
 - [Main README](../README.md)
+- (upcoming) `API.md`, `EVENTS.md`

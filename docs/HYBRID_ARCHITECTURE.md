@@ -1,4 +1,6 @@
-# Hybrid Blockchain Betting Architecture Implementation
+# (Deprecated) Hybrid Blockchain Betting Architecture Implementation
+
+> This document references an earlier design including server bet verification endpoints and `REACT_APP_` environment variables. The current implementation has moved to a passive event-driven model with Vite `VITE_*` env vars and no server-mediated bet placement. Use for historical context only.
 
 ## Overview
 
@@ -111,7 +113,7 @@ Added new configuration:
 ```bash
 # Smart contract address (must match on frontend and backend)
 LOTTERY_CONTRACT_ADDRESS=0x...
-REACT_APP_LOTTERY_CONTRACT_ADDRESS=0x...
+# (legacy) REACT_APP_LOTTERY_CONTRACT_ADDRESS=0x...
 
 # Blockchain connection
 ETHEREUM_RPC_URL=http://localhost:8545

@@ -1,26 +1,202 @@
 # Enclave Lottery App
 
-A secure, decentralized lottery application designed for AWS Nitro Enclaves, featuring real-time draws, ETH betting, blockchain transparency, and comprehensive demonstration modes.
+Passive, event‑driven lottery operator + React frontend for an Ethereum smart contract. Built for enclave or container deployment; minimal moving parts, no background schedulers.
 
-## 🎯 Overview
+## ✨ Highlights
 
-The Enclave Lottery App is a trustless lottery system that combines the security of AWS Nitro Enclaves with blockchain transparency. This application showcases both traditional development workflows and enclave-based secure execution, with multiple demonstration modes for different use cases.
+* PassiveOperator reacts to on‑chain + time window state (no internal status machine)
+* EventManager polls contract → publishes websocket events (`round_update`, `participants_update`, `history_update`, `config_update`)
+* React (Vite) frontend consumes events in real time (activity feed, countdown, participants list)
+* Single smart contract (Lottery.sol) – winner‑takes‑all with publisher / sparsity commissions
+* Deterministic draw/refund decision logic based on contract timestamps & participant thresholds
+* Clean layered config: file + env overrides with namespaced prefixes
+* Production‑ready logging (structured friendly text, optional file handler via env)
+* Deployable inside AWS Nitro Enclave (isolation) or plain Docker for development
 
-### Key Features
+## 🚀 Quick Start (Local Dev)
 
-- 🔒 **Secure Execution**: Designed for AWS Nitro Enclave deployment with complete isolation
-- 🐳 **Docker Container Support**: Real container-based demonstration environment
-- ⏰ **Configurable Draws**: Automated lottery draws with customizable intervals  
-- 💰 **ETH Betting**: Place bets using Ethereum through MetaMask integration
-- 🏆 **Winner Takes All**: Single winner receives the entire pot
-- 🔍 **Blockchain Transparency**: All results recorded on Ethereum for verification
-- 📱 **Real-time Web UI**: Live countdown, betting status, and activity feed
-- 🛡️ **Cryptographically Secure**: Provably fair random number generation
-- 🎮 **Comprehensive Demos**: Multiple demo modes including Docker container simulation
+Requires: Python 3.11+, Node 18+, Anvil (or any Ethereum RPC), Docker optional.
 
-## 🚀 Quick Start Guide
+```bash
+# 1. Start local chain (Anvil example)
+anvil --block-time 1 &
 
-### One-Command Setup
+# 2. (Optional) Deploy contract if not already deployed
+#   Use your existing deployment tooling or forge script; ensure address + operator key are set below.
+
+# 3. Backend deps
+cd enclave
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+
+# 4. Frontend deps
+cd src/frontend
+npm install
+
+# 5. Set environment (example minimal – prefer exporting instead of committing)
+export BLOCKCHAIN_RPC_URL=http://127.0.0.1:8545
+export BLOCKCHAIN_CHAIN_ID=31337
+export BLOCKCHAIN_OPERATOR_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+export BLOCKCHAIN_CONTRACT_ADDRESS=0x5FbDB2315678afecb367f032d93F642f64180aa3
+
+# 6. Run backend (serves API + websocket)
+cd ../../
+python src/main.py
+
+# 7. Run frontend (separate shell)
+cd src/frontend
+npm run dev
+```
+
+Visit Vite dev URL (typically http://localhost:5173). Connect wallet (MetaMask) pointed at same chain.
+
+## 🧩 Architecture (Current)
+
+```
+┌───────────────┐        ┌──────────────────────┐        ┌──────────────────┐
+│   Frontend    │  WS/HTTP│   Backend (Python)   │  RPC   │  Ethereum Node    │
+│ React + Vite  │◄──────►│ FastAPI WebServer    │◄──────►│ (Anvil/GetH/Gnosis)│
+│ WebSocket Feed│        │ EventManager (polls) │        │  + Lottery.sol    │
+│ Bet Actions   │  tx    │ PassiveOperator      │  emits │  On‑chain state   │
+└───────────────┘  via UI└──────────────────────┘  events└──────────────────┘
+```
+
+Key runtime loop:
+1. EventManager periodically calls contract view functions + decodes new logs.
+2. State snapshots stored in memory + broadcast as typed websocket events.
+3. PassiveOperator listens for `round_update`; when draw or refund window opens it submits the appropriate transaction.
+4. Frontend listens over websocket and re-renders instantly.
+
+No cron, no internal scheduler thread beyond polling intervals.
+
+### Components
+
+| Component | Purpose |
+|-----------|---------|
+| `lottery/event_manager.py` | Poll contract, build canonical serialized snapshots & activity feed |
+| `lottery/operator.py` | Stateless decision logic: draw or refund when conditions satisfied |
+| `blockchain/client.py` | Thin async wrapper around web3.py (events, views, tx send) |
+| `utils/config.py` | Layered config + env overlay (prefix based) |
+| `utils/logger.py` | Centralized logging bootstrap |
+| `src/frontend` | React UI (Vite, websocket consumer) |
+
+## � Websocket Events
+
+Detailed schemas in `docs/EVENTS.md` (to be added). Summary:
+
+| Event | Description |
+|-------|-------------|
+| `round_update` | Current round timing, pot, state, winner (if any) |
+| `participants_update` | Aggregated participant bet amounts |
+| `history_update` | Recently completed/refunded rounds |
+| `config_update` | Contract config + derived operator settings |
+
+## ⚙️ Configuration Overview
+
+See `docs/CONFIG.md` for authoritative list. Active namespaces (env prefixes):
+
+* `BLOCKCHAIN_` – RPC URL, chain id, operator private key, contract address, gas settings
+* `EVENTMGR_` – polling intervals, feed/history capacities
+* `SERVER_` – host / port
+* `APP_` – logging (e.g. `APP_LOG_LEVEL`, `APP_LOG_FILE`)
+* `ENCLAVE_` – enclave specific (vsock, attestation) if deploying in Nitro
+* Frontend: `VITE_*` variables (e.g. `VITE_API_URL`, `VITE_WS_URL`)
+
+Legacy variable names and demo‑mode specific knobs (draw_interval_minutes, single_bet_amount, scheduler references, REACT_APP_*) have been removed.
+
+Minimal backend config example (env):
+```bash
+export BLOCKCHAIN_RPC_URL=http://127.0.0.1:8545
+export BLOCKCHAIN_CHAIN_ID=31337
+export BLOCKCHAIN_CONTRACT_ADDRESS=0x...
+export BLOCKCHAIN_OPERATOR_PRIVATE_KEY=0x...
+export EVENTMGR_POLL_INTERVAL_SECONDS=2
+export APP_LOG_LEVEL=INFO
+```
+
+## 🧪 Testing (Lightweight)
+
+At present the repository focuses on runtime behavior; add unit tests around operator timing logic and event serialization as needed. Suggested quick manual validation:
+
+1. Start backend with verbose logs (`APP_LOG_LEVEL=DEBUG`).
+2. Place bets via UI; observe `participants_update` events.
+3. Advance time (or wait) until `min_draw_time` → backend submits `drawWinner` and emits updated `round_update` with winner.
+4. Inspect chain logs for Draw event alignment.
+
+## � Development Workflow
+
+Frontend:
+```bash
+cd enclave/src/frontend
+npm run dev
+```
+
+Backend:
+```bash
+cd enclave
+source venv/bin/activate
+python src/main.py
+```
+
+Rebuild frontend production bundle (if serving statically inside backend later):
+```bash
+npm run build
+```
+
+## 🚢 Deployment (Summary)
+
+Docker (dev/test):
+```bash
+./scripts/build_docker.sh
+docker run --rm -p 6080:6080 \
+  -e BLOCKCHAIN_RPC_URL=http://host.docker.internal:8545 \
+  -e BLOCKCHAIN_CHAIN_ID=31337 \
+  -e BLOCKCHAIN_CONTRACT_ADDRESS=0x... \
+  -e BLOCKCHAIN_OPERATOR_PRIVATE_KEY=0x... \
+  enclave-lottery-app:latest
+```
+
+Nitro Enclave: build an EIF using `./scripts/build_enclave.sh` then launch via `nitro-cli run-enclave` (details in `docs/deployment.md`).
+
+## 🔐 Security Notes (Implemented vs Conceptual)
+
+Implemented presently:
+* Process isolation (optionally hardware enclave)
+* Least-privilege on-chain actions (only operator key can draw/refund)
+* Basic log redaction of private key
+
+Conceptual / future (referenced historically, not fully implemented):
+* Attestation verification flow exposed to end users
+* Advanced entropy mixing or VRF integration
+* Rate limiting & JWT/session auth for authenticated endpoints (current API is public for read + transaction relay for operator only)
+
+See forthcoming `docs/security.md` update for a fuller breakdown.
+
+## 📄 Additional Documentation (Incoming Refresh)
+
+| File | Purpose |
+|------|---------|
+| `docs/CONFIG.md` | Definitive config keys & precedence |
+| `docs/EVENTS.md` | Websocket event payload schemas |
+| `docs/API.md` | REST + websocket endpoints |
+| `docs/FRONTEND.md` | Frontend architecture & build |
+| `docs/deployment.md` | Deployment guides (Docker / Enclave) |
+| `docs/security.md` | Threat model & controls |
+
+## 🤝 Contributing
+
+Pull requests welcome. Please ensure:
+* Changes keep passive, minimal architecture (avoid reintroducing schedulers unless justified)
+* Add/update docs & types with behavior changes
+* Avoid committing secrets / private keys
+
+---
+
+Built with Python, FastAPI, web3.py, React, TypeScript.
+
+MIT Licensed. See `LICENSE`.
+
+Legacy demo system and engine references were intentionally removed in favor of the current lean model.
 
 ```bash
 # Automatically install all prerequisites (except blockchain)
@@ -176,9 +352,8 @@ enclave-lottery-app/
 │   │   ├── main.py           # Enclave entry point
 │   │   ├── web_server.py     # FastAPI web server
 │   │   ├── lottery/          # Lottery game logic
-│   │   │   ├── engine.py     # Core lottery engine
-│   │   │   ├── bet_manager.py# Betting management
-│   │   │   └── scheduler.py  # Draw scheduling
+│   │   │   ├── operator.py   # PassiveOperator (draw/refund logic)
+│   │   │   └── event_manager.py # Poll + event serialization
 │   │   ├── blockchain/       # Ethereum integration
 │   │   │   ├── client.py     # Blockchain client
 │   │   │   ├── client.py      # Enhanced blockchain client
@@ -257,8 +432,7 @@ ENCLAVE_VSOCK_PORT=5005                      # VSock port
 ENCLAVE_ATTESTATION_ENABLED=false            # Enable attestation (set to true in production)
 
 # Frontend Configuration
-REACT_APP_API_URL=http://localhost:6080
-REACT_APP_WEBSOCKET_URL=ws://localhost:6080/ws
+# (Legacy REACT_APP_* env vars removed; use VITE_* now)
 ```
 
 **Important Notes:**
