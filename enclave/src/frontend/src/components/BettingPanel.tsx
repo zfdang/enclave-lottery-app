@@ -33,13 +33,13 @@ const BettingPanel: React.FC = () => {
   const [userBetAmount, setUserBetAmount] = useState(0)
   const [userWinRate, setUserWinRate] = useState<number | null>(null)
   // default value for BASE_BET
-  const BASE_BET = '0.01' // Fixed base bet amount in ETH
+  const BASE_BET = '0.001' // Fixed base bet amount in ETH
   const [minBetAmount, setMinBetAmount] = useState<string | null>(null)
   const [ones, setOnes] = useState(1)
   const [tens, setTens] = useState(1)
   const [hundreds, setHundreds] = useState(1)
 
-  
+
   // Load user's bet amount for current draw
   const loadUserBetStats = async () => {
     if (!address) return
@@ -73,20 +73,45 @@ const BettingPanel: React.FC = () => {
     }
   }, [address])
 
-  // Load min bet amount from contract (RPC getter)
+  // Load min bet amount from contract (RPC getter) with retry every 3s until a valid value (>0) is obtained
   useEffect(() => {
-    const loadMinBet = async () => {
-      try {
-        if (!contractService.hasValidContractAddress()) return
-        const mb = await contractService.getMinBetAmount()
-        setMinBetAmount(mb)
-      } catch (err) {
-        console.warn('Failed to load min bet amount:', err)
+    let cancelled = false
+
+    const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms))
+
+    const loadMinBetWithRetry = async () => {
+      while (!cancelled) {
+        try {
+          if (!contractService.hasValidContractAddress()) {
+            if (!cancelled) setMinBetAmount(null)
+            await sleep(3000) // retry every 3 seconds
+            continue
+          }
+
+          const mb = await contractService.getMinBetAmount()
+          const num = typeof mb === 'number' ? mb : parseFloat(String(mb))
+
+          if (!Number.isNaN(num) && num > 0) {
+            if (!cancelled) {
+              setMinBetAmount(String(mb))
+            }
+            return
+          }
+        } catch (err) {
+          console.warn('Failed to load min bet amount, will retry in 3s:', err)
+        }
+
+        await sleep(3000) // retry every 3 seconds
       }
     }
 
-    loadMinBet()
-  }, [isConnected])
+    loadMinBetWithRetry()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
 
   useEffect(() => {
     if (!successDialogOpen) return
@@ -122,7 +147,7 @@ const BettingPanel: React.FC = () => {
     return 0
   }
 
-  
+
   const handlePlaceBet = async () => {
     // Collect unmet conditions
     const unmet: string[] = []
@@ -153,22 +178,22 @@ const BettingPanel: React.FC = () => {
       return false
     }
 
-  setIsPlacingBet(true)
-  // clear any existing notification
-  setNotificationOpen(false)
-  setNotificationMessage('')
-  setNotificationSeverity('info')
+    setIsPlacingBet(true)
+    // clear any existing notification
+    setNotificationOpen(false)
+    setNotificationMessage('')
+    setNotificationSeverity('info')
 
     try {
       // Place bet directly via smart contract
       const transactionHash = await contractService.placeBet(betAmount.toString())
 
       // Optimistically update UI and show success dialog
-  const successMsg = `Bet placed successfully! Transaction: ${transactionHash.slice(0, 10)}...`
-  setSuccessMessage(successMsg)
-  setSuccessDialogOpen(true)
-  setNotificationOpen(false)
-  setNotificationMessage('')
+      const successMsg = `Bet placed successfully! Transaction: ${transactionHash.slice(0, 10)}...`
+      setSuccessMessage(successMsg)
+      setSuccessDialogOpen(true)
+      setNotificationOpen(false)
+      setNotificationMessage('')
       setUserBetAmount(prev => prev + betAmount)
 
       // Refresh user's bet stats from backend (best-effort)
@@ -198,9 +223,9 @@ const BettingPanel: React.FC = () => {
     max?: number
     disabled?: boolean
   }> = ({ label, value, onChange, max = 99, disabled = false }) => (
-    <Box sx={{ 
-      display: 'flex', 
-      flexDirection: 'column', 
+    <Box sx={{
+      display: 'flex',
+      flexDirection: 'column',
       alignItems: 'center',
       minWidth: '60px',
       p: 1,
@@ -221,9 +246,9 @@ const BettingPanel: React.FC = () => {
         >
           <Remove fontSize="small" />
         </IconButton>
-        <Typography variant="body2" sx={{ 
-          color: 'white', 
-          minWidth: '20px', 
+        <Typography variant="body2" sx={{
+          color: 'white',
+          minWidth: '20px',
           textAlign: 'center',
           fontWeight: 'bold'
         }}>
@@ -244,8 +269,8 @@ const BettingPanel: React.FC = () => {
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', p: 2, gap: 2 }}>
       {/* First Row - Status */}
-      <Box sx={{ 
-        display: 'flex', 
+      <Box sx={{
+        display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
         p: 2,
@@ -255,16 +280,16 @@ const BettingPanel: React.FC = () => {
       }}>
         <Box sx={{ display: 'flex', gap: 4, alignItems: 'center' }}>
           <Typography variant="body2" sx={{ color: 'white' }}>
-            Betting Status: <span style={{ 
+            Betting Status: <span style={{
               color: userBetAmount > 0 ? '#4CAF50' : 'rgba(255, 255, 255, 0.7)',
               fontWeight: 'bold'
             }}>
               {userBetAmount > 0 ? `${userBetAmount.toFixed(4)} ETH` : 'No Bet'}
             </span>
           </Typography>
-          
+
           <Typography variant="body2" sx={{ color: 'white' }}>
-            Win Rate: <span style={{ 
+            Win Rate: <span style={{
               color: calculateWinRate() > 0 ? '#2196F3' : 'rgba(255, 255, 255, 0.7)',
               fontWeight: 'bold'
             }}>
@@ -280,12 +305,12 @@ const BettingPanel: React.FC = () => {
         <Box sx={{ minWidth: '200px' }}>
           <WalletConnection />
         </Box>
-        
+
         {/* Right side - Betting Controls */}
-        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>          
+        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
           <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             {/* Base Amount Display */}
-            <Box sx={{ 
+            <Box sx={{
               p: 1,
               background: 'rgba(255, 255, 255, 0.1)',
               borderRadius: 1,
@@ -297,9 +322,9 @@ const BettingPanel: React.FC = () => {
               <Typography variant="caption" sx={{ color: 'white' }}>
                 Base Bet
               </Typography>
-                <Typography variant="body2" sx={{ color: 'white', fontWeight: 'bold' }}>
-                  {(minBetAmount ?? BASE_BET)} ETH
-                </Typography>
+              <Typography variant="body2" sx={{ color: 'white', fontWeight: 'bold' }}>
+                {(minBetAmount ?? BASE_BET)} ETH
+              </Typography>
             </Box>
 
             {/* Multipliers */}
@@ -309,14 +334,14 @@ const BettingPanel: React.FC = () => {
               onChange={setOnes}
               max={99}
             />
-            
+
             <MultiplierControl
               label="10x"
               value={tens}
               onChange={setTens}
               max={9}
             />
-            
+
             <MultiplierControl
               label="100x"
               value={hundreds}
@@ -329,7 +354,7 @@ const BettingPanel: React.FC = () => {
               variant="contained"
               onClick={handlePlaceBet}
               startIcon={isPlacingBet ? <CircularProgress size={16} /> : <Casino />}
-              sx={{ 
+              sx={{
                 background: isPlacingBet
                   ? 'rgba(76, 175, 80, 0.3)'
                   : 'linear-gradient(135deg, #4CAF50 0%, #81C784 100%)',
