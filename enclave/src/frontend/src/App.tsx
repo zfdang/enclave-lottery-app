@@ -617,11 +617,18 @@ function App() {
                   fontWeight: 700,
                   mb: 1
                 }}>
-                  {contractAddress}
+                  <a
+                    href={`https://sepolia.basescan.org/address/${contractAddress}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: '#1976d2', textDecoration: 'underline' }}
+                  >
+                    {contractAddress}
+                  </a>
                 </Typography>
               </Box>
               <Typography variant="body2" color="text.secondary" paragraph>
-                The following infromation is fetched directly from the contract on-chain. You can verify these values independently.
+                The following information is fetched directly from the contract on-chain. You can verify these values independently.
               </Typography>
               <Box sx={{ display: 'grid', gridTemplateColumns: '1fr', gap: 1 }}>
                 {roundInfo ? (
