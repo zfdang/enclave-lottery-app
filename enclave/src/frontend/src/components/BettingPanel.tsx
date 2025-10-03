@@ -36,8 +36,8 @@ const BettingPanel: React.FC = () => {
   const BASE_BET = '0.001' // Fixed base bet amount in ETH
   const [minBetAmount, setMinBetAmount] = useState<string | null>(null)
   const [ones, setOnes] = useState(1)
-  const [tens, setTens] = useState(1)
-  const [hundreds, setHundreds] = useState(1)
+  const [tens, setTens] = useState(0)
+  const [hundreds, setHundreds] = useState(0)
 
 
   // Load user's bet amount for current draw
