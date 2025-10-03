@@ -94,7 +94,15 @@ const UserList: React.FC = () => {
           <Typography variant="body2" textAlign="center">
             No participants yet
           </Typography>
-          <Typography variant="caption">
+          <Typography variant="caption" sx={{
+            mt: 1,
+            fontWeight: 700,
+            color: '#fff',
+            background: 'linear-gradient(90deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))',
+            px: 1,
+            py: 0.25,
+            borderRadius: 1
+          }}>
             Be the first to bet!
           </Typography>
         </Box>
