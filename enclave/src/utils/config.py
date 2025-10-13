@@ -54,7 +54,7 @@ def load_config() -> Dict[str, Any]:
 
     # Blockchain node / provider
     blockchain = config.setdefault('blockchain', {})
-    blockchain.setdefault('rpc_url', blockchain.get('rpc_url', os.environ.get('BLOCKCHAIN_RPC_URL', 'http://localhost:8545')))
+    blockchain.setdefault('rpc_url', blockchain.get('rpc_url', os.environ.get('BLOCKCHAIN_RPC_URL', 'https://base-sepolia.drpc.org/')))
     
     # show config, with sensitive values (operator_private_key) redacted
     redacted_config = json.loads(json.dumps(config))  # deep copy

@@ -17,3 +17,8 @@ py-solc-x>=1.12.0
 python-dotenv==1.0.0
 structlog==23.2.0
 click==8.1.7
+
+# aws nsm interface
+# https://github.com/donkersgoed/aws-nsm-interface
+cbor2
+ioctl-opt

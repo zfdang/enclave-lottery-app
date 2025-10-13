@@ -33,6 +33,8 @@ COPY --chown=lottery:lottery src/blockchain/ /app/src/blockchain/
 COPY --chown=lottery:lottery src/lottery/ /app/src/lottery/
 COPY --chown=lottery:lottery src/contracts/ /app/src/contracts/
 COPY --chown=lottery:lottery src/utils/ /app/src/utils/
+COPY --chown=lottery:lottery src/aws_nsm_interface/ /app/src/aws_nsm_interface/
+COPY --chown=lottery:lottery config/ /app/config/
 
 # Copy only the compiled frontend assets (not source)
 COPY --chown=lottery:lottery src/frontend/dist/ /app/src/frontend/dist/
@@ -45,4 +47,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:6080/api/health || exit 1
 
 # Default command
-CMD ["python", "src/main.py"]
+CMD ["python", "/app/src/main.py"]

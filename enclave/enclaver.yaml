@@ -1,0 +1,14 @@
+version: v1
+name: "lottery-app"
+target: "enclave-lottery:latest"
+sources:
+  app: "enclave-lottery-app:latest"
+  #odyn: "odyn-dev:latest"
+  #sleeve: "enclaver-wrapper-base:latest"
+defaults:
+  memory_mb: 1500
+ingress:
+  - listen_port: 6080
+egress:
+  allow:
+    - base-sepolia.drpc.org

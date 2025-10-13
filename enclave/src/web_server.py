@@ -158,35 +158,103 @@ class LotteryWebServer:
 
         @self.app.get("/api/attestation")
         async def get_attestation() -> Dict[str, Any]:
-            payload = {
-                "module_id": "i-1234567890abcdef0-enc0123456789abcdef",
-                "timestamp": int(datetime.utcnow().timestamp() * 1000),
-                "digest": "SHA384",
-                "pcrs": {str(idx): "a" * 96 for idx in (0, 1, 2, 8)},
-                "certificate": "-----BEGIN CERTIFICATE-----\nMockCertificateData\n-----END CERTIFICATE-----",
-                "cabundle": ["-----BEGIN CERTIFICATE-----\nMockRootCA\n-----END CERTIFICATE-----"],
-                "public_key": None,
-                "user_data": base64.b64encode(
-                    json.dumps(
-                        {
-                            "lottery_contract": self.blockchain_client.contract_address if self.blockchain_client else None,
-                            "operator_address": self.blockchain_client.account.address if self.blockchain_client and self.blockchain_client.account else None,
-                            "enclave_version": "3.0.0",
-                            "build_timestamp": datetime.utcnow().isoformat(),
-                        }
-                    ).encode("utf-8")
-                ).decode("utf-8"),
-                "nonce": None,
+            """
+            Generate a real AWS Nitro Enclave attestation document using aws-nsm-interface.
+            """
+            user_data_obj = {
+                "lottery_contract": self.blockchain_client.contract_address if self.blockchain_client else None,
+                "operator_address": (self.blockchain_client.account.address
+                                     if self.blockchain_client and self.blockchain_client.account else None),
+                "enclave_version": "3.0.0",
+                "build_timestamp": datetime.utcnow().isoformat(),
             }
-            encoded = base64.b64encode(json.dumps(payload).encode("utf-8")).decode("utf-8")
-            return {
-                "attestation_document": encoded,
-                "pcrs": payload["pcrs"],
-                "user_data": payload["user_data"],
-                "timestamp": payload["timestamp"],
-                "verified": True,
-                "note": "Mock attestation for development purposes only",
-            }
+            user_data_bytes = json.dumps(user_data_obj).encode("utf-8")
+
+            try:
+                import aws_nsm_interface
+            except ImportError as exc:
+                logger.error("NSM interface import failed: %s", exc)
+                raise HTTPException(status_code=503, detail=f"NSM interface not available: {exc}")
+
+            try:
+                # Open NSM device
+                nsm_fd = aws_nsm_interface.open_nsm_device()
+                
+                try:
+                    # Get attestation document with user data
+                    attestation_response = aws_nsm_interface.get_attestation_doc(
+                        file_handle=nsm_fd,
+                        user_data=user_data_bytes,
+                        nonce=None,
+                        public_key=None
+                    )
+                    
+                    # attestation_response is a dict, iterate all keys, and log them
+                    for key, value in attestation_response.items():
+                        if isinstance(value, (bytes, bytearray)):
+                            logger.info("Attestation response key '%s': %d bytes", key, len(value))
+                        else:
+                            logger.info("Attestation response key '%s': %s", key, str(value)[:100])
+                    
+
+                    # Extract attestation document (should be bytes)
+                    attestation_doc = attestation_response.get("document")
+                    if attestation_doc is None:
+                        logger.error("No attestation document in response")
+                        raise ValueError("No attestation document in response")
+                    
+                    # Base64 encode the attestation document
+                    attestation_document_b64 = base64.b64encode(attestation_doc).decode("utf-8")
+                    
+                    # Returns a dictionary with the lock status and PCR data for the PCR at the 
+                    # given index (index 0 returns PCR0, and so on).
+                    # describe_pcr(file_handle: typing.TextIO, index: int) -> dict
+                    # Example output: {'lock': False, 'data': b'\x9c\t\x15Rk\xb6(R~ ...
+                    # \x15\xdf\x1b'}
+
+                    pcrs_serialized = {}
+                    # use above describe_pcr(file_handle=nsm_fd, index=0) to list all PCRs
+                    for i in range(8):
+                        pcr_info = aws_nsm_interface.describe_pcr(file_handle=nsm_fd, index=i)
+                        lock_status = pcr_info.get("lock", False)
+                        pcr_data = pcr_info.get("data", b"")
+                        pcrs_serialized[str(i)] = pcr_data.hex() if isinstance(pcr_data, (bytes, bytearray)) else str(pcr_data)
+                        logger.info("PCR%d: lock=%s, data=%s", i, lock_status, pcr_data.hex() if isinstance(pcr_data, (bytes, bytearray)) else str(pcr_data))   
+                    
+                    # Extract certificate and CA bundle
+                    certificate = attestation_response.get("certificate")
+                    if isinstance(certificate, (bytes, bytearray)):
+                        certificate = certificate.decode("utf-8", errors="ignore")
+                    
+                    cabundle = attestation_response.get("cabundle", [])
+                    if isinstance(cabundle, (bytes, bytearray)):
+                        cabundle = [cabundle.decode("utf-8", errors="ignore")]
+                    elif isinstance(cabundle, list):
+                        cabundle = [
+                            cert.decode("utf-8", errors="ignore") if isinstance(cert, (bytes, bytearray)) else str(cert)
+                            for cert in cabundle
+                        ]
+
+                    return {
+                        "attestation_document": attestation_document_b64,
+                        "pcrs": pcrs_serialized,
+                        "user_data": base64.b64encode(user_data_bytes).decode("utf-8"),
+                        "timestamp": int(datetime.utcnow().timestamp() * 1000),
+                        "certificate": certificate,
+                        "cabundle": cabundle,
+                        "verified": True,
+                        "note": "Real attestation generated via AWS NSM interface",
+                    }
+                    
+                finally:
+                    # Always close the NSM device
+                    aws_nsm_interface.close_nsm_device(nsm_fd)
+            except HTTPException as exc:
+                logger.error("HTTP error occurred: %s", exc)
+                raise
+            except Exception as exc:
+                logger.exception("Failed to generate attestation document")
+                raise HTTPException(status_code=500, detail=f"Attestation generation failed: {exc}")
 
         # ------------------------------------------------------------------
         # Lottery state
