@@ -593,20 +593,123 @@ function App() {
                 isolated environment where no one (including AWS or the host) can access the lottery logic.
               </Typography>
               
-              <Box sx={{ backgroundColor: 'rgba(0, 0, 0, 0.1)', p: 2, borderRadius: 1, mb: 2 }}>
-                <Typography variant="caption" color="text.secondary">
-                  Attestation Document
-                </Typography>
-                <Typography variant="body2" fontFamily="monospace" sx={{ 
-                  wordBreak: 'break-all',
-                  whiteSpace: 'pre-wrap',
-                  fontSize: '0.75rem',
-                  maxHeight: '300px',
-                  overflow: 'auto'
-                }}>
-                  {attestation}
-                </Typography>
-              </Box>
+              {(() => {
+                try {
+                  const attestationData = JSON.parse(attestation);
+                  let userData = null;
+                  
+                  // Decode user_data if present
+                  if (attestationData.user_data) {
+                    try {
+                      const decodedBytes = atob(attestationData.user_data);
+                      userData = JSON.parse(decodedBytes);
+                    } catch (e) {
+                      console.error('Failed to decode user_data:', e);
+                    }
+                  }
+                  
+                  return (
+                    <>
+                      {/* User Data Section */}
+                      {userData && (
+                        <Box sx={{ backgroundColor: 'rgba(0, 100, 0, 0.1)', p: 2, borderRadius: 1, mb: 2 }}>
+                          <Typography variant="subtitle2" color="success.main" gutterBottom>
+                            Enclave Application Data
+                          </Typography>
+                          <Box sx={{ display: 'grid', gap: 1 }}>
+                            <Box>
+                              <Typography variant="caption" color="text.secondary">Contract Address:</Typography>
+                              <Typography variant="body2" fontFamily="monospace">
+                                {userData.lottery_contract || 'Not available'}
+                              </Typography>
+                            </Box>
+                            <Box>
+                              <Typography variant="caption" color="text.secondary">Operator Address:</Typography>
+                              <Typography variant="body2" fontFamily="monospace">
+                                {userData.operator_address || 'Not available'}
+                              </Typography>
+                            </Box>
+                            <Box>
+                              <Typography variant="caption" color="text.secondary">Enclave Version:</Typography>
+                              <Typography variant="body2">
+                                {userData.enclave_version || 'Unknown'}
+                              </Typography>
+                            </Box>
+                            <Box>
+                              <Typography variant="caption" color="text.secondary">Build Timestamp:</Typography>
+                              <Typography variant="body2">
+                                {userData.build_timestamp || 'Unknown'}
+                              </Typography>
+                            </Box>
+                          </Box>
+                        </Box>
+                      )}
+                      
+                      {/* PCRs Section */}
+                      {attestationData.pcrs && Object.keys(attestationData.pcrs).length > 0 && (
+                        <Box sx={{ backgroundColor: 'rgba(0, 0, 100, 0.1)', p: 2, borderRadius: 1, mb: 2 }}>
+                          <Typography variant="subtitle2" color="primary.main" gutterBottom>
+                            Platform Configuration Registers (PCRs)
+                          </Typography>
+                          <Box sx={{ display: 'grid', gap: 1, maxHeight: '150px', overflow: 'auto' }}>
+                            {Object.entries(attestationData.pcrs).map(([index, value]) => (
+                              <Box key={index}>
+                                <Typography variant="caption" color="text.secondary">PCR{index}:</Typography>
+                                <Typography variant="body2" fontFamily="monospace" sx={{ 
+                                  wordBreak: 'break-all',
+                                  fontSize: '0.7rem'
+                                }}>
+                                  {value as string}
+                                </Typography>
+                              </Box>
+                            ))}
+                          </Box>
+                        </Box>
+                      )}
+                      
+                      {/* Raw Attestation Document (collapsed by default) */}
+                      <Box sx={{ backgroundColor: 'rgba(0, 0, 0, 0.1)', p: 2, borderRadius: 1, mb: 2 }}>
+                        <Typography variant="caption" color="text.secondary">
+                          Raw Attestation Document (Click to expand)
+                        </Typography>
+                        <details style={{ marginTop: '8px' }}>
+                          <summary style={{ cursor: 'pointer', fontSize: '0.875rem' }}>
+                            Show raw attestation data
+                          </summary>
+                          <Typography variant="body2" fontFamily="monospace" sx={{ 
+                            wordBreak: 'break-all',
+                            whiteSpace: 'pre-wrap',
+                            fontSize: '0.75rem',
+                            maxHeight: '300px',
+                            overflow: 'auto',
+                            marginTop: '8px'
+                          }}>
+                            {attestation}
+                          </Typography>
+                        </details>
+                      </Box>
+                    </>
+                  );
+                } catch (e) {
+                  // Fallback to original display if parsing fails
+                  return (
+                    <Box sx={{ backgroundColor: 'rgba(0, 0, 0, 0.1)', p: 2, borderRadius: 1, mb: 2 }}>
+                      <Typography variant="caption" color="text.secondary">
+                        Attestation Document
+                      </Typography>
+                      <Typography variant="body2" fontFamily="monospace" sx={{ 
+                        wordBreak: 'break-all',
+                        whiteSpace: 'pre-wrap',
+                        fontSize: '0.75rem',
+                        maxHeight: '300px',
+                        overflow: 'auto'
+                      }}>
+                        {attestation}
+                      </Typography>
+                    </Box>
+                  );
+                }
+              })()}
               
               <Typography variant="body2" color="text.secondary">
                 You can independently verify this attestation document to ensure the integrity 
