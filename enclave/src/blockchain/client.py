@@ -52,10 +52,21 @@ class BlockchainClient:
         self._contract: Optional[Contract] = None
         self.contract_abi: Optional[List[Dict[str, Any]]] = None
 
+        # Operator account - can be set later via set_operator_key()
+        self.account: Optional[Account] = None
+        self._operator_key_set = False
+        
         private_key = blockchain_cfg.get("operator_private_key")
-        self.account = Account.from_key(private_key) if private_key else None
-        if self.account:
-            logger.info("Operator account loaded: %s", self.account.address)
+        if private_key and private_key.strip():
+            # If private key is provided in config, set it now (backward compatibility)
+            try:
+                self.account = Account.from_key(private_key)
+                self._operator_key_set = True
+                logger.info("Operator account loaded from config: %s", self.account.address)
+            except Exception as exc:
+                logger.error("Failed to load operator key from config: %s", exc)
+        else:
+            logger.info("Operator private key not set - will need to inject via /api/set_operator_key")
 
         gas_price_setting = blockchain_cfg.get("gas_price")
         self._gas_price_override: Optional[int] = None
@@ -111,6 +122,50 @@ class BlockchainClient:
         """Tear down references; HTTP provider closes automatically."""
         self._contract = None
         self._w3 = None
+
+    def set_operator_key(self, private_key: str) -> bool:
+        """Set operator private key after initialization.
+        
+        This method allows injecting the operator private key after the client
+        has been initialized. It can only be called once successfully.
+        
+        Args:
+            private_key: Ethereum private key (0x prefixed hex string)
+            
+        Returns:
+            bool: True if key was set successfully, False if already set
+            
+        Raises:
+            ValueError: If private key is invalid
+        """
+        if self._operator_key_set:
+            logger.warning("Attempt to set operator key when already set")
+            return False
+            
+        try:
+            self.account = Account.from_key(private_key)
+            self._operator_key_set = True
+            logger.info("Operator key set successfully for address: %s", self.account.address)
+            return True
+        except Exception as exc:
+            logger.error("Failed to set operator key: %s", exc)
+            raise ValueError(f"Invalid private key: {exc}")
+    
+    def is_operator_key_set(self) -> bool:
+        """Check if operator private key has been set.
+        
+        Returns:
+            bool: True if operator key is configured and ready to use
+        """
+        return self._operator_key_set
+    
+    def get_operator_address(self) -> Optional[str]:
+        """Get the operator's Ethereum address if key is set.
+        
+        Returns:
+            str or None: Operator address if key is set, None otherwise
+        """
+        return self.account.address if self.account else None
 
     async def _load_contract(self) -> None:
         if not self.contract_address:
@@ -196,8 +251,11 @@ class BlockchainClient:
         return await asyncio.to_thread(_call)
 
     async def _send_transaction(self, function_name: str, *args, value: int = 0) -> str:
-        if not self.account:
-            raise ValueError("Operator account not configured")
+        if not self._operator_key_set or not self.account:
+            raise RuntimeError(
+                "Operator private key not set. "
+                "Please call /api/set_operator_key to inject the key before performing transactions."
+            )
 
         contract = self._ensure_contract()
         w3 = self._ensure_web3()

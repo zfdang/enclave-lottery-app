@@ -16,6 +16,8 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from cryptography.hazmat.primitives import serialization
+
 from blockchain.client import BlockchainClient
 from lottery.event_manager import MemoryStore, memory_store
 from lottery.models import (
@@ -58,11 +60,13 @@ class LotteryWebServer:
         config: Dict[str, Any],
         operator: PassiveOperator,
         blockchain_client: BlockchainClient,
+        tls_keypair: Any,  # TLSKeyPair from utils.crypto
         store: MemoryStore = memory_store,
     ) -> None:
         self.config = config
         self.operator = operator
         self.blockchain_client = blockchain_client
+        self.tls_keypair = tls_keypair
         self._store = store
 
         self.app = FastAPI(
@@ -160,13 +164,14 @@ class LotteryWebServer:
         async def get_attestation() -> Dict[str, Any]:
             """
             Generate a real AWS Nitro Enclave attestation document using aws-nsm-interface.
+            
+            The attestation includes the TLS public key in user_data, allowing external
+            verifiers to confirm the public key comes from a trusted enclave.
             """
             user_data_obj = {
-                "lottery_contract": self.blockchain_client.contract_address if self.blockchain_client else None,
-                "operator_address": (self.blockchain_client.account.address
-                                     if self.blockchain_client and self.blockchain_client.account else None),
-                "enclave_version": "3.0.0",
-                "build_timestamp": datetime.utcnow().isoformat(),
+                "operator_address": (self.blockchain_client.get_operator_address()
+                                     if self.blockchain_client else None),
+                "tls_public_key_hex": self.tls_keypair.get_public_key_hex()
             }
             user_data_bytes = json.dumps(user_data_obj).encode("utf-8")
 
@@ -177,55 +182,75 @@ class LotteryWebServer:
                 raise HTTPException(status_code=503, detail=f"NSM interface not available: {exc}")
 
             try:
-                # Open NSM device
-                nsm_fd = aws_nsm_interface.open_nsm_device()
-                
+                # Try opening NSM device; if it fails, fall back to a dummy attestation
                 try:
-                    # Get attestation document with user data
+                    nsm_fd = aws_nsm_interface.open_nsm_device()
+                except Exception as exc_open:  # pragma: no cover - environment dependent
+                    logger.warning("NSM device not available: %s. Returning dummy attestation.", exc_open)
+                    # Return a clear dummy attestation object indicating not verified
+                    dummy_user_data_b64 = base64.b64encode(user_data_bytes).decode("utf-8")
+                    return {
+                        "attestation_document": base64.b64encode(b"DUMMY_ATTESTATION_DOCUMENT").decode("utf-8"),
+                        "pcrs": {str(i): None for i in range(8)},
+                        "user_data": dummy_user_data_b64,
+                        "timestamp": int(datetime.utcnow().timestamp() * 1000),
+                        "certificate": None,
+                        "cabundle": [],
+                        "verified": False,
+                        "note": "NSM device not available; returned dummy attestation for development/testing",
+                    }
+
+                # If we reach here, the NSM device opened successfully
+                try:
+                    # Get TLS public key in DER format for attestation
+                    tls_public_key_der = self.tls_keypair.public_key.public_bytes(
+                        encoding=serialization.Encoding.DER,
+                        format=serialization.PublicFormat.SubjectPublicKeyInfo
+                    )
+                    
+                    # Get attestation document with user data and TLS public key
                     attestation_response = aws_nsm_interface.get_attestation_doc(
                         file_handle=nsm_fd,
                         user_data=user_data_bytes,
                         nonce=None,
-                        public_key=None
+                        public_key=tls_public_key_der,
                     )
-                    
+
                     # attestation_response is a dict, iterate all keys, and log them
                     for key, value in attestation_response.items():
                         if isinstance(value, (bytes, bytearray)):
                             logger.info("Attestation response key '%s': %d bytes", key, len(value))
                         else:
                             logger.info("Attestation response key '%s': %s", key, str(value)[:100])
-                    
 
                     # Extract attestation document (should be bytes)
                     attestation_doc = attestation_response.get("document")
                     if attestation_doc is None:
                         logger.error("No attestation document in response")
                         raise ValueError("No attestation document in response")
-                    
+
                     # Base64 encode the attestation document
                     attestation_document_b64 = base64.b64encode(attestation_doc).decode("utf-8")
-                    
-                    # Returns a dictionary with the lock status and PCR data for the PCR at the 
-                    # given index (index 0 returns PCR0, and so on).
-                    # describe_pcr(file_handle: typing.TextIO, index: int) -> dict
-                    # Example output: {'lock': False, 'data': b'\x9c\t\x15Rk\xb6(R~ ...
-                    # \x15\xdf\x1b'}
 
                     pcrs_serialized = {}
-                    # use above describe_pcr(file_handle=nsm_fd, index=0) to list all PCRs
+                    # use describe_pcr(file_handle=nsm_fd, index=i) to list all PCRs
                     for i in range(8):
                         pcr_info = aws_nsm_interface.describe_pcr(file_handle=nsm_fd, index=i)
                         lock_status = pcr_info.get("lock", False)
                         pcr_data = pcr_info.get("data", b"")
                         pcrs_serialized[str(i)] = pcr_data.hex() if isinstance(pcr_data, (bytes, bytearray)) else str(pcr_data)
-                        logger.info("PCR%d: lock=%s, data=%s", i, lock_status, pcr_data.hex() if isinstance(pcr_data, (bytes, bytearray)) else str(pcr_data))   
-                    
+                        logger.info(
+                            "PCR%d: lock=%s, data=%s",
+                            i,
+                            lock_status,
+                            pcr_data.hex() if isinstance(pcr_data, (bytes, bytearray)) else str(pcr_data),
+                        )
+
                     # Extract certificate and CA bundle
                     certificate = attestation_response.get("certificate")
                     if isinstance(certificate, (bytes, bytearray)):
                         certificate = certificate.decode("utf-8", errors="ignore")
-                    
+
                     cabundle = attestation_response.get("cabundle", [])
                     if isinstance(cabundle, (bytes, bytearray)):
                         cabundle = [cabundle.decode("utf-8", errors="ignore")]
@@ -245,16 +270,177 @@ class LotteryWebServer:
                         "verified": True,
                         "note": "Real attestation generated via AWS NSM interface",
                     }
-                    
                 finally:
-                    # Always close the NSM device
-                    aws_nsm_interface.close_nsm_device(nsm_fd)
+                    # Always close the NSM device if it was opened
+                    try:
+                        aws_nsm_interface.close_nsm_device(nsm_fd)
+                    except Exception:
+                        logger.debug("Failed to close NSM device cleanly", exc_info=True)
             except HTTPException as exc:
                 logger.error("HTTP error occurred: %s", exc)
                 raise
             except Exception as exc:
                 logger.exception("Failed to generate attestation document")
                 raise HTTPException(status_code=500, detail=f"Attestation generation failed: {exc}")
+
+        # ------------------------------------------------------------------
+        # Key management endpoints
+        # ------------------------------------------------------------------
+        @self.app.get("/api/get_pub_key")
+        async def get_pub_key() -> Dict[str, Any]:
+            """Get the TLS public key for encrypting operator private key.
+            
+            This endpoint returns the SECP384R1 public key that should be used
+            to encrypt the operator private key using ECIES before calling
+            /api/set_operator_key.
+            """
+            try:
+                key_info = self.tls_keypair.get_key_info()
+                return {
+                    "public_key_pem": self.tls_keypair.get_public_key_pem(),
+                    "public_key_hex": self.tls_keypair.get_public_key_hex(),
+                    "curve": key_info["curve"],
+                    "key_size": key_info["key_size"],
+                    "usage": key_info["usage"],
+                    "timestamp": int(datetime.utcnow().timestamp() * 1000),
+                }
+            except Exception as exc:
+                logger.exception("Failed to get public key")
+                raise HTTPException(status_code=500, detail=f"Failed to retrieve public key: {exc}")
+
+        @self.app.post("/api/set_operator_key")
+        async def set_operator_key(request: Dict[str, Any]) -> Dict[str, Any]:
+            """Inject operator private key after validating address match.
+            
+            The private key must be encrypted with ECIES using the public key
+            from /api/get_pub_key. The decrypted key must match the operator
+            address configured in enclave.conf.
+            
+            This endpoint can only succeed once. Subsequent calls will fail.
+            """
+            from utils.key_manager import validate_operator_key
+            
+            # Check if already set
+            if self.blockchain_client.is_operator_key_set():
+                operator_address = self.blockchain_client.get_operator_address()
+                logger.warning("Operator key already set for address %s", operator_address)
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "success": False,
+                        "error": "Operator key already set. Cannot change once configured.",
+                        "operator_address": operator_address,
+                        "timestamp": int(datetime.utcnow().timestamp() * 1000),
+                    }
+                )
+            
+            # Extract encrypted private key
+            encrypted_private_key_b64 = request.get("encrypted_private_key")
+            if not encrypted_private_key_b64:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "success": False,
+                        "error": "Missing required field: encrypted_private_key",
+                        "operator_key_set": False,
+                    }
+                )
+            
+            # Decode base64
+            try:
+                encrypted_data = base64.b64decode(encrypted_private_key_b64)
+            except Exception as exc:
+                logger.error("Failed to decode base64 encrypted data: %s", exc)
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "success": False,
+                        "error": "Invalid base64 encoding",
+                        "detail": str(exc),
+                        "operator_key_set": False,
+                        "message": "You can retry with correct encoding",
+                    }
+                )
+            
+            # Decrypt using TLS private key
+            try:
+                decrypted_bytes = self.tls_keypair.decrypt_ecies(encrypted_data)
+                private_key = decrypted_bytes.decode('utf-8').strip()
+            except Exception as exc:
+                logger.error("Failed to decrypt private key: %s", exc)
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "success": False,
+                        "error": "Failed to decrypt private key",
+                        "detail": str(exc),
+                        "operator_key_set": False,
+                        "message": "You can retry with correct encryption",
+                    }
+                )
+            
+            # Get expected operator address from config
+            expected_address = self.config.get("blockchain", {}).get("operator_address")
+            if not expected_address:
+                logger.error("operator_address not configured in enclave.conf")
+                raise HTTPException(
+                    status_code=500,
+                    detail={
+                        "success": False,
+                        "error": "Operator address not configured in enclave.conf",
+                    }
+                )
+            
+            # Validate operator key
+            is_valid, derived_address, error_msg = validate_operator_key(
+                private_key, expected_address
+            )
+            
+            if not is_valid:
+                logger.warning("Operator key validation failed: %s", error_msg)
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "success": False,
+                        "error": error_msg.split(":")[0] if ":" in error_msg else error_msg,
+                        "detail": error_msg,
+                        "expected_address": expected_address,
+                        "derived_address": derived_address if derived_address else None,
+                        "operator_key_set": False,
+                        "message": "The private key does not match the configured operator address. You can retry with correct key.",
+                    }
+                )
+            
+            # Set the operator key
+            try:
+                success = self.blockchain_client.set_operator_key(private_key)
+                if not success:
+                    # This shouldn't happen as we checked is_operator_key_set above
+                    raise HTTPException(
+                        status_code=500,
+                        detail={
+                            "success": False,
+                            "error": "Failed to set operator key (already set)"
+                        }
+                    )
+                
+                logger.info("Operator key set successfully for address %s", derived_address)
+                return {
+                    "success": True,
+                    "operator_address": derived_address,
+                    "message": "Operator key set successfully",
+                    "timestamp": int(datetime.utcnow().timestamp() * 1000),
+                }
+            except Exception as exc:
+                logger.exception("Unexpected error setting operator key")
+                raise HTTPException(
+                    status_code=500,
+                    detail={
+                        "success": False,
+                        "error": "Internal error setting operator key",
+                        "detail": str(exc),
+                    }
+                )
 
         # ------------------------------------------------------------------
         # Lottery state

@@ -33,7 +33,7 @@ from blockchain.client import BlockchainClient
 from lottery.event_manager import memory_store
 from lottery.operator import PassiveOperator
 from utils.config import load_config
-from utils.crypto import EnclaveAttestation
+from utils.crypto import EnclaveAttestation, TLSKeyPair
 from lottery.event_manager import EventManager
 
 logger = get_logger(__name__)
@@ -51,6 +51,7 @@ class PassiveLotteryOperatorApp:
         self.web_server: Optional[LotteryWebServer] = None
         self.operator: Optional[PassiveOperator] = None
         self.blockchain_client: Optional[BlockchainClient] = None
+        self.tls_keypair: Optional[TLSKeyPair] = None
         self._operator_task: Optional[asyncio.Task[Any]] = None
         self._server_task: Optional[asyncio.Task[Any]] = None
         self.running = True
@@ -103,6 +104,11 @@ class PassiveLotteryOperatorApp:
         # Show configuration summary
         self._display_config_summary()
 
+        # Generate TLS key pair for secure operator key injection
+        logger.info("🔐 Generating TLS SECP384R1 key pair for secure key injection...")
+        self.tls_keypair = TLSKeyPair()
+        logger.info("✅ TLS key pair generated successfully")
+
         # Blockchain client
         logger.info("🔗 Initializing blockchain client...")
         self.blockchain_client = BlockchainClient(self.config)
@@ -119,7 +125,12 @@ class PassiveLotteryOperatorApp:
 
         # Web server
         logger.info("🌐 Initializing web server...")
-        self.web_server = LotteryWebServer(self.config, self.operator, self.blockchain_client)
+        self.web_server = LotteryWebServer(
+            self.config, 
+            self.operator, 
+            self.blockchain_client,
+            self.tls_keypair
+        )
 
         logger.info("🎉 Passive application initialization completed")
 

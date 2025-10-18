@@ -49,7 +49,7 @@ Prefer exporting only what you need for the deployment surface rather than a lar
 | `EVENTMGR_` | Polling & retention behavior | `EVENTMGR_POLL_INTERVAL_SECONDS`, `EVENTMGR_CONFIG_REFRESH_SECONDS`, `EVENTMGR_HISTORY_CAPACITY`, `EVENTMGR_FEED_CAPACITY` |
 | `SERVER_` | API binding | `SERVER_HOST`, `SERVER_PORT` |
 | `APP_` | Logging & app-level | `APP_LOG_LEVEL`, `APP_LOG_FILE` |
-| `ENCLAVE_` | Nitro specifics (optional) | `ENCLAVE_VSOCK_PORT`, `ENCLAVE_ATTESTATION_ENABLED` |
+| `ENCLAVE_` | Nitro specifics (optional) | `ENCLAVE_ATTESTATION_ENABLED` |
 | `VITE_` | Frontend build/runtime | `VITE_API_URL`, `VITE_WS_URL`, `VITE_CHAIN_ID` |
 
 ### Active Keys (Summary)
@@ -70,7 +70,7 @@ Prefer exporting only what you need for the deployment surface rather than a lar
 | `SERVER_PORT` | Bind port | `6080` |
 | `APP_LOG_LEVEL` | Logging level | `INFO` |
 | `APP_LOG_FILE` | Optional log file path | unset (stdout only) |
-| `ENCLAVE_VSOCK_PORT` | Vsock port (enclave mode) | `5005` |
+| `ENCLAVE_VSOCK_PORT` | (Optional) Vsock port for host-proxy deployments | `5005` |
 | `ENCLAVE_ATTESTATION_ENABLED` | Enable attestation features | `false` |
 | `VITE_API_URL` | Frontend API base | `http://localhost:6080` (dev) |
 | `VITE_WS_URL` | Frontend websocket URL | `ws://localhost:6080/ws` (dev) |

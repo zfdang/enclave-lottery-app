@@ -90,7 +90,7 @@ curl -f http://localhost:6080/health
      --memory 1024 \
      --enclave-cid 16
    ```
-5. Expose vsock ↔ host communication (host proxy component if required).
+5. If deploying in a Nitro Enclave, expose host↔enclave communication via a host-proxy component if required. The project does not provide an integrated vsock helper in the enclave runtime; implement the host proxy as a separate service.
 6. Provide env vars to host process that relays into enclave (details depend on chosen proxy wiring).
 
 (Full enclave attestation + vsock relay documentation will be expanded separately.)

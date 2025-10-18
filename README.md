@@ -452,32 +452,26 @@ The system supports both new standardized and legacy environment variable names:
 | `SERVER_HOST` | `LOTTERY_SERVER_HOST` | Server bind address |
 | `SERVER_PORT` | `LOTTERY_SERVER_PORT` | Server port |
 
-### Enclave Configuration
+## Enclave Configuration
 
-The `enclave/config/enclave.conf` file contains lottery-specific settings:
+The `enclave/config/enclave.conf` file contains lottery-specific settings. If
+deploying to an AWS Nitro Enclave you may supply additional `enclave` keys such
+as `attestation_enabled`. Host↔enclave communication should be provided via a
+separate host-proxy service when required; the repository does not ship a
+built-in vsock helper inside the enclave runtime.
+
+Example (minimal):
 
 ```json
 {
-  "server": {
-    "host": "0.0.0.0",
-    "port": 6080
-  },
-  "lottery": {
-    "draw_interval_minutes": 10,
-    "betting_cutoff_minutes": 1,
-    "single_bet_amount": "0.01",
-    "max_bets_per_user": 100
-  },
+  "server": { "host": "0.0.0.0", "port": 6080 },
   "blockchain": {
     "rpc_url": "http://localhost:8545",
     "chain_id": 31337,
     "contract_address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
     "private_key": "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
   },
-  "enclave": {
-    "vsock_port": 5000,
-    "attestation_enabled": true
-  }
+  "enclave": { "attestation_enabled": true }
 }
 ```
 
