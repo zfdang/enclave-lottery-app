@@ -618,29 +618,28 @@ function App() {
                           </Typography>
                           <Box sx={{ display: 'grid', gap: 1 }}>
                             <Box>
-                              <Typography variant="caption" color="text.secondary">Contract Address:</Typography>
-                              <Typography variant="body2" fontFamily="monospace">
-                                {userData.lottery_contract || 'Not available'}
-                              </Typography>
-                            </Box>
-                            <Box>
                               <Typography variant="caption" color="text.secondary">Operator Address:</Typography>
                               <Typography variant="body2" fontFamily="monospace">
                                 {userData.operator_address || 'Not available'}
                               </Typography>
                             </Box>
-                            <Box>
-                              <Typography variant="caption" color="text.secondary">Enclave Version:</Typography>
-                              <Typography variant="body2">
-                                {userData.enclave_version || 'Unknown'}
-                              </Typography>
-                            </Box>
-                            <Box>
-                              <Typography variant="caption" color="text.secondary">Build Timestamp:</Typography>
-                              <Typography variant="body2">
-                                {userData.build_timestamp || 'Unknown'}
-                              </Typography>
-                            </Box>
+                            {userData.tls_public_key_hex && (
+                              <Box>
+                                <Typography variant="caption" color="text.secondary">TLS Public Key (SECP384R1):</Typography>
+                                <Typography variant="body2" fontFamily="monospace" sx={{ 
+                                  wordBreak: 'break-all',
+                                  fontSize: '0.7rem',
+                                  backgroundColor: 'rgba(0, 0, 0, 0.05)',
+                                  p: 1,
+                                  borderRadius: 0.5
+                                }}>
+                                  {userData.tls_public_key_hex}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                                  {userData.tls_public_key_hex.length} hex chars (97 bytes uncompressed)
+                                </Typography>
+                              </Box>
+                            )}
                           </Box>
                         </Box>
                       )}

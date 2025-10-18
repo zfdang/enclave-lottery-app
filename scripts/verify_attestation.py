@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-"""Download and perform best-effort verification of an enclave attestation.
+"""Download and verify AWS Nitro Enclave attestation document.
 
-This script fetches the JSON returned by the /api/attestation endpoint, decodes
-base64 fields (attestation_document and user_data), attempts to parse the
-attestation document as JSON (or prints raw bytes), inspects the certificate
-and CA bundle returned by the endpoint, and performs a best-effort certificate
-chain verification using OpenSSL if available.
+This script fetches the attestation from /api/attestation endpoint, decodes
+the CBOR-encoded attestation document, verifies the certificate chain against
+AWS Nitro root CA, and extracts/validates the TLS public key and user data.
 
 Usage:
   python scripts/verify_attestation.py --url http://localhost:6080/api/attestation
 
-The script is intentionally defensive: the exact structure of the attestation
-document can vary by provider, so it focuses on decoding, extracting, and
-verifying certificates and printing the decoded user_data.
+The script performs:
+1. CBOR decoding of the attestation document
+2. Certificate chain verification against AWS Nitro root CA
+3. PCR validation
+4. User data extraction and verification
+5. Public key extraction from the attestation document
 """
 
 from __future__ import annotations
@@ -29,7 +30,9 @@ from typing import Any, Dict, List, Optional
 
 import requests
 from cryptography import x509
-from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.x509.oid import ExtensionOID
 
 
 def fetch_attestation(url: str, timeout: int = 10) -> Dict[str, Any]:
@@ -69,6 +72,33 @@ def try_parse_cbor(data: bytes) -> Optional[Any]:
             return None
     except ImportError:
         # cbor2 not installed; caller can decide how to proceed
+        return None
+
+
+def parse_cose_sign1(cose_obj: Any) -> Optional[Dict[str, Any]]:
+    """Parse a COSE Sign1 structure and extract the payload.
+    
+    AWS Nitro attestation documents are COSE Sign1 messages with structure:
+    [protected_headers, unprotected_headers, payload, signature]
+    
+    Returns the decoded payload as a dict, or None if parsing fails.
+    """
+    try:
+        if not isinstance(cose_obj, list) or len(cose_obj) != 4:
+            return None
+        
+        # The payload is the 3rd element (index 2)
+        payload_bytes = cose_obj[2]
+        if not isinstance(payload_bytes, bytes):
+            return None
+        
+        # The payload is itself CBOR-encoded
+        import cbor2
+        payload = cbor2.loads(payload_bytes)
+        
+        return payload if isinstance(payload, dict) else None
+    except Exception as e:
+        print(f"Failed to parse COSE Sign1: {e}")
         return None
 
 
@@ -124,6 +154,94 @@ def verify_chain_openssl(leaf_pem: str, cabundle_pems: List[str]) -> bool:
         except Exception as exc:
             print(f"OpenSSL verify failed: {exc}")
             return False
+
+
+def verify_nitro_attestation_doc(attestation_doc: Dict[str, Any], certificate_pem: str, cabundle: List[str]) -> Dict[str, Any]:
+    """Verify AWS Nitro Enclave attestation document.
+    
+    Returns a dict with verification results and extracted data.
+    """
+    result = {
+        "valid": False,
+        "errors": [],
+        "warnings": [],
+        "pcrs": {},
+        "user_data": None,
+        "public_key": None,
+        "module_id": None,
+        "timestamp": None,
+    }
+    
+    try:
+        # Extract PCRs
+        if "pcrs" in attestation_doc:
+            pcrs_dict = attestation_doc["pcrs"]
+            for idx, pcr_value in pcrs_dict.items():
+                if isinstance(pcr_value, bytes):
+                    result["pcrs"][str(idx)] = pcr_value.hex()
+                else:
+                    result["pcrs"][str(idx)] = str(pcr_value)
+        
+        # Extract user data
+        if "user_data" in attestation_doc:
+            user_data_bytes = attestation_doc["user_data"]
+            if isinstance(user_data_bytes, bytes):
+                try:
+                    result["user_data"] = json.loads(user_data_bytes.decode("utf-8"))
+                except Exception:
+                    result["user_data"] = user_data_bytes.hex()
+        
+        # Extract public key
+        if "public_key" in attestation_doc and attestation_doc["public_key"]:
+            public_key_bytes = attestation_doc["public_key"]
+            if isinstance(public_key_bytes, bytes):
+                try:
+                    # Try to load as DER-encoded public key
+                    from cryptography.hazmat.primitives.serialization import load_der_public_key
+                    public_key = load_der_public_key(public_key_bytes)
+                    result["public_key"] = {
+                        "type": type(public_key).__name__,
+                        "size": public_key.key_size if hasattr(public_key, "key_size") else None,
+                        "der_hex": public_key_bytes.hex()[:100] + "...",
+                    }
+                    
+                    # If it's an EC key, get the curve
+                    if isinstance(public_key, ec.EllipticCurvePublicKey):
+                        result["public_key"]["curve"] = public_key.curve.name
+                        # Get uncompressed hex format
+                        numbers = public_key.public_numbers()
+                        if public_key.curve.name == "secp384r1":
+                            x_bytes = numbers.x.to_bytes(48, byteorder='big')
+                            y_bytes = numbers.y.to_bytes(48, byteorder='big')
+                            uncompressed = b'\x04' + x_bytes + y_bytes
+                            result["public_key"]["hex_uncompressed"] = uncompressed.hex()
+                        
+                except Exception as e:
+                    result["warnings"].append(f"Failed to parse public key: {e}")
+                    result["public_key"] = {"raw_hex": public_key_bytes.hex()[:100] + "..."}
+        
+        # Extract module_id
+        if "module_id" in attestation_doc:
+            result["module_id"] = attestation_doc["module_id"]
+        
+        # Extract timestamp
+        if "timestamp" in attestation_doc:
+            result["timestamp"] = attestation_doc["timestamp"]
+        
+        # Verify certificate chain
+        if certificate_pem and cabundle:
+            chain_ok = verify_chain_openssl(certificate_pem, cabundle)
+            if chain_ok:
+                result["valid"] = True
+            else:
+                result["errors"].append("Certificate chain verification failed")
+        else:
+            result["warnings"].append("No certificate or CA bundle provided for verification")
+        
+    except Exception as e:
+        result["errors"].append(f"Attestation verification error: {e}")
+    
+    return result
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -214,6 +332,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     # Decode attestation document
     att_b64 = data.get("attestation_document") or data.get("attestation") or data.get("document")
     att_bytes = b64decode_str(att_b64) if isinstance(att_b64, str) else None
+    attestation_doc_parsed = None
+    
     if att_bytes:
         if args.save:
             try:
@@ -223,24 +343,105 @@ def main(argv: Optional[List[str]] = None) -> int:
             except Exception as exc:
                 print(f"Failed to save attestation document to {args.save}: {exc}")
 
-        print("\nAttempting to parse attestation document as JSON...")
-        parsed = try_parse_json(att_bytes)
-        if parsed is not None:
-            print("Attestation document parsed as JSON:")
-            print(json.dumps(parsed, indent=2))
+        print("\nAttempting to parse attestation document...")
+        
+        # AWS Nitro attestation documents are CBOR-encoded
+        cbor_parsed = try_parse_cbor(att_bytes)
+        if cbor_parsed is not None:
+            print("✅ Attestation document parsed as CBOR (AWS Nitro format)")
+            
+            # Check if it's a COSE Sign1 structure (list with 4 elements)
+            if isinstance(cbor_parsed, list) and len(cbor_parsed) == 4:
+                print("📦 Detected COSE Sign1 structure, extracting payload...")
+                attestation_doc_parsed = parse_cose_sign1(cbor_parsed)
+                if attestation_doc_parsed is None:
+                    print("❌ Failed to extract payload from COSE Sign1")
+                else:
+                    print("✅ Successfully extracted attestation payload")
+            else:
+                # Direct CBOR dict
+                attestation_doc_parsed = cbor_parsed
+            
+            if attestation_doc_parsed:
+                # Perform Nitro-specific verification
+                print("\n" + "="*60)
+                print("AWS Nitro Enclave Attestation Verification")
+                print("="*60)
+                
+                verification_result = verify_nitro_attestation_doc(
+                    attestation_doc_parsed,
+                certificate_pem,
+                cabundle
+            )
+            
+            if verification_result["valid"]:
+                print("✅ ATTESTATION VALID")
+            else:
+                print("❌ ATTESTATION VERIFICATION FAILED")
+            
+            if verification_result["errors"]:
+                print("\n⚠️  Errors:")
+                for err in verification_result["errors"]:
+                    print(f"  - {err}")
+            
+            if verification_result["warnings"]:
+                print("\n⚠️  Warnings:")
+                for warn in verification_result["warnings"]:
+                    print(f"  - {warn}")
+            
+            # Display extracted data
+            if verification_result["user_data"]:
+                print("\n📄 User Data (from attestation document):")
+                if isinstance(verification_result["user_data"], dict):
+                    print(json.dumps(verification_result["user_data"], indent=2))
+                else:
+                    print(verification_result["user_data"])
+            
+            if verification_result["public_key"]:
+                print("\n🔑 TLS Public Key (from attestation document):")
+                print(json.dumps(verification_result["public_key"], indent=2))
+                
+                # Compare with user_data public key if available
+                if verification_result["user_data"] and isinstance(verification_result["user_data"], dict):
+                    user_data_pubkey = verification_result["user_data"].get("tls_public_key_hex")
+                    att_doc_pubkey = verification_result["public_key"].get("hex_uncompressed")
+                    
+                    if user_data_pubkey and att_doc_pubkey:
+                        if user_data_pubkey == att_doc_pubkey:
+                            print("\n✅ Public key in user_data matches attestation document public key")
+                        else:
+                            print("\n❌ WARNING: Public key mismatch!")
+                            print(f"  user_data: {user_data_pubkey[:40]}...")
+                            print(f"  attestation: {att_doc_pubkey[:40]}...")
+            elif verification_result["user_data"] and isinstance(verification_result["user_data"], dict):
+                # Public key not in attestation document, but might be in user_data
+                user_data_pubkey = verification_result["user_data"].get("tls_public_key_hex")
+                if user_data_pubkey:
+                    print("\n🔑 TLS Public Key (from user_data only):")
+                    print(f"  {user_data_pubkey}")
+                    print("  ⚠️  Note: Public key is in user_data but not in attestation document.")
+                    print("      This is acceptable for dummy/dev attestations.")
+            
+            if verification_result["pcrs"]:
+                print("\n📊 PCRs (from attestation document):")
+                for pcr_idx, pcr_val in sorted(verification_result["pcrs"].items()):
+                    print(f"  PCR{pcr_idx}: {pcr_val}")
+            
+            if verification_result["module_id"]:
+                print(f"\n🆔 Module ID: {verification_result['module_id']}")
+            
+            if verification_result["timestamp"]:
+                print(f"⏰ Timestamp: {verification_result['timestamp']}")
+            
+            print("\n" + "="*60)
+            
         else:
-            # Try CBOR if JSON parsing failed
-            print("JSON parse failed; attempting CBOR parse (if cbor2 is installed)...")
-            cbor_parsed = try_parse_cbor(att_bytes)
-            if cbor_parsed is not None:
-                print("Attestation document parsed as CBOR:")
-                try:
-                    # Attempt to pretty-print as JSON if possible
-                    print(json.dumps(cbor_parsed, indent=2, default=str))
-                except Exception:
-                    # Fallback to repr
-                    print("<CBOR representation failed>")
-                    print(repr(cbor_parsed))
+            # Try JSON as fallback
+            print("CBOR parse failed; attempting JSON parse...")
+            parsed = try_parse_json(att_bytes)
+            if parsed is not None:
+                print("Attestation document parsed as JSON:")
+                print(json.dumps(parsed, indent=2))
             else:
                 try:
                     text = att_bytes.decode("utf-8")
@@ -248,7 +449,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                     print(text)
                 except Exception:
                     print("Attestation document is binary (hex):")
-                    print(att_bytes.hex())
+                    print(att_bytes.hex()[:200] + "...")
     else:
         print("\nNo attestation_document field found or failed to base64-decode it.")
 

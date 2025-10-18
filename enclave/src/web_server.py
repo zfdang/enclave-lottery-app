@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import cbor2
 import json
 import logging
 from datetime import datetime
@@ -189,9 +190,36 @@ class LotteryWebServer:
                     logger.warning("NSM device not available: %s. Returning dummy attestation.", exc_open)
                     # Return a clear dummy attestation object indicating not verified
                     dummy_user_data_b64 = base64.b64encode(user_data_bytes).decode("utf-8")
+                    
+                    # Create a CBOR-encoded dummy attestation document that matches Nitro format
+                    # Get TLS public key in DER format
+                    tls_public_key_der = self.tls_keypair.public_key.public_bytes(
+                        encoding=serialization.Encoding.DER,
+                        format=serialization.PublicFormat.SubjectPublicKeyInfo
+                    )
+                    
+                    # Create dummy PCRs (48 bytes each, all zeros for testing)
+                    dummy_pcrs = {i: b'\x00' * 48 for i in range(16)}
+                    
+                    # Build a dummy attestation document CBOR structure
+                    import cbor2
+                    dummy_attestation_doc = {
+                        "module_id": "i-dummy-enclave-dev",
+                        "timestamp": int(datetime.utcnow().timestamp() * 1000),
+                        "digest": "SHA384",
+                        "pcrs": dummy_pcrs,
+                        "certificate": b"",  # Empty certificate (no real cert in dev mode)
+                        "cabundle": [],
+                        "public_key": tls_public_key_der,
+                        "user_data": user_data_bytes,
+                        "nonce": None,
+                    }
+                    
+                    dummy_attestation_cbor = cbor2.dumps(dummy_attestation_doc)
+                    
                     return {
-                        "attestation_document": base64.b64encode(b"DUMMY_ATTESTATION_DOCUMENT").decode("utf-8"),
-                        "pcrs": {str(i): None for i in range(8)},
+                        "attestation_document": base64.b64encode(dummy_attestation_cbor).decode("utf-8"),
+                        "pcrs": {str(i): "00" * 48 for i in range(8)},
                         "user_data": dummy_user_data_b64,
                         "timestamp": int(datetime.utcnow().timestamp() * 1000),
                         "certificate": None,

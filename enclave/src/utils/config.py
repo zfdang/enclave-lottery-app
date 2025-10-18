@@ -29,7 +29,7 @@ def load_config() -> Dict[str, Any]:
         logger.warning(f"Config file {config_file} not found. Will only use environment variables.")
 
     # Override with environment variables, defined in .env
-    config = _apply_env_overrides(config)
+    # config = _apply_env_overrides(config)
 
     # Normalize and apply sensible defaults for event manager (event_manager / polling)
     # event_manager top-level configuration (used at runtime)

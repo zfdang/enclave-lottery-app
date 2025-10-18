@@ -197,7 +197,7 @@ main() {
     check_env_file
     compile_contracts
     # wait for user input to continue
-    read -p "Press [Enter] key to continue building docker image:"
+    # read -p "Press [Enter] key to continue building docker image:"
     build_backend
     build_frontend
     build_docker
