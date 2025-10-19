@@ -5,7 +5,7 @@
 # Features: optimized frontend build, selective file copying, proper permissions, and .env validation.
 # The resulting Docker image excludes unnecessary development files for minimal size and security.
 
-set -e
+set -euo pipefail
 
 echo "🚀 Starting Lottery Enclave Build Process..."
 
@@ -37,51 +37,73 @@ warning() {
 
 # Check prerequisites
 check_prerequisites() {
-    log "Checking prerequisites..."
-    
+    log "Step 1: Checking prerequisites..."
+
     # Check if Docker is installed
     if ! command -v docker &> /dev/null; then
         error "Docker is not installed. Please install Docker first."
-        exit
+        exit 1
     else
-        log "Docker version: $(docker --version)"
+        log "Docker: $(docker --version)"
     fi
-    
-    # Check if Node.js is installed
+
+    # Check if Node.js is installed (frontend build)
+    SKIP_FRONTEND=0
     if ! command -v node &> /dev/null; then
-        error "Node.js is not installed. Frontend build will be skipped."
-        exit 1
+        warning "Node.js is not installed. Frontend build will be skipped."
+        SKIP_FRONTEND=1
     else
-        log "Node.js version: $(node --version)"
+        log "Node.js: $(node --version)"
     fi
-    
-    # Check if Python is available
+
+    # Check if Python is available (backend prep)
     if ! command -v python3 &> /dev/null; then
-        error "Python 3 is not installed."
+        error "Python 3 is not installed. Backend build cannot proceed."
         exit 1
     else
-        log "Python version: $(python3 --version)"  
+        log "Python: $(python3 --version)"
     fi
-    
+
     log "Prerequisites check completed ✅"
+    export SKIP_FRONTEND
+}
+
+# Print operator key setup reminder
+print_operator_key_reminder() {
+    log "Step 2: Operator private key setup"
+    echo -e "${YELLOW}⚠️  IMPORTANT: After deploying the application, you must set the operator private key.${NC}"
+    echo -e "${YELLOW}   Use the key injection script: ./scripts/set_operator_key.py${NC}"
+    echo -e "${YELLOW}   DO NOT commit private keys to source control!${NC}"
 }
 
 # Build frontend
-build_frontend() {    
-    log "Building React frontend..."
-    
+build_frontend() {
+    log "Step 4: Building React frontend (if available)..."
+
+    # Honor SKIP_FRONTEND exported by check_prerequisites
+    if [[ "${SKIP_FRONTEND:-0}" == "1" ]]; then
+        warning "Skipping frontend build because Node.js is not available."
+        return
+    fi
+
     cd "$PROJECT_ROOT/enclave/frontend"
-    
+
+    # check .env file exists, if it doesn't, suggest user to copy .env.example
+    if [[ ! -f ".env" ]]; then
+        error ".env file not found in frontend directory. Please copy .env.example to .env and configure it."
+        exit 1
+    fi
+
     # Install dependencies
     if [[ ! -d "node_modules" ]]; then
         log "Installing npm dependencies..."
         npm install
     fi
-    
+
     # Build production frontend
-    log "Building production frontend..."
+    log "Running: npm run build"
     npm run build
-    
+
     log "Frontend build completed ✅"
     cd "$PROJECT_ROOT"
 }
@@ -164,45 +186,63 @@ compile_contracts() {
 
 # Build Docker image
 build_docker() {
-    log "Building Docker image..."
-    
+    log "Step 6: Building Docker image..."
+
     cd "$PROJECT_ROOT"
-    
+
     # Build the Docker image with the correct context and name
-    # Use the enclave directory as build context since Dockerfile expects relative paths
+    log "Running: docker build --no-cache -t lottery-app:latest -f enclave/Dockerfile enclave/"
     docker build --no-cache -t lottery-app:latest -f enclave/Dockerfile enclave/
-    
+
     log "Docker image build completed ✅"
 
     # show image information
-    docker image inspect lottery-app:latest
+    docker image inspect lottery-app:latest || true
 }
 
 
 # Main build process
 main() {
     log "Starting build process..."
-        
-    # Run build steps
+
+    START_ALL=$(date +%s)
+
+    # Run build steps with clear numbering
     check_prerequisites
-    compile_contracts
-    # wait for user input to continue
-    # read -p "Press [Enter] key to continue building docker image:"
-    build_backend
-    build_frontend
-    build_docker
     
-    log "🎉 Build process completed successfully!"
+    # Remind user about operator key
+    print_operator_key_reminder
+
+    STEP=3; STEP_START=$(date +%s); log "Step $STEP: Compiling smart contracts..."; compile_contracts; log "Step $STEP completed in $(( $(date +%s) - STEP_START ))s"
+
+    STEP=4; STEP_START=$(date +%s); log "Step $STEP: Preparing Python backend..."; build_backend; log "Step $STEP completed in $(( $(date +%s) - STEP_START ))s"
+
+    STEP=5; STEP_START=$(date +%s); log "Step $STEP: Building frontend (optional)..."; build_frontend; log "Step $STEP completed in $(( $(date +%s) - STEP_START ))s"
+
+    STEP=6; STEP_START=$(date +%s); log "Step $STEP: Building Docker image..."; build_docker; log "Step $STEP completed in $(( $(date +%s) - STEP_START ))s"
+
+    log "🎉 Build process completed successfully in $(( $(date +%s) - START_ALL ))s!"
     log ""
     log "🚀 Next Steps:"
-    log "3. ▶️  Run the application:"
-    log "   $ docker run -it --name lottery -p 6080:6080 lottery-app:latest"
-    log "4. 🌐 Access web interface: http://localhost:6080"
+    log "1. ▶️  Run the application:"
+    log "   $ docker run --rm -it --name lottery -p 6080:6080 lottery-app:latest"
     log ""
-    log "🏭 Production Deployment:"
-    log "   • AWS Nitro Enclave: ./scripts/build_enclave.sh"
-    log "   • Use production RPC endpoint and mainnet configuration"
+    log "2. 🔐 Set operator private key (REQUIRED):"
+    log "   $ python3 scripts/set_operator_key.py"
+    log "   (This securely injects the operator key into the running enclave)"
+    log ""
+    log "3. 🌐 Access web interface: http://localhost:6080"
+    log ""
+    log "🏭 Enclave Deployment:"
+    log "   $ enclaver build -f enclave/enclaver.yaml"
+    log "   $ enclaver run --publish 6080:6080 enclave-lottery-app:latest"
 }
+
+# Provide a trap so failures print a helpful message
+on_error() {
+    error "Build failed at step. See output above for details."
+}
+trap on_error ERR
 
 # Run main function
 main "$@"
