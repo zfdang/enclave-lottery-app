@@ -228,7 +228,7 @@ main() {
     log "   $ docker run --rm -it --name lottery -p 6080:6080 lottery-app:latest"
     log ""
     log "2. 🔐 Set operator private key (REQUIRED):"
-    log "   $ python3 scripts/set_operator_key.py"
+    log "   $ python3 scripts/set_operator_key.py --url http://localhost:6080"
     log "   (This securely injects the operator key into the running enclave)"
     log ""
     log "3. 🌐 Access web interface: http://localhost:6080"

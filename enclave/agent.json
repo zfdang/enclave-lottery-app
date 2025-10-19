@@ -1,0 +1,18 @@
+{
+  "name": "Lottery in Nitro Enclave",
+  "description": "Lottery application running inside an AWS Nitro Enclave with remote attestation and succinct zero-knowledge proofs.",
+  "code_repository": "https://github.com/zfdang/enclave-lottery-app",
+  "version": "1.0.0",
+  "schema_version": 1,
+  "tee_arch": "nitro",
+  "zk_type": "Succinct",
+  "network": "base-sepolia",
+  "endpoints": [
+    "/agent.json",
+    "/openapi.json",
+    "/api/attestation",
+    "/apit/get_pub_key",
+    "/api/set_operator_key"
+  ],
+  "attestation_endpoint": "/attestation"
+}

@@ -118,6 +118,35 @@ class LotteryWebServer:
                 return HTMLResponse("<h1>Lottery frontend not built</h1>")
             return HTMLResponse(frontend_file.read_text())
 
+        @self.app.get("/agent.json")
+        async def serve_agent_json() -> Response:
+            """Serve the repository's agent.json file from the enclave directory.
+
+            Returns parsed JSON if possible. If the file is empty, returns an
+            empty JSON object. If the file is missing, returns 404.
+            """
+            agent_file = Path(__file__).parent / "agent.json"
+            if not agent_file.exists():
+                raise HTTPException(status_code=404, detail="agent.json not found")
+
+            try:
+                content = agent_file.read_text()
+            except Exception as exc:  # pragma: no cover - IO error
+                logger.exception("Failed to read agent.json: %s", exc)
+                raise HTTPException(status_code=500, detail=f"Failed to read agent.json: {exc}")
+
+            if not content or not content.strip():
+                # Empty file -> return an empty JSON object
+                return Response(content="{}", media_type="application/json")
+
+            try:
+                parsed = json.loads(content)
+                # Returning the parsed dict lets FastAPI serialize with correct headers
+                return parsed
+            except Exception:
+                # If file contains non-JSON content, return raw with JSON media type
+                return Response(content=content, media_type="application/json")
+
         # ------------------------------------------------------------------
         # Health & status
         # ------------------------------------------------------------------
@@ -311,6 +340,7 @@ class LotteryWebServer:
                 logger.exception("Failed to generate attestation document")
                 raise HTTPException(status_code=500, detail=f"Attestation generation failed: {exc}")
 
+        # 
         # ------------------------------------------------------------------
         # Key management endpoints
         # ------------------------------------------------------------------
