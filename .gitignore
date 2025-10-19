@@ -23,7 +23,7 @@ admin/__pycache__/
 node_modules/
 .enclave/node_modules/
 enclave/node_modules/
-enclave/src/frontend/node_modules/
+enclave/frontend/node_modules/
 .enclave/package-lock.json
 npm-debug.log*
 yarn-debug.log*
@@ -35,8 +35,8 @@ yarn-error.log*
 
 # Vite/Build
 .enclave/dist/
-enclave/src/frontend/dist/
-enclave/src/frontend/.vite/
+enclave/frontend/dist/
+enclave/frontend/.vite/
 *.local
 
 # Logs
@@ -74,17 +74,14 @@ lottery.eif
 cache/
 out/
 contracts/compiled/
-enclave/src/contracts/abi/
-enclave/src/frontend/public/contracts/abi/
+enclave/contracts/abi/
+enclave/frontend/public/contracts/abi/
 
 # contract configuration and deployment records
 # Role-specific configurations (contain private keys)
 contract-tools/publisher.conf
 contract-tools/sparsity.conf
 contract-tools/deployments/
-
-# Enclave configuration (may contain sensitive keys)
-enclave/config/enclave.conf
 
 # Virtual environments
 enclave/venv/
@@ -103,8 +100,8 @@ coverage/
 .cache/
 **/__pycache__/
 =1.12.0
-enclave/src/contracts/compiled/Lottery.abi
-enclave/src/contracts/compiled/Lottery.bin
+enclave/contracts/compiled/Lottery.abi
+enclave/contracts/compiled/Lottery.bin
 
 
 # diagnostics

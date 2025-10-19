@@ -7,7 +7,7 @@ Focused on the lean runtime (FastAPI + EventManager + PassiveOperator). Legacy d
 - Python 3.11+
 
 ## Frontend
-Location: `enclave/src/frontend`
+Location: `enclave/frontend`
 
 Common scripts:
 * `npm install` – install deps
@@ -16,9 +16,9 @@ Common scripts:
 * `npm run preview` – serve built assets locally
 
 ## Backend
-Location: `enclave/src`
+Location: `enclave/`
 
-Entry point: `enclave/src/main.py`
+Entry point: `enclave/main.py`
 
 Key modules:
 * `lottery/event_manager.py` – polling + event serialization
@@ -37,7 +37,7 @@ pip install -r requirements.txt
 
 Run backend:
 ```bash
-python src/main.py
+python main.py
 ```
 
 ## WebSocket Event Inspection

@@ -16,7 +16,7 @@ def load_config() -> Dict[str, Any]:
     config = {}
     
     # Try to load from config file
-    config_file = Path(__file__).parent.parent.parent / "config" / "enclave.conf"
+    config_file = Path(__file__).parent.parent / "lottery.conf"
     if config_file.exists():
         try:
             with open(config_file, 'r') as f:
@@ -28,12 +28,9 @@ def load_config() -> Dict[str, Any]:
     else:
         logger.warning(f"Config file {config_file} not found. Will only use environment variables.")
 
-    # Override with environment variables, defined in .env
-    # config = _apply_env_overrides(config)
-
     # Normalize and apply sensible defaults for event manager (event_manager / polling)
     # event_manager top-level configuration (used at runtime)
-    # If `enclave/config/enclave.conf` provides an `event_manager` section, treat those
+    # If `enclave/lottery.conf` provides an `event_manager` section, treat those
     # values as repository-level defaults (they will be used only when explicit runtime
     # `event_manager` keys are not present or when env vars do not override them).
     file_eventmgr = config.get('event_manager', {}) or {}
@@ -56,55 +53,14 @@ def load_config() -> Dict[str, Any]:
     blockchain = config.setdefault('blockchain', {})
     blockchain.setdefault('rpc_url', blockchain.get('rpc_url', os.environ.get('BLOCKCHAIN_RPC_URL', 'https://base-sepolia.drpc.org/')))
     
-    # show config, with sensitive values (operator_private_key) redacted
-    redacted_config = json.loads(json.dumps(config))  # deep copy
-    if 'blockchain' in redacted_config and 'operator_private_key' in redacted_config['blockchain']:
-        # show only last 4 chars
-        pkey = redacted_config['blockchain']['operator_private_key']
-        if len(pkey) == 0:
-            redacted_config['blockchain']['operator_private_key'] = 'EMPTY'
-        else:
-            redacted_config['blockchain']['operator_private_key'] = '****' + redacted_config['blockchain']['operator_private_key'][-4:]
-
-    logger.info(f"Configuration after applying environment overrides: {json.dumps(redacted_config, indent=2)}")
-    return config
-
-
-def _apply_env_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Apply environment variable overrides to configuration"""
-    for key, value in os.environ.items():
-        # Convert key from ENV_VAR_NAME to section.key format
-        if key.startswith("LOTTERY_"):
-            section = "lottery"
-            key = key[len("LOTTERY_"):].lower()
-        elif key.startswith("BLOCKCHAIN_"):
-            section = "blockchain"
-            key = key[len("BLOCKCHAIN_"):].lower()
-        elif key.startswith("EVENTMGR_"):
-            section = "event_manager"
-            key = key[len("EVENTMGR_"):].lower()
-        elif key.startswith("ENCLAVE_"):
-            section = "enclave"
-            key = key[len("ENCLAVE_"):].lower()
-        elif key.startswith("SERVER_"):
-            section = "server"
-            key = key[len("SERVER_"):].lower()
-        elif key.startswith("APP_"):
-            section = "app"
-            key = key[len("APP_"):].lower()
-        else:
-            continue
-
-        config.setdefault(section, {})[key] = value
-        # logger.info(f"Overridden config '{section}.{key}' with env var '{key}'")
-
+    logger.info(f"Configuration after applying environment overrides: {json.dumps(config, indent=2)}")
     return config
 
 
 def save_config(config: Dict[str, Any], config_file: str = None):
     """Save configuration to file"""
     if not config_file:
-        config_file = Path(__file__).parent.parent.parent / "config" / "enclave.conf"
+        config_file = Path(__file__).parent.parent / "lottery.conf"
     
     try:
         config_file = Path(config_file)

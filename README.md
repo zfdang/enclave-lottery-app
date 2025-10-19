@@ -123,11 +123,11 @@ At present the repository focuses on runtime behavior; add unit tests around ope
 3. Advance time (or wait) until `min_draw_time` → backend submits `drawWinner` and emits updated `round_update` with winner.
 4. Inspect chain logs for Draw event alignment.
 
-## � Development Workflow
+## 📝 Development Workflow
 
 Frontend:
 ```bash
-cd enclave/src/frontend
+cd enclave/frontend
 npm run dev
 ```
 
@@ -365,8 +365,7 @@ enclave-lottery-app/
 │   │   │   │   └── components/ # UI components
 │   │   │   └── public/       # Static assets
 │   │   └── utils/            # Utility modules
-│   ├── config/
-│   │   └── enclave.conf      # Enclave configuration
+│   ├── lottery.conf         # Enclave configuration
 │   ├── requirements.txt      # Python dependencies
 │   └── Dockerfile           # Container image definition
 ├── scripts/                 # Build, deploy, and demo scripts
@@ -393,7 +392,7 @@ enclave-lottery-app/
 The application uses a **three-tier configuration system** with the following priority (highest to lowest):
 
 1. **Environment Variables** (highest priority)
-2. **Configuration File** (`enclave/config/enclave.conf`) 
+2. **Configuration File** (`enclave/lottery.conf`) 
 3. **Hardcoded Defaults** (lowest priority)
 
 ### Environment Variables
@@ -454,7 +453,7 @@ The system supports both new standardized and legacy environment variable names:
 
 ## Enclave Configuration
 
-The `enclave/config/enclave.conf` file contains lottery-specific settings. If
+The `enclave/lottery.conf` file contains lottery-specific settings. If
 deploying to an AWS Nitro Enclave you may supply additional `enclave` keys such
 as `attestation_enabled`. Host↔enclave communication should be provided via a
 separate host-proxy service when required; the repository does not ship a
@@ -550,7 +549,7 @@ cd enclave
 python -m pytest tests/ -v
 
 # Frontend tests  
-cd enclave/src/frontend
+cd enclave/frontend
 npm test
 ```
 

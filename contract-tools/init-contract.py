@@ -110,7 +110,7 @@ def main():
     )
 
     # Now set operator using SparsityManager (must use sparsity private key)
-    # For simplicity assume operator private key is same as the one in enclave.conf's operator_private_key
+    # For simplicity assume operator private key is same as the one in lottery.conf's operator_private_key
     # But here we'll instantiate sparsity manager using the same RPC and assume caller will pass the sparsity's private key
     # For convenience in local dev we'll prompt for sparsity private key
     # Try to obtain sparsity private key from sparsity.conf or prompt

@@ -342,7 +342,7 @@ class LotteryWebServer:
             
             The private key must be encrypted with ECIES using the public key
             from /api/get_pub_key. The decrypted key must match the operator
-            address configured in enclave.conf.
+            address configured in lottery.conf.
             
             This endpoint can only succeed once. Subsequent calls will fail.
             """
@@ -410,12 +410,12 @@ class LotteryWebServer:
             # Get expected operator address from config
             expected_address = self.config.get("blockchain", {}).get("operator_address")
             if not expected_address:
-                logger.error("operator_address not configured in enclave.conf")
+                logger.error("operator_address not configured in lottery.conf")
                 raise HTTPException(
                     status_code=500,
                     detail={
                         "success": False,
-                        "error": "Operator address not configured in enclave.conf",
+                        "error": "Operator address not configured in lottery.conf",
                     }
                 )
             

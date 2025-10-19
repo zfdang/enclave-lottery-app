@@ -3,7 +3,7 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="${SCRIPT_DIR}/.."
-export PYTHONPATH="${ROOT_DIR}/enclave/src:${PYTHONPATH-}"
+export PYTHONPATH="${ROOT_DIR}/enclave:${PYTHONPATH-}"
 
 # Activate venv if present
 if [ -d "${ROOT_DIR}/enclave/venv" ]; then

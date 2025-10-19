@@ -70,7 +70,7 @@ check_prerequisites() {
 build_frontend() {    
     log "Building React frontend..."
     
-    cd "$PROJECT_ROOT/enclave/src/frontend"
+    cd "$PROJECT_ROOT/enclave/frontend"
     
     # Install dependencies
     if [[ ! -d "node_modules" ]]; then
@@ -148,18 +148,18 @@ compile_contracts() {
     log "Smart contract compilation completed ✅"
     cd "$PROJECT_ROOT"
 
-    # Copy ABI to /enclave/src/abi
+    # Copy ABI to /enclave/contracts/abi
     ABI_SRC_DIR="$BUILD_DIR"
-    ABI_DST_DIR1="$PROJECT_ROOT/enclave/src/contracts/abi"
+    ABI_DST_DIR1="$PROJECT_ROOT/enclave/contracts/abi"
     mkdir -p "$ABI_DST_DIR1"
     cp "$ABI_SRC_DIR"/*.abi "$ABI_DST_DIR1/"
-    log "ABI copied to /enclave/src/contracts/abi ✅"
+    log "ABI copied to /enclave/contracts/abi ✅"
 
-    # Copy ABI to /enclave/src/frontend/public/abi
-    ABI_DST_DIR2="$PROJECT_ROOT/enclave/src/frontend/public/contracts/abi"
+    # Copy ABI to /enclave/frontend/public/abi
+    ABI_DST_DIR2="$PROJECT_ROOT/enclave/frontend/public/contracts/abi"
     mkdir -p "$ABI_DST_DIR2"
     cp "$ABI_SRC_DIR"/*.abi "$ABI_DST_DIR2/"
-    log "ABI copied to /enclave/src/frontend/public/contracts/abi ✅"
+    log "ABI copied to /enclave/frontend/public/contracts/abi ✅"
 }
 
 # Build Docker image
@@ -170,23 +170,14 @@ build_docker() {
     
     # Build the Docker image with the correct context and name
     # Use the enclave directory as build context since Dockerfile expects relative paths
-    docker build -t enclave-lottery-app:latest -f enclave/Dockerfile enclave/
-        
+    docker build --no-cache -t lottery-app:latest -f enclave/Dockerfile enclave/
+    
     log "Docker image build completed ✅"
-    log "Available tags: enclave-lottery-app:latest"
+
+    # show image information
+    docker image inspect lottery-app:latest
 }
 
-# Check if environment file exists, stop build if not
-check_env_file() {
-    if [[ ! -f "$PROJECT_ROOT/.env" ]]; then
-        error ".env file does not exist! Please create .env file with proper configuration before building Docker image."
-        error "You can copy from .env.example: cp .env.example .env"
-        error "Then edit .env with your actual configuration values."
-        exit 1
-    else
-        log ".env file found ✅"
-    fi
-}
 
 # Main build process
 main() {
@@ -194,7 +185,6 @@ main() {
         
     # Run build steps
     check_prerequisites
-    check_env_file
     compile_contracts
     # wait for user input to continue
     # read -p "Press [Enter] key to continue building docker image:"
@@ -204,21 +194,13 @@ main() {
     
     log "🎉 Build process completed successfully!"
     log ""
-    log "📦 Docker Image Details:"
-    log "   • Image: enclave-lottery-app:latest (255MB)"
-    log "   • Optimized: Excludes frontend source files"
-    log "   • Security: Runs as non-root user 'lottery'"
-    log ""
     log "🚀 Next Steps:"
-    log "1. 📝 Verify .env configuration (already validated ✅)"
-    log "2. 🔗 Deploy smart contracts: ./scripts/deploy_contracts.sh"
     log "3. ▶️  Run the application:"
-    log "   $ docker run -it --name enclave-demo -p 6080:6080 --env-file .env enclave-lottery-app:latest"
+    log "   $ docker run -it --name lottery -p 6080:6080 lottery-app:latest"
     log "4. 🌐 Access web interface: http://localhost:6080"
     log ""
     log "🏭 Production Deployment:"
     log "   • AWS Nitro Enclave: ./scripts/build_enclave.sh"
-    log "   • Enable attestation: Set ENCLAVE_ATTESTATION_ENABLED=true in .env"
     log "   • Use production RPC endpoint and mainnet configuration"
 }
 

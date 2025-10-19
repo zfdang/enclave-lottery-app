@@ -4,10 +4,10 @@ Authoritative list of active configuration namespaces & keys used by the current
 
 ## Precedence
 1. Environment variables (highest)
-2. JSON config file (`enclave/config/enclave.conf`)
+2. JSON config file (`enclave/lottery.conf`)
 3. Internal defaults (lowest)
 
-## Configuration File (`enclave/config/enclave.conf`)
+## Configuration File (`enclave/lottery.conf`)
 Only include keys you wish to override; environment vars can still supersede them.
 
 ```json
@@ -95,7 +95,7 @@ export BLOCKCHAIN_OPERATOR_PRIVATE_KEY=0xYOURKEY
 export BLOCKCHAIN_CONTRACT_ADDRESS=0xDEPLOYED
 
 # 4. Run the application
-python enclave/src/main.py
+python enclave/main.py
 ```
 
 ### Production (minimal set)
@@ -111,7 +111,7 @@ export BLOCKCHAIN_OPERATOR_PRIVATE_KEY=$(aws secretsmanager get-secret-value --s
 export APP_LOG_LEVEL=INFO
 
 # Run the application
-python enclave/src/main.py
+python enclave/main.py
 ```
 
 ### Docker Run
@@ -154,7 +154,7 @@ PRIVATE_KEY="0x1234567890abcdef..."  # Dangerous!
 ```bash
 # Set secure file permissions
 chmod 600 .env
-chmod 644 enclave/config/enclave.conf
+chmod 644 enclave/lottery.conf
 ```
 
 ## Validation (Illustrative)
@@ -187,7 +187,7 @@ ls -la .env
 cat .env | grep -v '^#' | grep '='
 
 # Validate JSON format
-python -m json.tool enclave/config/enclave.conf
+python -m json.tool enclave/lottery.conf
 ```
 
 ### Environment variables not applied

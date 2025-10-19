@@ -11,9 +11,9 @@ export default defineConfig({
       exclude: /node_modules/
     })
   ],
-  root: path.resolve(__dirname, 'src/frontend'),
+  root: path.resolve(__dirname, 'frontend'),
   build: {
-    outDir: path.resolve(__dirname, 'src/frontend/dist'),
+    outDir: path.resolve(__dirname, 'frontend/dist'),
     emptyOutDir: true,
     // Optimize build performance
     target: 'es2015',

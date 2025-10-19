@@ -38,7 +38,7 @@ pip install -r requirements.txt
 
 ### 2.4 Frontend (dev mode)
 ```bash
-cd src/frontend
+cd frontend
 npm install
 npm run dev
 ```
@@ -48,7 +48,7 @@ Visit the Vite dev URL; backend runs separately.
 ```bash
 cd enclave
 source venv/bin/activate
-python src/main.py
+python main.py
 ```
 
 ## 3. Docker Deployment

@@ -113,8 +113,8 @@ solc --bin --abi --optimize -o contracts/compiled contracts/Lottery.sol
 ### ABI Distribution
 
 The build system automatically distributes compiled ABIs to:
-- `/enclave/src/contracts/abi/` - Backend blockchain client
-- `/enclave/src/frontend/public/contracts/abi/` - Frontend application
+- `/enclave/contracts/abi/` - Backend blockchain client
+- `/enclave/frontend/public/contracts/abi/` - Frontend application
 
 ### Testing
 
