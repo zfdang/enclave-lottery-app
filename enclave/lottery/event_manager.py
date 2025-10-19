@@ -254,7 +254,6 @@ class MemoryStore:
             "participantCount": round_data.participant_count,
             "winner": round_data.winner,
             "publisherCommissionWei": round_data.publisher_commission,
-            "sparsityCommissionWei": round_data.sparsity_commission,
             "winnerPrizeWei": round_data.winner_prize,
         }
 
@@ -302,10 +301,8 @@ class MemoryStore:
     def _serialize_config(self, config: ContractConfig) -> dict:
         return {
             "publisher": config.publisher_addr,
-            "sparsity": config.sparsity_addr,
             "operator": config.operator_addr,
             "publisherCommission": config.publisher_commission,
-            "sparsityCommission": config.sparsity_commission,
             "minBet": config.min_bet,
             "bettingDuration": config.betting_duration,
             "minDrawDelay": config.min_draw_delay,
@@ -549,7 +546,7 @@ class EventManager:
 
         else:
             # Other events: operator/config updates
-            if name in ("SparsitySet", "OperatorUpdated", "MinBetAmountUpdated", "BettingDurationUpdated"):
+            if name in ("OperatorUpdated", "MinBetAmountUpdated", "BettingDurationUpdated"):
                 # do nothing
                 pass
             # For bet-related state changes

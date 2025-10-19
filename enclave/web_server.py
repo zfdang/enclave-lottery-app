@@ -620,10 +620,8 @@ class LotteryWebServer:
             return {
                 "config": {
                     "publisherAddr": store_config.publisher_addr,
-                    "sparsityAddr": store_config.sparsity_addr,
                     "operatorAddr": store_config.operator_addr,
                     "publisherCommission": store_config.publisher_commission,
-                    "sparsityCommission": store_config.sparsity_commission,
                     "minBet": store_config.min_bet,
                     "bettingDuration": store_config.betting_duration,
                     "minDrawDelay": store_config.min_draw_delay,
@@ -814,7 +812,6 @@ class LotteryWebServer:
             "operator": operator_status,
             "config": {
                 "publisherAddr": config.publisher_addr if config else None,
-                "sparsityAddr": config.sparsity_addr if config else None,
                 "operatorAddr": config.operator_addr if config else None,
             },
         }
@@ -844,7 +841,6 @@ class LotteryWebServer:
             "participant_count": round_data.participant_count,
             "winner": round_data.winner,
             "publisher_commission": round_data.publisher_commission,
-            "sparsity_commission": round_data.sparsity_commission,
             "winner_prize": round_data.winner_prize,
         }
 

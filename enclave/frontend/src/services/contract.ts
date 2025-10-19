@@ -22,17 +22,14 @@ export interface LotteryRound {
   participantCount: number
   winner: string
   publisherCommission: string
-  sparsityCommission: string
   winnerPrize: string
   state: RoundState
 }
 
 export interface ContractConfig {
   publisherAddr: string
-  sparsityAddr: string
   operatorAddr: string
   publisherCommission: string
-  sparsityCommission: string
   minBet: string
   bettingDur: string
   minDrawDelay: string
@@ -208,7 +205,6 @@ class ContractService {
         participantCount: Number(result.participantCount),
         winner: result.winner,
         publisherCommission: ethers.formatEther(result.publisherCommission),
-        sparsityCommission: ethers.formatEther(result.sparsityCommission),
         winnerPrize: ethers.formatEther(result.winnerPrize),
         state: result.state as RoundState
       }
@@ -222,17 +218,14 @@ class ContractService {
    */
   async getContractConfig(): Promise<{
     publisherAddr: string
-    sparsityAddr: string
     operatorAddr: string
     publisherCommission: string
-    sparsityCommission: string
     minBet: string
     bettingDur: string
     minDrawDelay: string
     maxDrawDelay: string
     minEndTimeExt: string
     minPart: string
-    sparsityIsSet: boolean
   }> {
     const contractAddress = this.contractAddress
     const rpcUrl = this.rpcUrl
@@ -248,15 +241,12 @@ class ContractService {
       const contract = new ethers.Contract(contractAddress, abi, provider)
       const cfg = await contract.getConfig()
 
-      // getConfig() returns 11 values in this order:
-      // 0 publisherAddr, 1 sparsityAddr, 2 operatorAddr,
-      // 3 publisherCommission, 4 sparsityCommission,
-      // 5 minBet, 6 bettingDur, 7 minDrawDelay, 8 maxDrawDelay,
-      // 9 minEndTimeExt, 10 minPart (sparsityIsSet removed)
-      const sparsityAddr = cfg.sparsityAddr ?? cfg[1]
-      const sparsityIsSet = sparsityAddr !== "0x0000000000000000000000000000000000000000"
+      // getConfig() returns 9 values in this order (2-role architecture):
+      // 0 publisherAddr, 1 operatorAddr, 2 publisherCommission,
+      // 3 minBet, 4 bettingDur, 5 minDrawDelay, 6 maxDrawDelay,
+      // 7 minEndTimeExt, 8 minPart
       
-      const minBetVal = cfg.minBet ?? cfg[5]
+      const minBetVal = cfg.minBet ?? cfg[3]
       let minBetStr: string
       try {
         // If minBetVal is a BigNumber-like, format it
@@ -274,17 +264,14 @@ class ContractService {
 
       return {
         publisherAddr: cfg.publisherAddr ?? cfg[0],
-        sparsityAddr: sparsityAddr,
-        operatorAddr: cfg.operatorAddr ?? cfg[2],
-        publisherCommission: cfg.publisherCommission?.toString?.() ?? String(cfg[3]),
-        sparsityCommission: cfg.sparsityCommission?.toString?.() ?? String(cfg[4]),
-        minBet: cfg.minBet?.toString?.() ?? String(cfg[5]),
-        bettingDur: cfg.bettingDur?.toString?.() ?? String(cfg[6]),
-        minDrawDelay: cfg.minDrawDelay?.toString?.() ?? String(cfg[7]),
-        maxDrawDelay: cfg.maxDrawDelay?.toString?.() ?? String(cfg[8]),
-        minEndTimeExt: cfg.minEndTimeExt?.toString?.() ?? String(cfg[9]),
-        minPart: cfg.minPart?.toString?.() ?? String(cfg[10]),
-        sparsityIsSet: sparsityIsSet
+        operatorAddr: cfg.operatorAddr ?? cfg[1],
+        publisherCommission: cfg.publisherCommission?.toString?.() ?? String(cfg[2]),
+        minBet: cfg.minBet?.toString?.() ?? String(cfg[3]),
+        bettingDur: cfg.bettingDur?.toString?.() ?? String(cfg[4]),
+        minDrawDelay: cfg.minDrawDelay?.toString?.() ?? String(cfg[5]),
+        maxDrawDelay: cfg.maxDrawDelay?.toString?.() ?? String(cfg[6]),
+        minEndTimeExt: cfg.minEndTimeExt?.toString?.() ?? String(cfg[7]),
+        minPart: cfg.minPart?.toString?.() ?? String(cfg[8])
       }
     } catch (error: any) {
       throw new Error('Failed to load contract config: ' + (error.message || 'Unknown error'))

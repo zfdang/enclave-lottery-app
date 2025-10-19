@@ -74,14 +74,13 @@ lottery.eif
 cache/
 out/
 contracts/compiled/
+contracts/deployments/
+contracts/scripts/deployments/
 enclave/contracts/abi/
 enclave/frontend/public/contracts/abi/
 
 # contract configuration and deployment records
 # Role-specific configurations (contain private keys)
-contract-tools/publisher.conf
-contract-tools/sparsity.conf
-contract-tools/deployments/
 
 # Virtual environments
 enclave/venv/

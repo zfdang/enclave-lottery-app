@@ -14,7 +14,6 @@ interface RoundStatus {
   participants: string[]
   winner: string | null
   publisher_commission: number
-  sparsity_commission: number
   winner_prize: number
 }
 

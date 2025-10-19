@@ -2,9 +2,9 @@
 pragma solidity ^0.8.19;
 
 /**
- * @title Lottery Contract - 4-Role Architecture
- * @dev Smart contract for managing lottery rounds with publisher/sparsity/operator/player roles
- * @notice Publisher deploys, Sparsity manages operator, Operator runs rounds, Players place bets
+ * @title Lottery Contract - 2-Role Architecture
+ * @dev Smart contract for managing lottery rounds with publisher/operator/player roles
+ * @notice Publisher deploys and manages operator, Operator runs rounds, Players place bets
  */
 contract Lottery {
     // =============== REENTRANCY GUARD ===============
@@ -19,12 +19,10 @@ contract Lottery {
     
     // =============== ROLES ===============
     address public immutable PUBLISHER;        // Contract deployer, receives commission
-    address public sparsity;                   // Cloud manager, manages operator
     address public operator;                   // Round manager, handles lottery rounds
     
     // =============== IMMUTABLE CONFIGURATION BY PUBLISHER ===============
     uint256 public immutable PUBLISHER_COMMISSION_RATE; // Basis points (200 = 2%)
-    uint256 public immutable SPARSITY_COMMISSION_RATE;  // Basis points (300 = 3%)
     
     // =============== CONFIGURATION BY OPERATOR ===============
     uint256 public minBetAmount;            // Minimum bet in wei (operator can modify in waiting state)
@@ -48,7 +46,6 @@ contract Lottery {
         uint256 participantCount;
         address winner;
         uint256 publisherCommission;
-        uint256 sparsityCommission;
         uint256 winnerPrize;
         RoundState state;
     }
@@ -57,7 +54,7 @@ contract Lottery {
     LotteryRound public round;
     mapping(address => uint256) public bets; // player => betAmount for current round
     address[] public participants; // participants array for current round
-    // Pull-payment balances for addresses (publisher, sparsity, etc.)
+    // Pull-payment balances for addresses (publisher, winners, etc.)
     mapping(address => uint256) public pendingWithdrawals;
     
     // =============== EVENTS ===============
@@ -99,7 +96,6 @@ contract Lottery {
         uint256 participantCount,
         uint256 winnerPrize,
         uint256 publisherCommission,
-        uint256 sparsityCommission,
         uint256 randomSeed,
         uint256 timestamp
     );
@@ -115,7 +111,6 @@ contract Lottery {
     event MinBetAmountUpdated(uint256 oldAmount, uint256 newAmount, uint256 timestamp);
     event BettingDurationUpdated(uint256 oldDuration, uint256 newDuration, uint256 timestamp);
     event MinParticipantsUpdated(uint256 oldMin, uint256 newMin, uint256 timestamp);
-    event SparsitySet(address indexed sparsity, uint256 timestamp);
     event OperatorUpdated(address indexed oldOperator, address indexed newOperator, uint256 timestamp);
     event Withdrawn(address indexed to, uint256 amount, uint256 timestamp);
     
@@ -125,38 +120,22 @@ contract Lottery {
         _;
     }
     
-    modifier onlySparsity() {
-        require(sparsity != address(0), "Sparsity not set");
-        require(msg.sender == sparsity, "Only sparsity can call this function");
-        _;
-    }
-    
     modifier onlyOperator() {
         require(operator != address(0), "Operator not set");
         require(msg.sender == operator, "Only operator can call this function");
         _;
     }
     
-    modifier sparsityNotSet() {
-        require(sparsity == address(0), "Sparsity already set");
-        _;
-    }
-    
     
     // =============== CONSTRUCTOR ===============
     constructor(
-        uint256 _publisherCommissionRate,
-        uint256 _sparsityCommissionRate
+        uint256 _publisherCommissionRate
     ) {
-        require(_publisherCommissionRate <= 500, "Publisher commission too high (max 5%)");
-        require(_sparsityCommissionRate <= 500, "Sparsity commission too high (max 5%)");
-        require(_publisherCommissionRate + _sparsityCommissionRate <= 1000, "Total commission too high (max 10%)");
+        require(_publisherCommissionRate <= 1000, "Publisher commission too high (max 10%)");
 
         PUBLISHER = msg.sender;
-        sparsity = address(0);                    // Will be set by publisher
-        operator = address(0);                    // Will be set by sparsity
+        operator = address(0);                    // Will be set by publisher
         PUBLISHER_COMMISSION_RATE = _publisherCommissionRate;
-        SPARSITY_COMMISSION_RATE = _sparsityCommissionRate;
 
         // Set sensible defaults for other config values
         minBetAmount = 0.001 ether;
@@ -177,7 +156,6 @@ contract Lottery {
             participantCount: 0,
             winner: address(0),
             publisherCommission: 0,
-            sparsityCommission: 0,
             winnerPrize: 0,
             state: RoundState.WAITING
         });
@@ -186,29 +164,13 @@ contract Lottery {
     // =============== PUBLISHER FUNCTIONS ===============
     
     /**
-     * @dev Set the sparsity address (one-time only)
-     * @param _sparsity The address of the sparsity (cloud manager)
-     * @notice Can only be called by publisher, and only once
+     * @dev Set or update the operator address
+     * @param _operator The address of the operator
+     * @notice Can only be called by publisher when in waiting state
      */
-    function setSparsity(address _sparsity) external onlyPublisher sparsityNotSet {
-        require(_sparsity != address(0), "Invalid sparsity address");
-        require(_sparsity != PUBLISHER, "Sparsity cannot be publisher");
-        
-        sparsity = _sparsity;
-        emit SparsitySet(_sparsity, block.timestamp);
-    }
-    
-    // =============== SPARSITY FUNCTIONS ===============
-    
-    /**
-     * @dev Update the operator address (same as setOperator, for clarity)
-     * @param _operator The new address of the operator
-     * @notice Can only be called by sparsity when in waiting state
-     */
-    function updateOperator(address _operator) external onlySparsity {
+    function setOperator(address _operator) external onlyPublisher {
         require(_operator != address(0), "Invalid operator address");
         require(_operator != PUBLISHER, "Operator cannot be publisher");
-        require(_operator != sparsity, "Operator cannot be sparsity");
         require(round.state == RoundState.WAITING, "Cannot change operator when not in waiting state");
 
         address oldOperator = operator;
@@ -369,27 +331,22 @@ contract Lottery {
      * @dev Internal function to calculate and distribute payouts
      */
     function _distributePayout(address winner, uint256 randomSeed) internal {
-        // Calculate commissions
+        // Calculate commission
         uint256 publisherCommission = (round.totalPot * PUBLISHER_COMMISSION_RATE) / 10000;
-        uint256 sparsityCommission = (round.totalPot * SPARSITY_COMMISSION_RATE) / 10000;
-        uint256 prize = round.totalPot - publisherCommission - sparsityCommission;
+        uint256 prize = round.totalPot - publisherCommission;
         
         // Update round state
         round.winner = winner;
         round.publisherCommission = publisherCommission;
-        round.sparsityCommission = sparsityCommission;
         round.winnerPrize = prize;
         
         // Emit completion event
-        emit RoundCompleted(round.roundId, winner, round.totalPot, round.participantCount, prize, publisherCommission, sparsityCommission, randomSeed, block.timestamp);
+        emit RoundCompleted(round.roundId, winner, round.totalPot, round.participantCount, prize, publisherCommission, randomSeed, block.timestamp);
         _changeState(RoundState.COMPLETED);
         
-        // Credit publisher and sparsity commissions to pending withdrawals (pull-payment)
+        // Credit publisher commission to pending withdrawals (pull-payment)
         if (publisherCommission > 0) {
             pendingWithdrawals[PUBLISHER] += publisherCommission;
-        }
-        if (sparsityCommission > 0 && sparsity != address(0)) {
-            pendingWithdrawals[sparsity] += sparsityCommission;
         }
 
         // Transfer prize to winner immediately (keep existing behavior)
@@ -519,7 +476,6 @@ contract Lottery {
             participantCount: 0,
             winner: address(0),
             publisherCommission: 0,
-            sparsityCommission: 0,
             winnerPrize: 0,
             state: RoundState.WAITING
         });
@@ -570,10 +526,8 @@ contract Lottery {
      */
     function getConfig() external view returns (
         address publisherAddr,
-        address sparsityAddr,
         address operatorAddr,
         uint256 publisherCommission,
-        uint256 sparsityCommission,
         uint256 minBet,
         uint256 bettingDur,
         uint256 minDrawDelay,
@@ -583,10 +537,8 @@ contract Lottery {
     ) {
         return (
             PUBLISHER,
-            sparsity,
             operator,
             PUBLISHER_COMMISSION_RATE,
-            SPARSITY_COMMISSION_RATE,
             minBetAmount,
             bettingDuration,
             minDrawDelayAfterEnd,

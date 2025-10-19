@@ -102,10 +102,8 @@ function App() {
   const [configError, setConfigError] = useState<string | null>(null)
   const [contractConfig, setContractConfig] = useState<null | {
     publisherAddr: string
-    sparsityAddr: string
     operatorAddr: string
     publisherCommission: string
-    sparsityCommission: string
     minBet: string
     bettingDur: string
     minDrawDelay: string
@@ -293,7 +291,7 @@ function App() {
           <Toolbar sx={{ height: '100%', alignItems: 'center', minHeight: '48px' }}>
             <Security sx={{ mr: 2 }} />
             <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-              Lottery (Powered by Sparsity)
+              Enclave Lottery
             </Typography>
 
             
@@ -782,10 +780,8 @@ function App() {
                 <>
                   <Typography variant="h6" sx={{ mt: 2 }}>Overall Config</Typography>
                   <Typography variant="body2"><strong>Publisher:</strong> {contractConfig.publisherAddr}</Typography>
-                  <Typography variant="body2"><strong>Sparsity:</strong> {contractConfig.sparsityAddr}</Typography>
                   <Typography variant="body2"><strong>Operator:</strong> {contractConfig.operatorAddr}</Typography>
                   <Typography variant="body2"><strong>Publisher Commission:</strong> {contractConfig.publisherCommission}</Typography>
-                  <Typography variant="body2"><strong>Sparsity Commission:</strong> {contractConfig.sparsityCommission}</Typography>
                   <Typography variant="body2"><strong>Min Bet (wei):</strong> {contractConfig.minBet}</Typography>
                   <Typography variant="body2"><strong>Betting Duration (s):</strong> {contractConfig.bettingDur}</Typography>
                   <Typography variant="body2"><strong>Min Draw Delay (s):</strong> {contractConfig.minDrawDelay}</Typography>

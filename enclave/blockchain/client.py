@@ -213,10 +213,18 @@ class BlockchainClient:
             logger.error(f"Failed to verify contract at {self.contract_address}: {exc}")
             raise
         
-        # Test basic contract call
+        # Test basic contract call (safe extraction from returned tuple)
         try:
-            config = await self._call_view("getConfig")
-            logger.info(f"Contract config retrieved successfully: publisher={config[0][:10]}..., operator={config[2][:10] if config[2] else 'None'}...")
+            raw_config = await self._call_view("getConfig")
+            # getConfig() returns a tuple; current contract layout is:
+            # (publisherAddr, operatorAddr, publisherCommission, minBet, ...)
+            publisher = raw_config[0] if len(raw_config) > 0 else None
+            operator = raw_config[1] if len(raw_config) > 1 else None
+            pub_display = f"{publisher[:10]}..." if isinstance(publisher, str) and publisher else str(publisher)
+            op_display = f"{operator[:10]}..." if isinstance(operator, str) and operator else "None"
+            logger.info(
+                f"Contract config retrieved successfully: publisher={pub_display}, operator={op_display}"
+            )
         except Exception as exc:
             logger.error(f"Failed to call getConfig on contract: {exc}")
             raise
@@ -305,16 +313,14 @@ class BlockchainClient:
         raw = await self._call_view("getConfig")
         return ContractConfig(
             publisher_addr=self._select(raw, "publisherAddr", 0),
-            sparsity_addr=self._select(raw, "sparsityAddr", 1),
-            operator_addr=self._select(raw, "operatorAddr", 2),
-            publisher_commission=int(self._select(raw, "publisherCommission", 3)),
-            sparsity_commission=int(self._select(raw, "sparsityCommission", 4)),
-            min_bet=int(self._select(raw, "minBet", 5)),
-            betting_duration=int(self._select(raw, "bettingDur", 6)),
-            min_draw_delay=int(self._select(raw, "minDrawDelay", 7)),
-            max_draw_delay=int(self._select(raw, "maxDrawDelay", 8)),
-            min_end_time_extension=int(self._select(raw, "minEndTimeExt", 9)),
-            min_participants=int(self._select(raw, "minPart", 10)),
+            operator_addr=self._select(raw, "operatorAddr", 1),
+            publisher_commission=int(self._select(raw, "publisherCommission", 2)),
+            min_bet=int(self._select(raw, "minBet", 3)),
+            betting_duration=int(self._select(raw, "bettingDur", 4)),
+            min_draw_delay=int(self._select(raw, "minDrawDelay", 5)),
+            max_draw_delay=int(self._select(raw, "maxDrawDelay", 6)),
+            min_end_time_extension=int(self._select(raw, "minEndTimeExt", 7)),
+            min_participants=int(self._select(raw, "minPart", 8)),
         )
 
     async def get_current_round(self) -> Optional[LotteryRound]:
@@ -337,9 +343,8 @@ class BlockchainClient:
             participant_count=int(self._select(raw, "participantCount", 6)),
             winner=winner,
             publisher_commission=int(self._select(raw, "publisherCommission", 8)),
-            sparsity_commission=int(self._select(raw, "sparsityCommission", 9)),
-            winner_prize=int(self._select(raw, "winnerPrize", 10)),
-            state=RoundState(int(self._select(raw, "state", 11))),
+            winner_prize=int(self._select(raw, "winnerPrize", 9)),
+            state=RoundState(int(self._select(raw, "state", 10))),
         )
 
     async def get_participant_summaries(self, round_id: int) -> List[ParticipantSummary]:

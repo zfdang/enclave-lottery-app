@@ -31,7 +31,6 @@ class LotteryRound:
     participant_count: int
     winner: Optional[str]
     publisher_commission: int
-    sparsity_commission: int
     winner_prize: int
     state: RoundState
 
@@ -41,10 +40,8 @@ class ContractConfig:
     """Normalized result of `Lottery.getConfig()`."""
 
     publisher_addr: str
-    sparsity_addr: str
     operator_addr: str
     publisher_commission: int
-    sparsity_commission: int
     min_bet: int
     betting_duration: int
     min_draw_delay: int
