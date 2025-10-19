@@ -34,6 +34,42 @@ from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtensionOID
 
+# ANSI color helpers
+COLOR_GREEN = "\033[0;32m"
+COLOR_YELLOW = "\033[1;33m"
+COLOR_RED = "\033[0;31m"
+COLOR_BLUE = "\033[0;34m"
+COLOR_RESET = "\033[0m"
+
+
+def cprint(msg: str, color: str = "") -> None:
+    if color:
+        print(f"{color}{msg}{COLOR_RESET}")
+    else:
+        print(msg)
+
+
+def info(msg: str) -> None:
+    cprint(f"ℹ️  {msg}", COLOR_BLUE)
+
+
+def success(msg: str) -> None:
+    cprint(f"✅ {msg}", COLOR_GREEN)
+
+
+def warn(msg: str) -> None:
+    cprint(f"⚠️  {msg}", COLOR_YELLOW)
+
+
+def error(msg: str) -> None:
+    cprint(f"❌ {msg}", COLOR_RED)
+
+
+def step(title: str) -> None:
+    cprint("" + "=" * 60, COLOR_BLUE)
+    cprint(f"{title}", COLOR_BLUE)
+    cprint("" + "=" * 60, COLOR_BLUE)
+
 
 def fetch_attestation(url: str, timeout: int = 10) -> Dict[str, Any]:
     resp = requests.get(url, timeout=timeout)
@@ -155,11 +191,14 @@ def verify_chain_openssl(leaf_pem: str, cabundle_pems: List[str]) -> bool:
             print(f"OpenSSL verify failed: {exc}")
             return False
 
-
-def verify_nitro_attestation_doc(attestation_doc: Dict[str, Any], certificate_pem: str, cabundle: List[str]) -> Dict[str, Any]:
+# https://docs.aws.amazon.com/enclaves/latest/user/verify-root.html
+def verify_nitro_attestation_doc(attestation_doc: Dict[str, Any]) -> Dict[str, Any]:
     """Verify AWS Nitro Enclave attestation document.
-    
-    Returns a dict with verification results and extracted data.
+
+    This function extracts the leaf certificate and CA bundle from the
+    attestation document itself (when present) per the AWS Nitro attestation
+    format, and uses those values to verify the chain. Returns a dict with
+    verification results and extracted data.
     """
     result = {
         "valid": False,
@@ -172,6 +211,24 @@ def verify_nitro_attestation_doc(attestation_doc: Dict[str, Any], certificate_pe
         "timestamp": None,
     }
     
+    # Debug: top-level keys and types
+    info(f"Attestation document keys: {sorted(list(attestation_doc.keys()))}")
+    for k in sorted(list(attestation_doc.keys())):
+        try:
+            v = attestation_doc[k]
+            t = type(v).__name__
+            if isinstance(v, (bytes, str)):
+                size = len(v) if v is not None else 0
+                info(f"  - {k}: type={t}, len={size}")
+            elif isinstance(v, dict):
+                info(f"  - {k}: type={t}, keys={list(v.keys())}")
+            elif isinstance(v, list):
+                info(f"  - {k}: type={t}, len={len(v)}")
+            else:
+                info(f"  - {k}: type={t}")
+        except Exception:
+            info(f"  - {k}: <uninspectable>")
+
     try:
         # Extract PCRs
         if "pcrs" in attestation_doc:
@@ -227,16 +284,92 @@ def verify_nitro_attestation_doc(attestation_doc: Dict[str, Any], certificate_pe
         # Extract timestamp
         if "timestamp" in attestation_doc:
             result["timestamp"] = attestation_doc["timestamp"]
+
+        # Extract certificate and CA bundle from attestation document when
+        # available. AWS Nitro attestation documents may include a "certificate"
+        # field (PEM string or bytes) and a "cabundle" field (list of PEMs).
+        certificate_pem = None
+        cabundle: List[str] = []
+
+        cert_field = attestation_doc.get("certificate") or attestation_doc.get("certificate_pem")
+        if isinstance(cert_field, bytes):
+            try:
+                certificate_pem = cert_field.decode("utf-8")
+            except Exception:
+                try:
+                    certificate_pem = cert_field.decode("latin-1")
+                except Exception:
+                    certificate_pem = None
+        elif isinstance(cert_field, str):
+            certificate_pem = cert_field
         
-        # Verify certificate chain
+        if certificate_pem:
+            info(f"Extracted leaf certificate PEM length: {len(certificate_pem)}")
+            # Dump full leaf certificate PEM as hex for byte-level inspection
+            try:
+                cert_pem_hex = certificate_pem.encode("utf-8").hex()
+            except Exception:
+                cert_pem_hex = ""
+            info("--- BEGIN DUMP: LEAF CERT PEM HEX ---")
+            print(cert_pem_hex)
+            info("--- END DUMP: LEAF CERT PEM HEX ---")
+        else:
+            warn("No leaf certificate extracted from attestation document")
+
+        cabundle_field = attestation_doc.get("cabundle") or attestation_doc.get("ca_bundle") or attestation_doc.get("cabundle_pems")
+        if isinstance(cabundle_field, list):
+            for item in cabundle_field:
+                if isinstance(item, bytes):
+                    try:
+                        cabundle.append(item.decode("utf-8"))
+                    except Exception:
+                        try:
+                            cabundle.append(item.decode("latin-1"))
+                        except Exception:
+                            # skip unparsable item
+                            continue
+                elif isinstance(item, str):
+                    cabundle.append(item)
+        elif isinstance(cabundle_field, bytes):
+            try:
+                cabundle.append(cabundle_field.decode("utf-8"))
+            except Exception:
+                try:
+                    cabundle.append(cabundle_field.decode("latin-1"))
+                except Exception:
+                    pass
+        elif isinstance(cabundle_field, str):
+            cabundle.append(cabundle_field)
+
+        # Dump full CA bundle PEMs for debugging with clear delimiters
+        if cabundle:
+            info("--- BEGIN DUMP: CA BUNDLE PEMS ---")
+            for i, pem in enumerate(cabundle):
+                print(f"----- BEGIN CA PEM #{i+1} -----")
+                # print PEM body as hex for byte-level inspection
+                try:
+                    pem_hex = pem.encode("utf-8").hex()
+                except Exception:
+                    pem_hex = ""
+                print(pem_hex)
+                print(f"----- END CA PEM #{i+1} -----\n")
+            info("--- END DUMP: CA BUNDLE PEMS ---")
+        
+
+
+        # Verify certificate chain using extracted certificate and cabundle
         if certificate_pem and cabundle:
+            info("Running OpenSSL chain verification (debug)")
             chain_ok = verify_chain_openssl(certificate_pem, cabundle)
             if chain_ok:
+                success("Certificate chain verified by OpenSSL")
                 result["valid"] = True
             else:
                 result["errors"].append("Certificate chain verification failed")
+                error("Certificate chain verification failed (OpenSSL)")
         else:
-            result["warnings"].append("No certificate or CA bundle provided for verification")
+            warn("Skipping chain verification due to missing certificate or CA bundle")
+            result["warnings"].append("No certificate or CA bundle found in attestation document for verification")
         
     except Exception as e:
         result["errors"].append(f"Attestation verification error: {e}")
@@ -250,66 +383,44 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--timeout", type=int, default=10, help="Request timeout in seconds")
     parser.add_argument("--save", help="Optional path to save the raw attestation document bytes")
     args = parser.parse_args(argv)
+    # Show parameters
+    step("Parameters")
+    info(f"URL: {args.url}")
+    info(f"Timeout: {args.timeout}s")
+    info(f"Save path: {args.save or 'none'}")
 
+    # Fetch attestation
+    step("Fetch attestation JSON")
     try:
         data = fetch_attestation(args.url, timeout=args.timeout)
+        success(f"Fetched attestation from {args.url}")
     except Exception as exc:
-        print(f"Failed to fetch attestation from {args.url}: {exc}")
+        error(f"Failed to fetch attestation from {args.url}: {exc}")
         return 2
 
-    print("Attestation endpoint response keys:", ", ".join(sorted(data.keys())))
+    info(f"Attestation endpoint response keys: {', '.join(sorted(data.keys()))}")
 
     # Print top-level metadata
     if "timestamp" in data:
         try:
             ts = int(data.get("timestamp"))
-            print("Timestamp:", datetime.fromtimestamp(ts / 1000.0).isoformat())
+            info(f"Timestamp: {datetime.fromtimestamp(ts / 1000.0).isoformat()}")
         except Exception:
-            print("Timestamp:", data.get("timestamp"))
+            info(f"Timestamp: {data.get('timestamp')}")
 
-    print("Verified flag:", data.get("verified"))
+    info(f"Verified flag: {data.get('verified')}")
 
-    # CABUNDLE and certificate
-    certificate_pem = data.get("certificate")
-    cabundle = data.get("cabundle") or []
-    if isinstance(cabundle, str):
-        cabundle = [cabundle]
-
-    if certificate_pem:
-        print("\nLeaf certificate:")
-        cert = inspect_certificate(certificate_pem)
-        if cert:
-            print_cert_info(cert)
-        else:
-            print("  (failed to parse PEM certificate)")
-    else:
-        print("\nNo certificate present in response")
-
-    if cabundle:
-        print(f"\nCA bundle contains {len(cabundle)} entries")
-        for idx, pem in enumerate(cabundle):
-            print(f" CA[{idx}]:")
-            cert = inspect_certificate(pem)
-            if cert:
-                print_cert_info(cert)
-            else:
-                print("   (failed to parse PEM)")
-
-    # Attempt chain verification if we have a leaf certificate and cabundle
-    chain_ok = False
-    if certificate_pem and cabundle:
-        print("\nAttempting certificate chain verification with OpenSSL...")
-        try:
-            chain_ok = verify_chain_openssl(certificate_pem, cabundle)
-        except Exception as exc:
-            print("Chain verification raised an error:", exc)
-
-    print("Chain verification result:", chain_ok)
+    # dump note
+    note = data.get("note")
+    if note:
+        step("Note")
+        print(note)
 
     # Decode user_data
     user_data_b64 = data.get("user_data")
     user_bytes = b64decode_str(user_data_b64)
     if user_bytes:
+        step("Decode user_data")
         # Try JSON
         user_json = None
         try:
@@ -317,17 +428,26 @@ def main(argv: Optional[List[str]] = None) -> int:
         except Exception:
             pass
 
-        print("\nDecoded user_data:")
         if user_json:
+            success("Decoded user_data (JSON)")
             print(json.dumps(user_json, indent=2))
         else:
             # Print as text or hex
             try:
+                success("Decoded user_data (text)")
                 print(user_bytes.decode("utf-8"))
             except Exception:
+                success("Decoded user_data (hex)")
                 print(user_bytes.hex())
     else:
-        print("\nNo user_data or failed to decode base64 user_data")
+        warn("No user_data or failed to decode base64 user_data")
+
+    # dump pcrs
+    pcrs = data.get("pcrs") or {}
+    if isinstance(pcrs, dict) and pcrs:
+        step("PCRs")
+        for k, v in sorted(pcrs.items()):
+            print(f"  PCR{k}: {v}")                            
 
     # Decode attestation document
     att_b64 = data.get("attestation_document") or data.get("attestation") or data.get("document")
@@ -339,28 +459,30 @@ def main(argv: Optional[List[str]] = None) -> int:
             try:
                 with open(args.save, "wb") as f:
                     f.write(att_bytes)
-                print(f"\nSaved raw attestation document to {args.save}")
+                success(f"Saved raw attestation document to {args.save}")
             except Exception as exc:
-                print(f"Failed to save attestation document to {args.save}: {exc}")
+                error(f"Failed to save attestation document to {args.save}: {exc}")
 
-        print("\nAttempting to parse attestation document...")
+        step("Parse attestation document")
+        info("Attempting to parse attestation document...")
         
         # AWS Nitro attestation documents are CBOR-encoded
         cbor_parsed = try_parse_cbor(att_bytes)
         if cbor_parsed is not None:
-            print("✅ Attestation document parsed as CBOR (AWS Nitro format)")
+            success("Attestation document parsed as CBOR (AWS Nitro format)")
             
             # Check if it's a COSE Sign1 structure (list with 4 elements)
             if isinstance(cbor_parsed, list) and len(cbor_parsed) == 4:
                 print("📦 Detected COSE Sign1 structure, extracting payload...")
                 attestation_doc_parsed = parse_cose_sign1(cbor_parsed)
                 if attestation_doc_parsed is None:
-                    print("❌ Failed to extract payload from COSE Sign1")
+                    error("Failed to extract payload from COSE Sign1")
                 else:
-                    print("✅ Successfully extracted attestation payload")
+                    success("Successfully extracted attestation payload")
             else:
                 # Direct CBOR dict
                 attestation_doc_parsed = cbor_parsed
+            
             
             if attestation_doc_parsed:
                 # Perform Nitro-specific verification
@@ -368,30 +490,26 @@ def main(argv: Optional[List[str]] = None) -> int:
                 print("AWS Nitro Enclave Attestation Verification")
                 print("="*60)
                 
-                verification_result = verify_nitro_attestation_doc(
-                    attestation_doc_parsed,
-                certificate_pem,
-                cabundle
-            )
+                verification_result = verify_nitro_attestation_doc(attestation_doc_parsed)
             
             if verification_result["valid"]:
-                print("✅ ATTESTATION VALID")
+                success("ATTESTATION VALID")
             else:
-                print("❌ ATTESTATION VERIFICATION FAILED")
+                error("ATTESTATION VERIFICATION FAILED")
             
             if verification_result["errors"]:
-                print("\n⚠️  Errors:")
+                error("Errors:")
                 for err in verification_result["errors"]:
                     print(f"  - {err}")
-            
+
             if verification_result["warnings"]:
-                print("\n⚠️  Warnings:")
-                for warn in verification_result["warnings"]:
-                    print(f"  - {warn}")
+                warn("Warnings:")
+                for warn_msg in verification_result["warnings"]:
+                    print(f"  - {warn_msg}")
             
             # Display extracted data
             if verification_result["user_data"]:
-                print("\n📄 User Data (from attestation document):")
+                info("User Data (from attestation document):")
                 if isinstance(verification_result["user_data"], dict):
                     print(json.dumps(verification_result["user_data"], indent=2))
                 else:

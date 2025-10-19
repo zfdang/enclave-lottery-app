@@ -251,9 +251,6 @@ class LotteryWebServer:
                         "pcrs": {str(i): "00" * 48 for i in range(8)},
                         "user_data": dummy_user_data_b64,
                         "timestamp": int(datetime.utcnow().timestamp() * 1000),
-                        "certificate": None,
-                        "cabundle": [],
-                        "verified": False,
                         "note": "NSM device not available; returned dummy attestation for development/testing",
                     }
 
@@ -322,9 +319,6 @@ class LotteryWebServer:
                         "pcrs": pcrs_serialized,
                         "user_data": base64.b64encode(user_data_bytes).decode("utf-8"),
                         "timestamp": int(datetime.utcnow().timestamp() * 1000),
-                        "certificate": certificate,
-                        "cabundle": cabundle,
-                        "verified": True,
                         "note": "Real attestation generated via AWS NSM interface",
                     }
                 finally:
