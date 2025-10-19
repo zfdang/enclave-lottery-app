@@ -31,7 +31,7 @@ function completeDraw(string memory drawId, address winner, uint256 winningNumbe
 ```
 
 ### 2. Frontend Integration (`contract.ts`)
-**File**: `enclave/src/frontend/src/services/contract.ts`
+**File**: `enclave/frontend/src/services/contract.ts`
 
 **Key Features**:
 - **Direct Contract Interaction**: Uses ethers.js to call smart contract functions
@@ -54,7 +54,7 @@ contractService.subscribeToEvents({
 ```
 
 ### 3. Updated Betting Panel (`BettingPanel.tsx`)
-**File**: `enclave/src/frontend/src/components/BettingPanel.tsx`
+**File**: `enclave/frontend/src/components/BettingPanel.tsx`
 
 **Key Changes**:
 - **Direct Contract Calls**: Removed reliance on server for bet placement
@@ -64,7 +64,7 @@ contractService.subscribeToEvents({
 - **Fallback Verification**: Optional server verification for additional security
 
 ### 4. Server Verification (`web_server.py`)
-**File**: `enclave/src/web_server.py`
+**File**: `enclave/web_server.py`
 
 **New Endpoint**: `/api/verify-bet`
 - **Optional Verification**: Servers can verify user transactions post-facto
@@ -72,7 +72,7 @@ contractService.subscribeToEvents({
 - **Graceful Degradation**: System works even if server verification fails
 
 ### 5. Blockchain Client Enhancement (`client.py`)
-**File**: `enclave/src/blockchain/client.py`
+**File**: `enclave/blockchain/client.py`
 
 **New Method**: `verify_lottery_transaction()`
 - **Transaction Verification**: Validates transaction happened on correct contract

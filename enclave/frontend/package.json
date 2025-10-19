@@ -1,7 +1,7 @@
 {
-  "name": "lottery-enclave-frontend",
+  "name": "lottery-frontend",
   "version": "1.0.0",
-  "description": "Frontend for Lottery Enclave Application",
+  "description": "Frontend for Lottery Application",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

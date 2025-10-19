@@ -1,8 +1,8 @@
 version: v1
-name: "lottery-app"
-target: "enclave-lottery:latest"
+name: "enclave-lottery-app"
+target: "enclave-lottery-app:latest"
 sources:
-  app: "enclave-lottery-app:latest"
+  app: "lottery-app:latest"
   #odyn: "odyn-dev:latest"
   #sleeve: "enclaver-wrapper-base:latest"
 defaults:

@@ -13,7 +13,7 @@ Implements the real-time UI consuming websocket events from the passive backend.
 
 ## Directory Structure (excerpt)
 ```
-enclave/src/frontend/
+enclave/frontend/
   package.json
   vite.config.js
   index.html
@@ -52,7 +52,7 @@ Access in code: `import.meta.env.VITE_API_URL`.
 ## Build & Run
 Development:
 ```bash
-cd enclave/src/frontend
+cd enclave/frontend
 npm install
 npm run dev
 ```

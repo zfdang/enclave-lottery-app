@@ -38,7 +38,7 @@ This design ensures that the operator's private key can be securely injected int
 **Purpose**: Sign blockchain transactions (e.g., `drawWinner`)
 
 **Lifecycle**:
-- Expected address configured in `enclave.conf` → `blockchain.operator_address`
+- Expected address configured in `lottery.conf` → `blockchain.operator_address`
 - Private key NOT stored in config (empty string)
 - Private key injected via `/api/set_operator_key` endpoint
 - Address validation performed before accepting private key
@@ -59,7 +59,7 @@ This design ensures that the operator's private key can be securely injected int
 └──────┬──────┘
        │
        ├─► Generate TLS SECP384R1 Key Pair
-       ├─► Read operator_address from enclave.conf
+       ├─► Read operator_address from lottery.conf
        ├─► Initialize BlockchainClient (no private key)
        └─► Start Web Server
               │
@@ -233,9 +233,9 @@ print(response.json())
 
 ## Configuration
 
-### enclave.conf
+### lottery.conf
 
-The operator address must be configured in `enclave.conf`:
+The operator address must be configured in `lottery.conf`:
 
 ```json
 {
@@ -288,7 +288,7 @@ The operator address must be configured in `enclave.conf`:
 
 ### Initial Setup
 
-1. Deploy enclave with `operator_address` configured in `enclave.conf`
+1. Deploy enclave with `operator_address` configured in `lottery.conf`
 2. Start the application (generates new TLS key pair)
 3. Optionally verify attestation document contains correct TLS public key
 4. Run injection script to set operator private key
@@ -300,7 +300,7 @@ The operator address must be configured in `enclave.conf`:
 To rotate the operator key:
 
 1. Stop the application
-2. Update `operator_address` in `enclave.conf` to new address
+2. Update `operator_address` in `lottery.conf` to new address
 3. Restart application (generates new TLS key pair)
 4. Inject new operator private key matching new address
 5. Verify successful injection
@@ -311,7 +311,7 @@ To rotate the operator key:
 
 **Solution**: 
 - Verify the private key matches the configured `operator_address`
-- Check `enclave.conf` has correct address
+- Check `lottery.conf` has correct address
 - You can retry with correct private key (not locked out)
 
 **Problem**: "Operator key already set" error
@@ -358,7 +358,7 @@ Look for operator address in the response.
 
 ### Testing
 
-For development/testing, you can still use the old method by setting `operator_private_key` directly in `enclave.conf`. This provides backward compatibility:
+For development/testing, you can still use the old method by setting `operator_private_key` directly in `lottery.conf`. This provides backward compatibility:
 
 ```json
 {
@@ -381,7 +381,7 @@ However, for production enclaves, leave `operator_private_key` empty and use the
 ### ECIES Implementation
 
 Custom ECIES implementation using the `cryptography` library:
-- **Module**: `enclave/src/utils/ecies_secp384r1.py`
+- **Module**: `enclave/utils/ecies_secp384r1.py`
 - **Algorithm**: ECDH + AES-256-GCM + HMAC-SHA256
 - **Curve**: SECP384R1 (384-bit security)
 - **Format**: ephemeral_pubkey (97B) || nonce (12B) || ciphertext+tag || hmac (32B)

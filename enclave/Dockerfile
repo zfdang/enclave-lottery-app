@@ -24,20 +24,20 @@ RUN pip install --no-cache-dir -r requirements.txt
 USER lottery
 
 # Create necessary directories
-RUN mkdir -p ./src/frontend/dist ./src/blockchain/contracts/compiled
+RUN mkdir -p ./frontend/dist
 
 # Copy backend source code
-COPY --chown=lottery:lottery src/main.py /app/src/
-COPY --chown=lottery:lottery src/web_server.py /app/src/
-COPY --chown=lottery:lottery src/blockchain/ /app/src/blockchain/
-COPY --chown=lottery:lottery src/lottery/ /app/src/lottery/
-COPY --chown=lottery:lottery src/contracts/ /app/src/contracts/
-COPY --chown=lottery:lottery src/utils/ /app/src/utils/
-COPY --chown=lottery:lottery src/aws_nsm_interface/ /app/src/aws_nsm_interface/
-COPY --chown=lottery:lottery config/ /app/config/
+COPY --chown=lottery:lottery main.py /app/
+COPY --chown=lottery:lottery web_server.py /app/
+COPY --chown=lottery:lottery blockchain/ /app/blockchain/
+COPY --chown=lottery:lottery lottery/ /app/lottery/
+COPY --chown=lottery:lottery contracts/ /app/contracts/
+COPY --chown=lottery:lottery utils/ /app/utils/
+COPY --chown=lottery:lottery aws_nsm_interface/ /app/aws_nsm_interface/
+COPY --chown=lottery:lottery lottery.conf /app/lottery.conf
 
 # Copy only the compiled frontend assets (not source)
-COPY --chown=lottery:lottery src/frontend/dist/ /app/src/frontend/dist/
+COPY --chown=lottery:lottery frontend/dist/ /app/frontend/dist/
 
 # Expose port
 EXPOSE 6080
@@ -47,4 +47,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:6080/api/health || exit 1
 
 # Default command
-CMD ["python", "/app/src/main.py"]
+CMD ["python", "/app/main.py"]

@@ -24,14 +24,14 @@ A single container (or enclave base image) runs:
 No internal scheduler, cron, or engine state machine remains. All timing decisions derive from on‑chain round timestamps and participant counts.
 
 ## 2. Runtime Components
-| Component | File | Responsibility |
-|----------|------|----------------|
-| Web Server | `enclave/src/web_server.py` | REST endpoints, websocket broadcast, static assets (optional) |
-| EventManager | `enclave/src/lottery/event_manager.py` | Poll round/participants/config, decode logs, publish events |
-| PassiveOperator | `enclave/src/lottery/operator.py` | Decide draw vs refund and submit txs reactively |
-| BlockchainClient | `enclave/src/blockchain/client.py` | Contract binding, view calls, log fetch, tx sending |
-| Config Loader | `enclave/src/utils/config.py` | Layered file + env config, redaction |
-| Logger | `enclave/src/utils/logger.py` | Central logging bootstrap |
+| Component | Path | Description |
+|-----------|------|-------------|
+| Web Server | `enclave/web_server.py` | REST endpoints, websocket broadcast, static assets (optional) |
+| EventManager | `enclave/lottery/event_manager.py` | Poll round/participants/config, decode logs, publish events |
+| PassiveOperator | `enclave/lottery/operator.py` | Decide draw vs refund and submit txs reactively |
+| BlockchainClient | `enclave/blockchain/client.py` | Contract binding, view calls, log fetch, tx sending |
+| Config Loader | `enclave/utils/config.py` | Layered file + env config, redaction |
+| Logger | `enclave/utils/logger.py` | Central logging bootstrap |
 
 ### Event Flow
 ```
@@ -49,12 +49,12 @@ WORKDIR /app
 COPY enclave/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 # copy backend source
-COPY enclave/src /app/src
+COPY enclave/ /app/
 # (optional) copy pre-built frontend assets if you ran: npm run build
-# COPY enclave/src/frontend/dist /app/src/frontend/dist
+# COPY enclave/frontend/dist /app/frontend/dist
 USER lottery
 EXPOSE 6080
-CMD ["python", "src/main.py"]
+CMD ["python", "main.py"]
 ```
 Key principles:
 - Copy only what you need (compiled frontend not sources in prod image)
