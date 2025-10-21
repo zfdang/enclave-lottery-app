@@ -12,3 +12,4 @@ ingress:
 egress:
   allow:
     - base-sepolia.drpc.org
+    - sepolia.base.org
