@@ -334,6 +334,40 @@ class LotteryWebServer:
                 logger.exception("Failed to generate attestation document")
                 raise HTTPException(status_code=500, detail=f"Attestation generation failed: {exc}")
 
+        @self.app.get("/attestation/download")
+        async def download_attestation() -> Response:
+            """Return the raw CBOR attestation document bytes (not base64).
+
+            This endpoint reuses the existing `get_attestation()` logic, decodes
+            the returned base64 attestation_document and serves it with
+            Content-Type application/cbor.
+            """
+            try:
+                att_json = await get_attestation()
+            except HTTPException:
+                # propagate HTTP errors from attestation generation
+                raise
+            except Exception as exc:
+                logger.exception("Failed to obtain attestation for download: %s", exc)
+                raise HTTPException(status_code=500, detail=f"Failed to obtain attestation: {exc}")
+
+            att_b64 = att_json.get("attestation_document") or att_json.get("attestation") or att_json.get("document")
+            if not att_b64:
+                raise HTTPException(status_code=404, detail="Attestation document not found in generated response")
+
+            try:
+                att_bytes = base64.b64decode(att_b64)
+            except Exception as exc:
+                logger.exception("Failed to base64-decode attestation document: %s", exc)
+                raise HTTPException(status_code=500, detail=f"Failed to decode attestation document: {exc}")
+
+            return Response(content=att_bytes,
+                            media_type="application/octet-stream",
+                            headers={
+                                "Content-Disposition": "attachment; filename=attestation.report",
+                                "Content-Type": "application/cbor"
+                            })
+
         # 
         # ------------------------------------------------------------------
         # Key management endpoints
