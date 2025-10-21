@@ -33,7 +33,7 @@ from blockchain.client import BlockchainClient
 from lottery.event_manager import memory_store
 from lottery.operator import PassiveOperator
 from utils.config import load_config
-from utils.crypto import EnclaveAttestation, TLSKeyPair
+from utils.crypto import TLSKeyPair
 from lottery.event_manager import EventManager
 
 logger = get_logger(__name__)
@@ -138,16 +138,6 @@ class PassiveLotteryOperatorApp:
         """Start services and run until a shutdown signal is received."""
         try:
             await self.initialize()
-
-            # Optional attestation
-            if self.config.get('enclave', {}).get('attestation_enabled', False):
-                try:
-                    logger.info("🔐 Generating enclave attestation...")
-                    att = EnclaveAttestation()
-                    _ = att.generate_attestation()
-                    logger.info("✅ Enclave attestation generated")
-                except Exception as exc:  # pragma: no cover - hardware specific
-                    logger.warning(f"⚠️  Failed to generate enclave attestation: {exc}")
 
             if not self.operator:
                 raise RuntimeError("Passive operator failed to initialize")
