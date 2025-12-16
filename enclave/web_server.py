@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import cbor2
 import json
 import logging
 from datetime import datetime
@@ -17,7 +16,6 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from cryptography.hazmat.primitives import serialization
 
 from blockchain.client import BlockchainClient
 from lottery.event_manager import MemoryStore, memory_store
@@ -189,184 +187,6 @@ class LotteryWebServer:
                 "blockchain": blockchain_status,
                 "websocket_connections": len(self._websockets),
             }
-
-        @self.app.get("/api/attestation")
-        async def get_attestation() -> Dict[str, Any]:
-            """
-            Generate a real AWS Nitro Enclave attestation document using aws-nsm-interface.
-            
-            The attestation includes the TLS public key in user_data, allowing external
-            verifiers to confirm the public key comes from a trusted enclave.
-            """
-            user_data_obj = {
-                "operator_address": (self.blockchain_client.get_operator_address()
-                                     if self.blockchain_client else None),
-                "tls_public_key_hex": self.tls_keypair.get_public_key_hex()
-            }
-            user_data_bytes = json.dumps(user_data_obj).encode("utf-8")
-
-            try:
-                import aws_nsm_interface
-            except ImportError as exc:
-                logger.error("NSM interface import failed: %s", exc)
-                raise HTTPException(status_code=503, detail=f"NSM interface not available: {exc}")
-
-            try:
-                # Try opening NSM device; if it fails, fall back to a dummy attestation
-                try:
-                    nsm_fd = aws_nsm_interface.open_nsm_device()
-                except Exception as exc_open:  # pragma: no cover - environment dependent
-                    logger.warning("NSM device not available: %s. Returning dummy attestation.", exc_open)
-                    # Return a clear dummy attestation object indicating not verified
-                    dummy_user_data_b64 = base64.b64encode(user_data_bytes).decode("utf-8")
-                    
-                    # Create a CBOR-encoded dummy attestation document that matches Nitro format
-                    # Get TLS public key in DER format
-                    tls_public_key_der = self.tls_keypair.public_key.public_bytes(
-                        encoding=serialization.Encoding.DER,
-                        format=serialization.PublicFormat.SubjectPublicKeyInfo
-                    )
-                    
-                    # Create dummy PCRs (48 bytes each, all zeros for testing)
-                    dummy_pcrs = {i: b'\x00' * 48 for i in range(16)}
-                    
-                    # Build a dummy attestation document CBOR structure
-                    import cbor2
-                    dummy_attestation_doc = {
-                        "module_id": "i-dummy-enclave-dev",
-                        "timestamp": int(datetime.utcnow().timestamp() * 1000),
-                        "digest": "SHA384",
-                        "pcrs": dummy_pcrs,
-                        "certificate": b"",  # Empty certificate (no real cert in dev mode)
-                        "cabundle": [],
-                        "public_key": tls_public_key_der,
-                        "user_data": user_data_bytes,
-                        "nonce": None,
-                    }
-                    
-                    dummy_attestation_cbor = cbor2.dumps(dummy_attestation_doc)
-                    
-                    return {
-                        "attestation_document": base64.b64encode(dummy_attestation_cbor).decode("utf-8"),
-                        "pcrs": {str(i): "00" * 48 for i in range(8)},
-                        "user_data": dummy_user_data_b64,
-                        "timestamp": int(datetime.utcnow().timestamp() * 1000),
-                        "note": "NSM device not available; returned dummy attestation for development/testing",
-                    }
-
-                # If we reach here, the NSM device opened successfully
-                try:
-                    # Get TLS public key in DER format for attestation
-                    tls_public_key_der = self.tls_keypair.public_key.public_bytes(
-                        encoding=serialization.Encoding.DER,
-                        format=serialization.PublicFormat.SubjectPublicKeyInfo
-                    )
-                    
-                    # Get attestation document with user data and TLS public key
-                    attestation_response = aws_nsm_interface.get_attestation_doc(
-                        file_handle=nsm_fd,
-                        user_data=user_data_bytes,
-                        nonce=None,
-                        public_key=tls_public_key_der,
-                    )
-
-                    # attestation_response is a dict, iterate all keys, and log them
-                    for key, value in attestation_response.items():
-                        if isinstance(value, (bytes, bytearray)):
-                            logger.info("Attestation response key '%s': %d bytes", key, len(value))
-                        else:
-                            logger.info("Attestation response key '%s': %s", key, str(value)[:100])
-
-                    # Extract attestation document (should be bytes)
-                    attestation_doc = attestation_response.get("document")
-                    if attestation_doc is None:
-                        logger.error("No attestation document in response")
-                        raise ValueError("No attestation document in response")
-
-                    # Base64 encode the attestation document
-                    attestation_document_b64 = base64.b64encode(attestation_doc).decode("utf-8")
-
-                    pcrs_serialized = {}
-                    # use describe_pcr(file_handle=nsm_fd, index=i) to list all PCRs
-                    for i in range(8):
-                        pcr_info = aws_nsm_interface.describe_pcr(file_handle=nsm_fd, index=i)
-                        lock_status = pcr_info.get("lock", False)
-                        pcr_data = pcr_info.get("data", b"")
-                        pcrs_serialized[str(i)] = pcr_data.hex() if isinstance(pcr_data, (bytes, bytearray)) else str(pcr_data)
-                        logger.info(
-                            "PCR%d: lock=%s, data=%s",
-                            i,
-                            lock_status,
-                            pcr_data.hex() if isinstance(pcr_data, (bytes, bytearray)) else str(pcr_data),
-                        )
-
-                    # Extract certificate and CA bundle
-                    certificate = attestation_response.get("certificate")
-                    if isinstance(certificate, (bytes, bytearray)):
-                        certificate = certificate.decode("utf-8", errors="ignore")
-
-                    cabundle = attestation_response.get("cabundle", [])
-                    if isinstance(cabundle, (bytes, bytearray)):
-                        cabundle = [cabundle.decode("utf-8", errors="ignore")]
-                    elif isinstance(cabundle, list):
-                        cabundle = [
-                            cert.decode("utf-8", errors="ignore") if isinstance(cert, (bytes, bytearray)) else str(cert)
-                            for cert in cabundle
-                        ]
-
-                    return {
-                        "attestation_document": attestation_document_b64,
-                        "pcrs": pcrs_serialized,
-                        "user_data": base64.b64encode(user_data_bytes).decode("utf-8"),
-                        "timestamp": int(datetime.utcnow().timestamp() * 1000),
-                        "note": "Real attestation generated via AWS NSM interface",
-                    }
-                finally:
-                    # Always close the NSM device if it was opened
-                    try:
-                        aws_nsm_interface.close_nsm_device(nsm_fd)
-                    except Exception:
-                        logger.debug("Failed to close NSM device cleanly", exc_info=True)
-            except HTTPException as exc:
-                logger.error("HTTP error occurred: %s", exc)
-                raise
-            except Exception as exc:
-                logger.exception("Failed to generate attestation document")
-                raise HTTPException(status_code=500, detail=f"Attestation generation failed: {exc}")
-
-        @self.app.get("/attestation/download")
-        async def download_attestation() -> Response:
-            """Return the raw CBOR attestation document bytes (not base64).
-
-            This endpoint reuses the existing `get_attestation()` logic, decodes
-            the returned base64 attestation_document and serves it with
-            Content-Type application/cbor.
-            """
-            try:
-                att_json = await get_attestation()
-            except HTTPException:
-                # propagate HTTP errors from attestation generation
-                raise
-            except Exception as exc:
-                logger.exception("Failed to obtain attestation for download: %s", exc)
-                raise HTTPException(status_code=500, detail=f"Failed to obtain attestation: {exc}")
-
-            att_b64 = att_json.get("attestation_document") or att_json.get("attestation") or att_json.get("document")
-            if not att_b64:
-                raise HTTPException(status_code=404, detail="Attestation document not found in generated response")
-
-            try:
-                att_bytes = base64.b64decode(att_b64)
-            except Exception as exc:
-                logger.exception("Failed to base64-decode attestation document: %s", exc)
-                raise HTTPException(status_code=500, detail=f"Failed to decode attestation document: {exc}")
-
-            return Response(content=att_bytes,
-                            media_type="application/octet-stream",
-                            headers={
-                                "Content-Disposition": "attachment; filename=attestation.report",
-                                "Content-Type": "application/cbor"
-                            })
 
         # 
         # ------------------------------------------------------------------

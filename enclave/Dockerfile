@@ -33,7 +33,7 @@ COPY --chown=lottery:lottery blockchain/ /app/blockchain/
 COPY --chown=lottery:lottery lottery/ /app/lottery/
 COPY --chown=lottery:lottery contracts/ /app/contracts/
 COPY --chown=lottery:lottery utils/ /app/utils/
-COPY --chown=lottery:lottery aws_nsm_interface/ /app/aws_nsm_interface/
+
 COPY --chown=lottery:lottery lottery.conf /app/lottery.conf
 COPY --chown=lottery:lottery agent.json /app/
 
