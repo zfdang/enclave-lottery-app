@@ -12,7 +12,8 @@ RUN npm ci
 # Copy frontend source
 COPY frontend/ ./
 
-COPY .env.example .env
+# Rename .env.example to .env for the build
+RUN cp .env.example .env
 
 # Build the frontend
 RUN npm run build
