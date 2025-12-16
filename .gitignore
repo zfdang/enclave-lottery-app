@@ -76,7 +76,6 @@ out/
 contracts/compiled/
 contracts/deployments/
 contracts/scripts/deployments/
-enclave/contracts/abi/
 enclave/frontend/public/contracts/abi/
 
 # contract configuration and deployment records
