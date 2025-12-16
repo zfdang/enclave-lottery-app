@@ -36,10 +36,9 @@ export const getAttestation = async () => {
   // Import cbor-web for parsing CBOR data
   const cbor = await import('cbor-web')
 
-  // Fetch raw binary data - using Vite proxy to avoid CORS issues
-  const response = await axios.post('/external-attestation', {}, {
-    responseType: 'arraybuffer',
-    timeout: 10000
+  // Fetch raw binary data
+  const response = await api.post('/.well-known/attestation', {}, {
+    responseType: 'arraybuffer'
   })
 
   try {
