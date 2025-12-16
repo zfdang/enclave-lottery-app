@@ -1,4 +1,21 @@
-# Main Python application
+# Stage 1: Build frontend
+FROM node:20-slim AS frontend-builder
+
+WORKDIR /build
+
+# Copy frontend source files
+COPY frontend/package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy frontend source
+COPY frontend/ ./
+
+# Build the frontend
+RUN npm run build
+
+# Stage 2: Main Python application
 FROM python:3.11-slim
 
 # Install system dependencies
@@ -37,8 +54,8 @@ COPY --chown=lottery:lottery utils/ /app/utils/
 COPY --chown=lottery:lottery lottery.conf /app/lottery.conf
 COPY --chown=lottery:lottery agent.json /app/
 
-# Copy only the compiled frontend assets (not source)
-COPY --chown=lottery:lottery frontend/dist/ /app/frontend/dist/
+# Copy built frontend assets from the frontend-builder stage
+COPY --from=frontend-builder --chown=lottery:lottery /build/dist/ /app/frontend/dist/
 
 # Expose port
 EXPOSE 6080
