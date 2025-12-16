@@ -107,6 +107,12 @@ class LotteryWebServer:
             logger.info("Frontend static assets mounted from %s", frontend_dist)
         else:
             logger.info("Frontend build directory not found; API-only mode")
+        
+        # Mount contracts directory for ABI access
+        contracts_dir = Path(__file__).parent / "contracts"
+        if contracts_dir.exists():
+            self.app.mount("/contracts", StaticFiles(directory=str(contracts_dir)), name="contracts")
+            logger.info("Contracts directory mounted from %s", contracts_dir)
 
     def _setup_routes(self) -> None:  # noqa: C901 - routing setup intentionally verbose
         @self.app.get("/")

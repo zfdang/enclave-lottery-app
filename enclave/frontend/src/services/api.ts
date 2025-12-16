@@ -33,7 +33,7 @@ export const getHealth = async () => {
 
 // Enclave attestation
 export const getAttestation = async () => {
-  const response = await api.get('/.well-known/attestation')
+  const response = await api.post('/.well-known/attestation')
   return response.data
 }
 
