@@ -43,7 +43,7 @@ function App() {
   })
 
   const { isConnected } = useWalletStore()
-  
+
   // Health check function
   const checkBackendHealth = useCallback(async () => {
     try {
@@ -61,19 +61,19 @@ function App() {
   useEffect(() => {
     // Initial health check
     checkBackendHealth()
-    
+
     // Set up periodic health checks every 10 seconds
     const healthCheckInterval = setInterval(checkBackendHealth, 10000)
-    
+
     return () => {
       clearInterval(healthCheckInterval)
     }
   }, [checkBackendHealth])
-  
+
   // WebSocket connection for real-time updates
   const rawWs = import.meta.env.VITE_WEBSOCKET_URL
   let wsUrl = rawWs || "ws://127.0.0.1/ws/lottery"
-          
+
 
   const handleCloseSnackbar = () => {
     setSnackbar({ ...snackbar, open: false })
@@ -236,11 +236,11 @@ function App() {
     setConfigError(null)
     setContractConfig(null)
     setRoundInfo(null)
-    
+
     try {
       const url = rpcUrl
       console.log("RPC URL:", url)
-      
+
       // Fetch contract configuration first (RPC-based helper)
       const normalized = await contractService.getContractConfig()
 
@@ -278,14 +278,14 @@ function App() {
   }
 
   return (
-    <Box sx={{ 
+    <Box sx={{
       height: '100vh',
       display: 'flex',
       flexDirection: 'column',
       background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
       overflow: 'hidden'
     }}>
-  {/* Top area - 10% height */}
+      {/* Top area - 10% height */}
       <Box sx={{ height: '8vh', minHeight: '54px' }}>
         <AppBar position="static" sx={{ background: 'rgba(0, 0, 0, 0.2)', height: '100%' }}>
           <Toolbar sx={{ height: '100%', alignItems: 'center', minHeight: '48px' }}>
@@ -294,7 +294,7 @@ function App() {
               Enclave Lottery
             </Typography>
 
-            
+
             {/* Backend status indicator */}
             {!backendOnline && (
               <Chip
@@ -305,7 +305,7 @@ function App() {
                 sx={{ mr: 2, color: '#f44336', borderColor: '#f44336' }}
               />
             )}
-            
+
             <Chip
               icon={<VerifiedUser />}
               label="Nitro Enclave Verified"
@@ -331,20 +331,20 @@ function App() {
               clickable={backendOnline}
               onClick={backendOnline ? handleAttestationClick : undefined}
             />
-            
+
           </Toolbar>
         </AppBar>
       </Box>
 
-  {/* Main content area - 90% height */}
-      <Box sx={{ 
-        height: '92vh', 
+      {/* Main content area - 90% height */}
+      <Box sx={{
+        height: '92vh',
         display: 'flex',
         padding: 2,
         gap: 2
       }}>
-  {/* Left column - Participants (20% width) */}
-        <Box sx={{ 
+        {/* Left column - Participants (20% width) */}
+        <Box sx={{
           width: '20%',
           background: 'rgba(255, 255, 255, 0.1)',
           backdropFilter: 'blur(10px)',
@@ -354,8 +354,8 @@ function App() {
           display: 'flex',
           flexDirection: 'column'
         }}>
-          <Typography variant="h6" sx={{ 
-            p: 2, 
+          <Typography variant="h6" sx={{
+            p: 2,
             borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
             color: 'white',
             textAlign: 'center'
@@ -367,15 +367,15 @@ function App() {
           </Box>
         </Box>
 
-  {/* Middle column - 60% width */}
-        <Box sx={{ 
+        {/* Middle column - 60% width */}
+        <Box sx={{
           width: '60%',
           display: 'flex',
           flexDirection: 'column',
           gap: 2
         }}>
           {/* Live info area - 75% height */}
-          <Box sx={{ 
+          <Box sx={{
             height: '75%',
             background: 'rgba(255, 255, 255, 0.1)',
             backdropFilter: 'blur(10px)',
@@ -507,7 +507,7 @@ function App() {
           </Box>
 
           {/* User actions area - 25% height */}
-          <Box sx={{ 
+          <Box sx={{
             height: '25%',
             background: 'rgba(255, 255, 255, 0.1)',
             backdropFilter: 'blur(10px)',
@@ -518,12 +518,12 @@ function App() {
             flexDirection: 'column'
           }}>
 
-              <BettingPanel />
+            <BettingPanel />
           </Box>
         </Box>
 
-  {/* Right column - History (20% width) */}
-        <Box sx={{ 
+        {/* Right column - History (20% width) */}
+        <Box sx={{
           width: '20%',
           background: 'rgba(255, 255, 255, 0.1)',
           backdropFilter: 'blur(10px)',
@@ -533,8 +533,8 @@ function App() {
           display: 'flex',
           flexDirection: 'column'
         }}>
-          <Typography variant="h6" sx={{ 
-            p: 2, 
+          <Typography variant="h6" sx={{
+            p: 2,
             borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
             color: 'white',
             textAlign: 'center'
@@ -553,8 +553,8 @@ function App() {
         onClose={handleCloseSnackbar}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
-        <Alert 
-          onClose={handleCloseSnackbar} 
+        <Alert
+          onClose={handleCloseSnackbar}
           severity={snackbar.severity}
           sx={{ width: '100%' }}
         >
@@ -563,8 +563,8 @@ function App() {
       </Snackbar>
 
       {/* Enclave Attestation Dialog */}
-      <Dialog 
-        open={attestationOpen} 
+      <Dialog
+        open={attestationOpen}
         onClose={handleAttestationClose}
         maxWidth="md"
         fullWidth
@@ -585,27 +585,42 @@ function App() {
               <Alert severity="success" sx={{ mb: 2 }}>
                 This lottery application is running in a verified AWS Nitro Enclave
               </Alert>
-              
+
               <Typography variant="body2" color="text.secondary" paragraph>
-                The enclave attestation document proves that this application is running in a secure, 
+                The enclave attestation document proves that this application is running in a secure,
                 isolated environment where no one (including AWS or the host) can access the lottery logic.
               </Typography>
-              
+
               {(() => {
                 try {
-                  const attestationData = JSON.parse(attestation);
+                  const response = JSON.parse(attestation);
+                  // New format: attestation is nested inside attestation_document
+                  const attestationData = response.attestation_document || response;
                   let userData = null;
-                  
-                  // Decode user_data if present
+
+                  // Decode user_data if present - now it's a plain string (JSON), not base64
                   if (attestationData.user_data) {
                     try {
-                      const decodedBytes = atob(attestationData.user_data);
-                      userData = JSON.parse(decodedBytes);
+                      // Try parsing as JSON directly (new format)
+                      if (typeof attestationData.user_data === 'string') {
+                        userData = JSON.parse(attestationData.user_data);
+                      } else if (typeof attestationData.user_data === 'object') {
+                        userData = attestationData.user_data;
+                      }
                     } catch (e) {
-                      console.error('Failed to decode user_data:', e);
+                      // Fallback: try base64 decode (old format)
+                      try {
+                        const decodedBytes = atob(attestationData.user_data);
+                        userData = JSON.parse(decodedBytes);
+                      } catch (e2) {
+                        console.error('Failed to decode user_data:', e2);
+                      }
                     }
                   }
-                  
+
+                  // Get PCRs from attestation_document
+                  const pcrs = attestationData.pcrs || {};
+
                   return (
                     <>
                       {/* User Data Section */}
@@ -615,16 +630,29 @@ function App() {
                             Enclave Application Data
                           </Typography>
                           <Box sx={{ display: 'grid', gap: 1 }}>
-                            <Box>
-                              <Typography variant="caption" color="text.secondary">Operator Address:</Typography>
-                              <Typography variant="body2" fontFamily="monospace">
-                                {userData.operator_address || 'Not available'}
-                              </Typography>
-                            </Box>
+                            {/* Display eth_addr if present */}
+                            {userData.eth_addr && (
+                              <Box>
+                                <Typography variant="caption" color="text.secondary">ETH Address:</Typography>
+                                <Typography variant="body2" fontFamily="monospace">
+                                  {userData.eth_addr}
+                                </Typography>
+                              </Box>
+                            )}
+                            {/* Display operator_address if present */}
+                            {userData.operator_address && (
+                              <Box>
+                                <Typography variant="caption" color="text.secondary">Operator Address:</Typography>
+                                <Typography variant="body2" fontFamily="monospace">
+                                  {userData.operator_address}
+                                </Typography>
+                              </Box>
+                            )}
+                            {/* Display tls_public_key_hex if present */}
                             {userData.tls_public_key_hex && (
                               <Box>
                                 <Typography variant="caption" color="text.secondary">TLS Public Key (SECP384R1):</Typography>
-                                <Typography variant="body2" fontFamily="monospace" sx={{ 
+                                <Typography variant="body2" fontFamily="monospace" sx={{
                                   wordBreak: 'break-all',
                                   fontSize: '0.7rem',
                                   backgroundColor: 'rgba(0, 0, 0, 0.05)',
@@ -633,26 +661,23 @@ function App() {
                                 }}>
                                   {userData.tls_public_key_hex}
                                 </Typography>
-                                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                                  {userData.tls_public_key_hex.length} hex chars (97 bytes uncompressed)
-                                </Typography>
                               </Box>
                             )}
                           </Box>
                         </Box>
                       )}
-                      
+
                       {/* PCRs Section */}
-                      {attestationData.pcrs && Object.keys(attestationData.pcrs).length > 0 && (
+                      {pcrs && Object.keys(pcrs).length > 0 && (
                         <Box sx={{ backgroundColor: 'rgba(0, 0, 100, 0.1)', p: 2, borderRadius: 1, mb: 2 }}>
                           <Typography variant="subtitle2" color="primary.main" gutterBottom>
                             Platform Configuration Registers (PCRs)
                           </Typography>
                           <Box sx={{ display: 'grid', gap: 1, maxHeight: '150px', overflow: 'auto' }}>
-                            {Object.entries(attestationData.pcrs).map(([index, value]) => (
+                            {Object.entries(pcrs).map(([index, value]) => (
                               <Box key={index}>
                                 <Typography variant="caption" color="text.secondary">PCR{index}:</Typography>
-                                <Typography variant="body2" fontFamily="monospace" sx={{ 
+                                <Typography variant="body2" fontFamily="monospace" sx={{
                                   wordBreak: 'break-all',
                                   fontSize: '0.7rem'
                                 }}>
@@ -663,7 +688,22 @@ function App() {
                           </Box>
                         </Box>
                       )}
-                      
+
+                      {/* Public Key Section */}
+                      {attestationData.public_key && (
+                        <Box sx={{ backgroundColor: 'rgba(100, 0, 100, 0.1)', p: 2, borderRadius: 1, mb: 2 }}>
+                          <Typography variant="subtitle2" color="secondary.main" gutterBottom>
+                            Enclave Public Key
+                          </Typography>
+                          <Typography variant="body2" fontFamily="monospace" sx={{
+                            wordBreak: 'break-all',
+                            fontSize: '0.7rem'
+                          }}>
+                            {attestationData.public_key}
+                          </Typography>
+                        </Box>
+                      )}
+
                       {/* Raw Attestation Document (collapsed by default) */}
                       <Box sx={{ backgroundColor: 'rgba(0, 0, 0, 0.1)', p: 2, borderRadius: 1, mb: 2 }}>
                         <Typography variant="caption" color="text.secondary">
@@ -673,7 +713,7 @@ function App() {
                           <summary style={{ cursor: 'pointer', fontSize: '0.875rem' }}>
                             Show raw attestation data
                           </summary>
-                          <Typography variant="body2" fontFamily="monospace" sx={{ 
+                          <Typography variant="body2" fontFamily="monospace" component="pre" sx={{
                             wordBreak: 'break-all',
                             whiteSpace: 'pre-wrap',
                             fontSize: '0.75rem',
@@ -681,7 +721,7 @@ function App() {
                             overflow: 'auto',
                             marginTop: '8px'
                           }}>
-                            {attestation}
+                            {JSON.stringify(response, null, 2)}
                           </Typography>
                         </details>
                       </Box>
@@ -694,7 +734,7 @@ function App() {
                       <Typography variant="caption" color="text.secondary">
                         Attestation Document
                       </Typography>
-                      <Typography variant="body2" fontFamily="monospace" sx={{ 
+                      <Typography variant="body2" fontFamily="monospace" sx={{
                         wordBreak: 'break-all',
                         whiteSpace: 'pre-wrap',
                         fontSize: '0.75rem',
@@ -707,9 +747,9 @@ function App() {
                   );
                 }
               })()}
-              
+
               <Typography variant="body2" color="text.secondary">
-                You can independently verify this attestation document to ensure the integrity 
+                You can independently verify this attestation document to ensure the integrity
                 of the lottery system and that no tampering is possible.
               </Typography>
             </>
