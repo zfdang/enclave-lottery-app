@@ -36,9 +36,10 @@ export const getAttestation = async () => {
   // Import cbor-web for parsing CBOR data
   const cbor = await import('cbor-web')
 
-  // Fetch raw binary data
-  const response = await api.post('/.well-known/attestation', {}, {
-    responseType: 'arraybuffer'
+  // Fetch raw binary data - using Vite proxy to avoid CORS issues
+  const response = await axios.post('/external-attestation', {}, {
+    responseType: 'arraybuffer',
+    timeout: 10000
   })
 
   try {
@@ -69,13 +70,27 @@ export const getAttestation = async () => {
       }
 
       // Format PCRs as hex strings
+      // Note: CBOR decoder may return a Map object for pcrs (with numeric keys)
       const pcrs: Record<string, string> = {}
       if (attestationDoc.pcrs) {
-        for (const [key, value] of Object.entries(attestationDoc.pcrs)) {
-          if (value instanceof Uint8Array || value instanceof ArrayBuffer) {
-            pcrs[key] = bytesToHex(value as Uint8Array)
-          } else {
-            pcrs[key] = String(value)
+        // Handle both Map and plain object cases
+        const pcrsData = attestationDoc.pcrs
+        if (pcrsData instanceof Map) {
+          for (const [key, value] of pcrsData.entries()) {
+            if (value instanceof Uint8Array || value instanceof ArrayBuffer) {
+              pcrs[String(key)] = bytesToHex(value as Uint8Array)
+            } else {
+              pcrs[String(key)] = String(value)
+            }
+          }
+        } else {
+          // Plain object case
+          for (const [key, value] of Object.entries(pcrsData)) {
+            if (value instanceof Uint8Array || value instanceof ArrayBuffer) {
+              pcrs[key] = bytesToHex(value as Uint8Array)
+            } else {
+              pcrs[key] = String(value)
+            }
           }
         }
       }
