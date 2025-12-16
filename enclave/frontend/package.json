@@ -19,7 +19,8 @@
     "@mui/material": "^5.14.0",
     "@mui/icons-material": "^5.14.0",
     "react-router-dom": "^6.15.0",
-    "zustand": "^4.4.0"
+    "zustand": "^4.4.0",
+    "cbor-web": "^9.0.2"
   },
   "devDependencies": {
     "@types/react": "^18.2.0",
